@@ -306,10 +306,7 @@ impl<T, C: Config> GenMap<T, C> {
     where
         F: FnOnce(KeyOf<C>) -> T,
     {
-        match self.try_insert_with_key(|key| Ok::<T, core::convert::Infallible>(f(key))) {
-            Ok(key) => key,
-            Err(never) => match never {},
-        }
+        unsafe{ self.try_insert_with_key(|key| Ok::<T, core::convert::Infallible>(f(key))).unwrap_unchecked() }
     }
 
     /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail. On
