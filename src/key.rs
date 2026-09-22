@@ -58,7 +58,7 @@ impl<Idx: KeyPiece, Gen: KeyPiece> Key<Idx, Gen> {
     ///
     /// `generation` must be odd.
     #[inline]
-    pub(crate) unsafe fn from_parts_unchecked(idx: Idx, generation: Gen) -> Self {
+    pub unsafe fn from_parts_unchecked(idx: Idx, generation: Gen) -> Self {
         debug_assert!(generation.is_odd());
         Self {
             idx,
