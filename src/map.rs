@@ -195,13 +195,13 @@ impl<T, C: Config> GenMap<T, C> {
         self.slots.len()
     }
 
-    /// Returns `true` if `key` currently points at a value.
+    /// Returns `true` if `key` is valid.
     #[inline]
     pub fn contains_key(&self, key: KeyOf<C>) -> bool {
         self.get(key).is_some()
     }
 
-    /// Looks up the value `key` points at.
+    /// Returns a reference to the value corresponding to `key`.
     #[inline]
     pub fn get(&self, key: KeyOf<C>) -> Option<&T> {
         let slot = self.slots.get(key.index().into_usize())?;
@@ -213,7 +213,7 @@ impl<T, C: Config> GenMap<T, C> {
         Some(unsafe { slot.value() })
     }
 
-    /// Looks up the value `key` points at, mutably.
+    /// Returns a mutable reference to the value corresponding to `key`.
     #[inline]
     pub fn get_mut(&mut self, key: KeyOf<C>) -> Option<&mut T> {
         let slot = self.slots.get_mut(key.index().into_usize())?;
@@ -229,7 +229,8 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// # Safety
     ///
-    /// `key` must point at a value in this map.
+    /// `key` must be valid, meaning [`contains_key`](Self::contains_key)
+    /// returns `true` for it.
     #[inline]
     pub unsafe fn get_unchecked(&self, key: KeyOf<C>) -> &T {
         debug_assert!(self.contains_key(key));
@@ -240,7 +241,8 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// # Safety
     ///
-    /// `key` must point at a value in this map.
+    /// `key` must be valid, meaning [`contains_key`](Self::contains_key)
+    /// returns `true` for it.
     #[inline]
     pub unsafe fn get_unchecked_mut(&mut self, key: KeyOf<C>) -> &mut T {
         debug_assert!(self.contains_key(key));
@@ -292,10 +294,7 @@ impl<T, C: Config> GenMap<T, C> {
     where
         F: FnOnce(KeyOf<C>) -> T,
     {
-        match self.try_insert_with_key(|key| Ok::<T, core::convert::Infallible>(f(key))) {
-            Ok(key) => key,
-            Err(never) => match never {},
-        }
+        unsafe{ self.try_insert_with_key(|key| Ok::<T, core::convert::Infallible>(f(key))).unwrap_unchecked() }
     }
 
     /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail. On
@@ -353,8 +352,8 @@ impl<T, C: Config> GenMap<T, C> {
         Ok(key)
     }
 
-    /// Removes and returns the value `key` points at, or `None` if the key is
-    /// stale.
+    /// Removes and returns the value corresponding to `key`, or `None` if the
+    /// key is invalid.
     #[inline]
     pub fn remove(&mut self, key: KeyOf<C>) -> Option<T> {
         let slot = self.slots.get(key.index().into_usize())?;
@@ -502,16 +501,14 @@ impl<T, C: Config> Index<KeyOf<C>> for GenMap<T, C> {
 
     #[inline]
     fn index(&self, key: KeyOf<C>) -> &T {
-        self.get(key)
-            .expect("the key does not point at a value in this GenMap")
+        self.get(key).expect("invalid GenMap key")
     }
 }
 
 impl<T, C: Config> IndexMut<KeyOf<C>> for GenMap<T, C> {
     #[inline]
     fn index_mut(&mut self, key: KeyOf<C>) -> &mut T {
-        self.get_mut(key)
-            .expect("the key does not point at a value in this GenMap")
+        self.get_mut(key).expect("invalid GenMap key")
     }
 }
 

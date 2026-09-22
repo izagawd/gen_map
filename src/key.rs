@@ -36,19 +36,19 @@ impl<Idx: KeyPiece, Gen: KeyPiece> Key<Idx, Gen> {
         (self.idx, self.generation())
     }
 
-    /// The slot index this key points at.
+    /// The slot's index.
     #[inline]
     pub fn index(&self) -> Idx {
         self.idx
     }
 
-    /// The generation the slot had when this key was handed out. Always odd.
+    /// The slot's generation.
     #[inline]
     pub fn generation(&self) -> Gen {
         Gen::from_non_zero(self.generation)
     }
 
-    /// The generation in its `NonZero` form.
+    /// The slot's generation. in its `NonZero` form.
     #[inline]
     pub fn generation_non_zero(&self) -> Gen::NonZero {
         self.generation
