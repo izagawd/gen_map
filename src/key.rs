@@ -1,14 +1,7 @@
 use crate::config::{Config, DefaultConfig};
 use crate::key_piece::KeyPiece;
 
-/// A handle to a value in a [`GenMap`](crate::GenMap).
-///
-/// Holds the slot index and the generation the slot had when the value was
-/// inserted. Once the value is removed the key matches nothing, so lookups with
-/// it return `None`.
-///
-/// The type parameters default to those of [`DefaultConfig`], so `Key` is the
-/// key of `GenMap<T>`. [`KeyOf`] names the key of any other config.
+/// A key to a value in a [`GenMap`](crate::GenMap), returned by `insert`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Key<
     Idx: KeyPiece = <DefaultConfig as Config>::Idx,

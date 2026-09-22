@@ -96,32 +96,9 @@ fn index_of<C: Config>(position: usize) -> C::Idx {
     C::Idx::from_usize(position).expect("every slot position fits in the configured index type")
 }
 
-/// A generational map.
+/// A generational map whose key is configured by `C`.
 ///
-/// `insert` returns a [`Key`](crate::Key) for the slot the value went into.
-/// `remove` bumps that slot's generation, so the key stops matching and the
-/// slot can be reused under a new key. `C` configures the key, see [`Config`].
-///
-/// # Examples
-///
-/// ```
-/// use gen_map::GenMap;
-///
-/// let mut map = GenMap::new();
-/// let a = map.insert("a");
-/// let b = map.insert("b");
-///
-/// assert_eq!(map[a], "a");
-/// assert_eq!(map.remove(a), Some("a"));
-/// assert_eq!(map.get(a), None);
-///
-/// // The slot is reused under a fresh key.
-/// let c = map.insert("c");
-/// assert_eq!(c.index(), a.index());
-/// assert_ne!(c, a);
-/// assert_eq!(map[b], "b");
-/// assert_eq!(map[c], "c");
-/// ```
+/// See the [crate documentation](crate) for examples.
 pub struct GenMap<T, C: Config = DefaultConfig> {
     slots: Vec<Slot<T, C>>,
     next_free: Option<C::Idx>,
