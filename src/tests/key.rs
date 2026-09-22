@@ -106,3 +106,29 @@ fn map_is_send_and_sync_when_its_values_are() {
     assert_send_sync::<Key>();
     assert_send_sync::<crate::Iter<'static, i32, DefaultConfig>>();
 }
+
+#[test]
+fn an_index_that_does_not_fit_in_usize_matches_nothing() {
+    struct Wide;
+    impl Config for Wide {
+        type Idx = u128;
+        type Gen = u32;
+    }
+
+    let mut map = GenMap::<i32, Wide>::new_with_config();
+    let k = map.insert(1);
+    let (idx, generation) = k.into_parts();
+
+    // Same low bits as `k`, so a truncating conversion would land on its slot.
+    let too_wide = (1u128 << 64) | idx;
+    let bogus = Key::<u128, u32>::from_parts(too_wide, generation).unwrap();
+
+    assert!(map.get(bogus).is_none());
+    assert!(map.get_mut(bogus).is_none());
+    assert!(!map.contains_key(bogus));
+    assert!(map.get_by_index_only(too_wide).is_none());
+    assert!(map.get_by_index_only_mut(too_wide).is_none());
+    assert!(map.remove(bogus).is_none());
+    assert_eq!(map.len(), 1);
+    assert_eq!(map[k], 1);
+}

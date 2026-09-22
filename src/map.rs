@@ -96,6 +96,14 @@ fn index_of<C: Config>(position: usize) -> C::Idx {
     C::Idx::from_usize(position).expect("every slot position fits in the configured index type")
 }
 
+/// Converts a free list index back to its position in the backing `Vec`. Every
+/// free list index came from a position, so it fits.
+#[inline]
+fn position_of<C: Config>(idx: C::Idx) -> usize {
+    idx.into_usize()
+        .expect("every free list index fits in usize")
+}
+
 /// A generational map whose key is configured by `C`.
 ///
 /// See the [crate documentation](crate) for examples.
@@ -204,7 +212,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// Returns a reference to the value corresponding to `key`.
     #[inline]
     pub fn get(&self, key: KeyOf<C>) -> Option<&T> {
-        let slot = self.slots.get(key.index().into_usize())?;
+        let slot = self.slots.get(key.index().into_usize()?)?;
         if slot.generation != key.generation() {
             return None;
         }
@@ -216,7 +224,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// Returns a mutable reference to the value corresponding to `key`.
     #[inline]
     pub fn get_mut(&mut self, key: KeyOf<C>) -> Option<&mut T> {
-        let slot = self.slots.get_mut(key.index().into_usize())?;
+        let slot = self.slots.get_mut(key.index().into_usize()?)?;
         if slot.generation != key.generation() {
             return None;
         }
@@ -234,7 +242,9 @@ impl<T, C: Config> GenMap<T, C> {
     #[inline]
     pub unsafe fn get_unchecked(&self, key: KeyOf<C>) -> &T {
         debug_assert!(self.contains_key(key));
-        self.slots.get_unchecked(key.index().into_usize()).value()
+        self.slots
+            .get_unchecked(key.index().into_usize().unwrap_unchecked())
+            .value()
     }
 
     /// [`get_mut`](Self::get_mut) without the bounds and generation checks.
@@ -247,7 +257,7 @@ impl<T, C: Config> GenMap<T, C> {
     pub unsafe fn get_unchecked_mut(&mut self, key: KeyOf<C>) -> &mut T {
         debug_assert!(self.contains_key(key));
         self.slots
-            .get_unchecked_mut(key.index().into_usize())
+            .get_unchecked_mut(key.index().into_usize().unwrap_unchecked())
             .value_mut()
     }
 
@@ -255,7 +265,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// vacant or does not exist.
     #[inline]
     pub fn get_by_index_only(&self, idx: C::Idx) -> Option<(KeyOf<C>, &T)> {
-        let slot = self.slots.get(idx.into_usize())?;
+        let slot = self.slots.get(idx.into_usize()?)?;
         if !slot.is_occupied() {
             return None;
         }
@@ -266,7 +276,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// The mutable form of [`get_by_index_only`](Self::get_by_index_only).
     #[inline]
     pub fn get_by_index_only_mut(&mut self, idx: C::Idx) -> Option<(KeyOf<C>, &mut T)> {
-        let slot = self.slots.get_mut(idx.into_usize())?;
+        let slot = self.slots.get_mut(idx.into_usize()?)?;
         if !slot.is_occupied() {
             return None;
         }
@@ -309,10 +319,13 @@ impl<T, C: Config> GenMap<T, C> {
     {
         // Nothing is written until `f` has succeeded, so a failing or
         // panicking `f` leaves the map untouched.
-        let (idx, generation) = match self.next_free {
-            Some(idx) => (idx, self.slots[idx.into_usize()].generation),
+        let (idx, position, generation) = match self.next_free {
+            Some(idx) => {
+                let position = position_of::<C>(idx);
+                (idx, position, self.slots[position].generation)
+            }
             None => match C::Idx::from_usize(self.slots.len()) {
-                Some(idx) => (idx, C::Gen::ZERO),
+                Some(idx) => (idx, self.slots.len(), C::Gen::ZERO),
                 None => panic!(
                     "GenMap is full: it has {} slots, which is all that {} can address",
                     self.slots.len(),
@@ -334,7 +347,7 @@ impl<T, C: Config> GenMap<T, C> {
 
         match self.next_free {
             Some(_) => {
-                let slot = &mut self.slots[idx.into_usize()];
+                let slot = &mut self.slots[position];
                 // SAFETY: the slot came off the free list, so it is vacant and
                 // its `vacant` field is the live one.
                 self.next_free = unsafe { slot.data.vacant };
@@ -356,23 +369,25 @@ impl<T, C: Config> GenMap<T, C> {
     /// key is invalid.
     #[inline]
     pub fn remove(&mut self, key: KeyOf<C>) -> Option<T> {
-        let slot = self.slots.get(key.index().into_usize())?;
+        let position = key.index().into_usize()?;
+        let slot = self.slots.get(position)?;
         if slot.generation != key.generation() {
             return None;
         }
         // SAFETY: a key's generation is always odd, so a matching slot is
         // occupied.
-        Some(unsafe { self.take(key.index()) })
+        Some(unsafe { self.take(key.index(), position) })
     }
 
-    /// Moves the value out of slot `idx` and frees the slot, or retires it if
-    /// its generation overflowed and the config says so.
+    /// Moves the value out of the slot at `position` and frees it, or retires
+    /// it if its generation overflowed and the config says so.
     ///
     /// # Safety
     ///
-    /// Slot `idx` must be occupied.
-    unsafe fn take(&mut self, idx: C::Idx) -> T {
-        let slot = &mut self.slots[idx.into_usize()];
+    /// The slot at `position` must be occupied, and `idx` must be `position`
+    /// as a `C::Idx`.
+    unsafe fn take(&mut self, idx: C::Idx, position: usize) -> T {
+        let slot = &mut self.slots[position];
         debug_assert!(slot.is_occupied());
         let value = ManuallyDrop::take(&mut slot.data.occupied);
         self.len -= 1;
@@ -402,7 +417,7 @@ impl<T, C: Config> GenMap<T, C> {
         for position in 0..self.slots.len() {
             if self.slots[position].is_occupied() {
                 // SAFETY: the slot was just checked to be occupied.
-                drop(unsafe { self.take(index_of::<C>(position)) });
+                drop(unsafe { self.take(index_of::<C>(position), position) });
             }
         }
         debug_assert_eq!(self.len, 0);
@@ -436,7 +451,7 @@ impl<T, C: Config> GenMap<T, C> {
             if !keep {
                 // SAFETY: the slot is still occupied. `f` only had `&mut T`
                 // and could not have removed it.
-                drop(unsafe { self.take(idx) });
+                drop(unsafe { self.take(idx, position) });
             }
         }
     }
@@ -870,7 +885,7 @@ impl<T, C: Config> Iterator for Drain<'_, T, C> {
                 // SAFETY: the slot is occupied and `idx` is its position.
                 unsafe {
                     let key = slot.key(idx);
-                    return Some((key, self.map.take(idx)));
+                    return Some((key, self.map.take(idx, position)));
                 }
             }
         }

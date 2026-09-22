@@ -48,7 +48,7 @@ impl<Idx: KeyPiece, Gen: KeyPiece> Key<Idx, Gen> {
         Gen::from_non_zero(self.generation)
     }
 
-    /// The slot's generation. in its `NonZero` form.
+    /// The slot's generation in its `NonZero` form.
     #[inline]
     pub fn generation_non_zero(&self) -> Gen::NonZero {
         self.generation
