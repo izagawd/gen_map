@@ -288,7 +288,8 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// # Panics
     ///
-    /// Panics if the map is full, which is `C::Idx::MAX + 1` occupied slots.
+    /// Panics if the map is full, meaning it has `C::Idx::MAX + 1` slots and
+    /// none of them are free.
     #[inline]
     pub fn insert(&mut self, value: T) -> KeyOf<C> {
         self.insert_with_key(|_| value)
@@ -298,13 +299,17 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// # Panics
     ///
-    /// Panics if the map is full, which is `C::Idx::MAX + 1` occupied slots.
+    /// Panics if the map is full, meaning it has `C::Idx::MAX + 1` slots and
+    /// none of them are free.
     #[inline]
     pub fn insert_with_key<F>(&mut self, f: F) -> KeyOf<C>
     where
         F: FnOnce(KeyOf<C>) -> T,
     {
-        unsafe{ self.try_insert_with_key(|key| Ok::<T, core::convert::Infallible>(f(key))).unwrap_unchecked() }
+        match self.try_insert_with_key(|key| Ok::<T, core::convert::Infallible>(f(key))) {
+            Ok(key) => key,
+            Err(never) => match never {},
+        }
     }
 
     /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail. On
@@ -312,7 +317,8 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// # Panics
     ///
-    /// Panics if the map is full, which is `C::Idx::MAX + 1` occupied slots.
+    /// Panics if the map is full, meaning it has `C::Idx::MAX + 1` slots and
+    /// none of them are free.
     pub fn try_insert_with_key<F, E>(&mut self, f: F) -> Result<KeyOf<C>, E>
     where
         F: FnOnce(KeyOf<C>) -> Result<T, E>,
@@ -327,9 +333,9 @@ impl<T, C: Config> GenMap<T, C> {
             None => match C::Idx::from_usize(self.slots.len()) {
                 Some(idx) => (idx, self.slots.len(), C::Gen::ZERO),
                 None => panic!(
-                    "GenMap is full: it has {} slots, which is all that {} can address",
-                    self.slots.len(),
-                    type_name::<C::Idx>()
+                    "GenMap is full, {} can not address more than {} slots",
+                    type_name::<C::Idx>(),
+                    self.slots.len()
                 ),
             },
         };
@@ -441,11 +447,11 @@ impl<T, C: Config> GenMap<T, C> {
         F: FnMut(KeyOf<C>, &mut T) -> bool,
     {
         for position in 0..self.slots.len() {
-            let idx = index_of::<C>(position);
             let slot = &mut self.slots[position];
             if !slot.is_occupied() {
                 continue;
             }
+            let idx = index_of::<C>(position);
             // SAFETY: the slot is occupied and `idx` is its position.
             let keep = unsafe { f(slot.key(idx), slot.value_mut()) };
             if !keep {

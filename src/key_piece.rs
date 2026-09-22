@@ -35,7 +35,7 @@ pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'stati
     /// Converts the value to a `usize`, or returns `None` if it does not fit.
     fn into_usize(self) -> Option<usize>;
 
-    /// Narrows a `usize` to this type, or returns `None` if it does not fit.
+    /// Converts a `usize` to this type, or returns `None` if it does not fit.
     fn from_usize(v: usize) -> Option<Self>;
 
     /// Converts the value to its `NonZero` form, or returns `None` if it is zero.
