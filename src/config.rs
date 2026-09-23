@@ -1,4 +1,6 @@
 use crate::key_piece::KeyPiece;
+use crate::storage::SlotStorage;
+use alloc::vec::Vec;
 
 /// Compile time configuration of a [`GenMap`](crate::GenMap).
 /// # Examples
@@ -14,6 +16,8 @@ use crate::key_piece::KeyPiece;
 ///     type Idx = u16;
 ///     // generation type
 ///     type Gen = u16;
+///     // where the slots live
+///     type Storage<S> = Vec<S>;
 ///     const WRAP_ON_OVERFLOW: bool = true;
 /// }
 ///
@@ -29,6 +33,12 @@ pub trait Config {
     /// The integer type that represents the generation of a slot.
     type Gen: KeyPiece;
 
+    /// The collection the map keeps its slots in. `S` is the map's private
+    /// slot type, so a config names a collection without knowing what goes
+    /// in it, such as `Vec<S>` or
+    /// [`ArrayStorage<S, 64>`](crate::ArrayStorage).
+    type Storage<S>: SlotStorage<S>;
+
     /// What happens when a slot's generation overflows.
     ///
     /// `false` retires the slot. It is never used again, so no stale key can
@@ -41,12 +51,13 @@ pub trait Config {
 
 /// The config a [`GenMap`](crate::GenMap) uses when none is named.
 ///
-/// Keys are `u32` index plus `u32` generation, so eight bytes, and slots retire
-/// when their generation overflows.
+/// Keys are `u32` index plus `u32` generation, slots live in
+/// a `Vec`, and slots retire when their generation overflows.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct DefaultConfig;
 
 impl Config for DefaultConfig {
     type Idx = u32;
     type Gen = u32;
+    type Storage<S> = Vec<S>;
 }

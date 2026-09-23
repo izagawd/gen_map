@@ -29,13 +29,13 @@
 //! impl Config for Tiny {
 //!     type Idx = u8;
 //!     type Gen = u8;
+//!     type Storage<S> = Vec<S>;
 //! }
 //!
 //! let mut map = GenMap::<u64, Tiny>::new_with_config();
 //! let key: Key<Tiny> = map.insert(7);
 //! assert_eq!(core::mem::size_of_val(&key), 2);
 //! assert_eq!(map[key], 7);
-//! ```
 
 #![no_std]
 #![warn(missing_docs)]
@@ -46,14 +46,18 @@ extern crate alloc;
 extern crate std;
 
 mod config;
+mod error;
 mod key;
 mod key_piece;
 mod map;
+mod storage;
 
 pub use config::{Config, DefaultConfig};
+pub use error::{GetDisjointMutAtError, GetDisjointMutError, InsertError, ReserveError};
 pub use key::Key;
 pub use key_piece::KeyPiece;
 pub use map::{Drain, GenMap, IntoIter, Iter, IterMut, Keys, Values, ValuesMut};
+pub use storage::{SlotStorage};
 
 #[cfg(test)]
 mod tests;

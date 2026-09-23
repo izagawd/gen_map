@@ -11,16 +11,30 @@ pub struct Key<C: Config = DefaultConfig> {
 }
 
 impl<C: Config> Key<C> {
+    /// The index of the slot this key refers to.
+    #[inline]
+    pub fn idx(&self) -> C::Idx {
+        self.idx
+    }
+
+    /// The generation of the slot this key refers to at the time this key was handed out.
+    #[inline]
+    pub fn generation(&self) -> C::Gen {
+        C::Gen::from_non_zero(self.generation)
+    }
+
+    /// Builds a key from an index and a generation
+    ///
     /// # Safety
     ///
-    /// `generation` must be odd.
+    /// `generation` must be odd. The map only hands out odd generations, and
+    /// an even one is what a vacant or detached slot holds. A key that
+    /// carries an even generation can match such a slot, which is undefined behavior.
     #[inline]
-    pub(crate) unsafe fn from_parts_unchecked(idx: C::Idx, generation: C::Gen) -> Self {
-        debug_assert!(generation.is_odd());
-        Self {
-            idx,
-            generation: generation.into_non_zero().unwrap_unchecked(),
-        }
+    pub unsafe fn from_raw_parts(idx: C::Idx, generation: <C::Gen as KeyPiece>::NonZero) -> Self {
+        debug_assert!(<C::Gen as KeyPiece>::from_non_zero(generation).is_odd());
+        // SAFETY: the caller promises an odd generation, and zero is even.
+        Self { idx, generation }
     }
 }
 

@@ -1,7 +1,8 @@
 use super::Cfg;
-use crate::{Config, DefaultConfig, GenMap, Key};
+use crate::{Config, DefaultConfig, GenMap, Key, KeyPiece};
 use core::mem::size_of;
 use core::num::NonZero;
+use std::vec::Vec;
 
 #[test]
 fn default_key_matches_default_config() {
@@ -67,12 +68,14 @@ fn every_integer_type_works_as_a_config() {
     impl Config for Mixed {
         type Idx = u64;
         type Gen = u8;
+        type Storage<S> = Vec<S>;
     }
 
     struct Wide;
     impl Config for Wide {
         type Idx = u128;
         type Gen = usize;
+        type Storage<S> = Vec<S>;
     }
 
     let mut mixed = GenMap::<i32, Mixed>::new_with_config();
@@ -100,6 +103,7 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     impl Config for Wide {
         type Idx = u128;
         type Gen = u32;
+        type Storage<S> = Vec<S>;
     }
 
     let mut map = GenMap::<i32, Wide>::new_with_config();
@@ -117,4 +121,66 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     assert!(map.remove(bogus).is_none());
     assert_eq!(map.len(), 1);
     assert_eq!(map[k], 1);
+}
+
+#[test]
+fn idx_and_generation_read_the_parts_of_a_key() {
+    let mut map = GenMap::new();
+    let a = map.insert("a");
+    let b = map.insert("b");
+    assert_eq!(a.idx(), 0);
+    assert_eq!(b.idx(), 1);
+    assert_eq!(a.generation(), 1);
+    assert_eq!(b.generation(), 1);
+
+    map.remove(a);
+    let c = map.insert("c");
+    assert_eq!(c.idx(), 0);
+    assert_eq!(c.generation(), 3);
+}
+
+#[test]
+fn a_generation_is_always_odd() {
+    let mut map = GenMap::<i32, Cfg<u8, u8>>::new_with_config();
+    let mut key = map.insert(0);
+    for _ in 0..100 {
+        assert!(key.generation() % 2 == 1);
+        map.remove(key);
+        key = map.insert(0);
+    }
+}
+
+#[test]
+fn from_raw_parts_rebuilds_a_key() {
+    let mut map = GenMap::new();
+    let key = map.insert(42);
+    let (idx, generation) = (key.idx(), key.generation());
+
+    let rebuilt = unsafe { Key::<DefaultConfig>::from_raw_parts(idx, generation.into_non_zero().unwrap()) };
+    assert_eq!(rebuilt, key);
+    assert_eq!(map.get(rebuilt), Some(&42));
+}
+
+#[test]
+fn a_rebuilt_key_from_the_past_matches_nothing() {
+    let mut map = GenMap::new();
+    let old = map.insert(1);
+    map.remove(old);
+    let new = map.insert(2);
+    assert_eq!(new.idx(), old.idx());
+
+    let rebuilt = unsafe { Key::<DefaultConfig>::from_raw_parts(old.idx(), old.generation().into_non_zero().unwrap()) };
+    assert!(map.get(rebuilt).is_none());
+    assert!(map.get_mut(rebuilt).is_none());
+    assert!(map.remove(rebuilt).is_none());
+    assert!(!map.contains_key(rebuilt));
+    assert_eq!(map[new], 2);
+}
+
+#[test]
+fn a_rebuilt_key_for_a_missing_slot_matches_nothing() {
+    let mut map = GenMap::new();
+    map.insert(1);
+    let rebuilt = unsafe { Key::<DefaultConfig>::from_raw_parts(99, NonZero::new(1).unwrap()) };
+    assert!(map.get(rebuilt).is_none());
 }
