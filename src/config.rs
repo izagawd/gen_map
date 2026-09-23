@@ -33,10 +33,8 @@ pub trait Config {
     /// The integer type that represents the generation of a slot.
     type Gen: KeyPiece;
 
-    /// The collection the map keeps its slots in. `S` is the map's private
-    /// slot type, so a config names a collection without knowing what goes
-    /// in it, such as `Vec<S>` or
-    /// [`ArrayStorage<S, 64>`](crate::ArrayStorage).
+    /// The collection the map keeps its slots in. `S` is the map's
+    /// [`Slot`](crate::Slot) type.
     type Storage<S>: SlotStorage<S>;
 
     /// What happens when a slot's generation overflows.

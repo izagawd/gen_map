@@ -36,6 +36,7 @@
 //! let key: Key<Tiny> = map.insert(7);
 //! assert_eq!(core::mem::size_of_val(&key), 2);
 //! assert_eq!(map[key], 7);
+//! ```
 
 #![no_std]
 #![warn(missing_docs)]
@@ -55,12 +56,14 @@ mod storage;
 pub use config::{Config, DefaultConfig};
 pub use error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
-    ReserveError,
 };
 pub use key::Key;
 pub use key_piece::KeyPiece;
-pub use map::{Drain, GenMap, IntoIter, Iter, IterMut, Keys, VacantEntry, Values, ValuesMut};
-pub use storage::SlotStorage;
+pub use map::{
+    Drain, GenMap, IntoIter, Iter, IterMut, Keys, Slot, StorageError, VacantEntry, Values,
+    ValuesMut,
+};
+pub use storage::{ReserveStorage, SlotStorage};
 
 #[cfg(test)]
 mod tests;

@@ -1,5 +1,6 @@
 use crate::{Config, FullError, GenMap, InsertError, InsertWithError};
 use std::string::{String, ToString};
+use std::collections::TryReserveError;
 use std::vec::Vec;
 
 struct Byte;
@@ -97,12 +98,12 @@ fn try_insert_with_key_reports_full_without_calling_the_closure() {
 fn flatten_folds_full_into_the_callers_error() {
     #[derive(Debug, PartialEq)]
     enum MyError {
-        Full(FullError),
+        Full(FullError<TryReserveError>),
         Bad,
     }
 
-    impl From<FullError> for MyError {
-        fn from(e: FullError) -> Self {
+    impl From<FullError<TryReserveError>> for MyError {
+        fn from(e: FullError<TryReserveError>) -> Self {
             MyError::Full(e)
         }
     }
@@ -122,33 +123,61 @@ fn flatten_folds_full_into_the_callers_error() {
 
 #[test]
 fn full_error_converts_into_insert_with_error() {
-    let e: InsertWithError<String> = FullError::StorageFull.into();
-    assert_eq!(e, InsertWithError::Full(FullError::StorageFull));
+    let e: InsertWithError<String, &str> = FullError::StorageFull("why").into();
+    assert_eq!(e, InsertWithError::Full(FullError::StorageFull("why")));
     assert!(e.is_full());
     assert_eq!(e.rejected(), None);
 
-    let e = InsertWithError::<String>::Rejected("x".to_string());
+    let e = InsertWithError::<String, ()>::Rejected("x".to_string());
     assert!(!e.is_full());
     assert_eq!(e.rejected(), Some("x".to_string()));
 }
 
 #[test]
 fn insert_error_kind_and_parts_agree_with_the_variant() {
-    let e = InsertError::IndexExhausted(5);
+    let e = InsertError::<_, ()>::IndexExhausted(5);
     assert_eq!(e.kind(), FullError::IndexExhausted);
     assert_eq!(e.into_parts(), (FullError::IndexExhausted, 5));
 
-    let e = InsertError::StorageFull("x");
-    assert_eq!(e.kind(), FullError::StorageFull);
-    assert_eq!(e.into_parts(), (FullError::StorageFull, "x"));
+    let e = InsertError::StorageFull("x", "why");
+    assert_eq!(e.kind(), FullError::StorageFull(&"why"));
+    assert_eq!(e.into_parts(), (FullError::StorageFull("why"), "x"));
+}
+
+#[test]
+fn full_error_as_ref_borrows_the_storage_error() {
+    let e = FullError::StorageFull("why".to_string());
+    assert_eq!(e.as_ref(), FullError::StorageFull(&"why".to_string()));
+    assert_eq!(FullError::<String>::IndexExhausted.as_ref(), FullError::IndexExhausted);
 }
 
 #[test]
 fn errors_display_something_about_the_cause() {
-    assert!(FullError::IndexExhausted.to_string().contains("index"));
-    assert!(FullError::StorageFull.to_string().contains("storage"));
-    assert!(InsertWithError::<&str>::Full(FullError::StorageFull)
+    assert!(FullError::<&str>::IndexExhausted.to_string().contains("index"));
+    let text = FullError::StorageFull("no room").to_string();
+    assert!(text.contains("storage") && text.contains("no room"));
+    assert!(InsertWithError::<&str, &str>::Full(FullError::StorageFull("x"))
         .to_string()
         .contains("storage"));
-    assert_eq!(InsertWithError::Rejected("custom").to_string(), "custom");
+    assert_eq!(InsertWithError::<_, &str>::Rejected("custom").to_string(), "custom");
+}
+
+/// `Vec::push` would abort the process here. Going through `ensure_room`
+/// turns the failed allocation into `StorageFull` with the allocator's
+/// error. Only `vacant_entry` and `try_reserve` are called, because neither
+/// ever holds a `Huge` by value, which would need a 4 EiB stack frame.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn a_vec_that_can_not_allocate_reports_storage_full_instead_of_aborting() {
+    type Huge = [u8; 1 << 62];
+    let mut map: GenMap<Huge> = GenMap::new();
+
+    match map.vacant_entry() {
+        Err(FullError::StorageFull(_)) => {}
+        Err(FullError::IndexExhausted) => panic!("expected StorageFull"),
+        Ok(_) => panic!("4 EiB allocation succeeded?"),
+    }
+    assert!(map.try_reserve(1).is_err());
+    assert_eq!(map.len(), 0);
+    assert_eq!(map.slots_len(), 0);
 }

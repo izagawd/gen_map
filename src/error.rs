@@ -1,99 +1,139 @@
-use alloc::collections::TryReserveError;
 use core::fmt;
 
-/// Why [`GenMap::try_insert`](crate::GenMap::try_insert) could not insert.
-/// Each variant hands the value back so that the caller can keep it.
+/// Why a [`GenMap`](crate::GenMap) has no room for another value. This is
+/// what [`GenMap::vacant_entry`](crate::GenMap::vacant_entry) returns, and
+/// what the other insert errors wrap. `E` is the map's
+/// [`StorageError`](crate::StorageError).
 ///
 /// When the index type and the storage are both exhausted,
 /// [`IndexExhausted`](Self::IndexExhausted) is the one reported.
-pub enum InsertError<T> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FullError<E> {
+    /// The map has `C::Idx::MAX + 1` slots and none of them are free, so
+    /// there is no index left for a new slot.
+    IndexExhausted,
+
+    /// None of the slots are free and the storage could not make room for
+    /// another one. The field says why, which for a `Vec` is its
+    /// `TryReserveError`.
+    StorageFull(E),
+}
+
+impl<E> FullError<E> {
+    /// Returns the same error with the storage's reason borrowed instead of
+    /// owned.
+    #[inline]
+    pub fn as_ref(&self) -> FullError<&E> {
+        match self {
+            Self::IndexExhausted => FullError::IndexExhausted,
+            Self::StorageFull(error) => FullError::StorageFull(error),
+        }
+    }
+}
+
+impl<E: fmt::Display> fmt::Display for FullError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::IndexExhausted => f.write_str("the index type can not address another slot"),
+            Self::StorageFull(error) => {
+                write!(f, "the storage can not make room for another slot: {error}")
+            }
+        }
+    }
+}
+
+/// Why [`GenMap::try_insert`](crate::GenMap::try_insert) could not insert.
+/// Each variant hands the value back so that the caller can keep it. `E` is
+/// the map's [`StorageError`](crate::StorageError).
+///
+/// When the index type and the storage are both exhausted,
+/// [`IndexExhausted`](Self::IndexExhausted) is the one reported.
+pub enum InsertError<T, E> {
     /// The map has `C::Idx::MAX + 1` slots and none of them are free, so
     /// there is no index left for a new slot.
     IndexExhausted(T),
 
-    /// The storage can not hold another slot and none of the existing slots
-    /// are free. Only a storage with a fixed capacity, such as
-    /// [`ArrayStorage`](crate::ArrayStorage), can report this.
-    StorageFull(T),
+    /// None of the slots are free and the storage could not make room for
+    /// another one. The second field says why.
+    StorageFull(T, E),
 }
 
-impl<T> InsertError<T> {
+impl<T, E> InsertError<T, E> {
     /// Takes the value back out of the error.
     #[inline]
     pub fn into_inner(self) -> T {
         match self {
-            Self::IndexExhausted(value) | Self::StorageFull(value) => value,
+            Self::IndexExhausted(value) | Self::StorageFull(value, _) => value,
         }
     }
 
-    /// The reason, without the value.
+    /// The reason the insert failed, without the value.
     #[inline]
-    pub fn kind(&self) -> FullError {
+    pub fn kind(&self) -> FullError<&E> {
         match self {
             Self::IndexExhausted(_) => FullError::IndexExhausted,
-            Self::StorageFull(_) => FullError::StorageFull,
+            Self::StorageFull(_, error) => FullError::StorageFull(error),
         }
     }
 
     /// Splits the error into its reason and the value.
     #[inline]
-    pub fn into_parts(self) -> (FullError, T) {
+    pub fn into_parts(self) -> (FullError<E>, T) {
         match self {
             Self::IndexExhausted(value) => (FullError::IndexExhausted, value),
-            Self::StorageFull(value) => (FullError::StorageFull, value),
+            Self::StorageFull(value, error) => (FullError::StorageFull(error), value),
         }
     }
 }
 
-/// When a [`GenMap`](crate::GenMap) has no room for another value, this is
-/// what [`GenMap::vacant_entry`](crate::GenMap::vacant_entry) returns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FullError {
-    /// The map has `C::Idx::MAX + 1` slots and none of them are free, so
-    /// there is no index left for a new slot.
-    IndexExhausted,
-
-    /// The storage can not hold another slot and none of the existing slots
-    /// are free. Only a storage with a fixed capacity can report this.
-    StorageFull,
-}
-
-impl fmt::Display for FullError {
+// Written by hand so that it does not demand `Debug` from `T`.
+impl<T, E: fmt::Debug> fmt::Debug for InsertError<T, E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::IndexExhausted => f.write_str("the index type can not address another slot"),
-            Self::StorageFull => f.write_str("the storage can not hold another slot"),
+            Self::IndexExhausted(_) => f.write_str("IndexExhausted(..)"),
+            Self::StorageFull(_, error) => write!(f, "StorageFull(.., {error:?})"),
         }
+    }
+}
+
+impl<T, E: fmt::Display> fmt::Display for InsertError<T, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.kind(), f)
     }
 }
 
 /// Why [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key)
 /// could not insert. The map can be full before the closure runs, or the
-/// closure can refuse to make a value; this tells the two apart.
+/// closure can refuse to make a value, and this tells the two apart. `E` is
+/// the closure's error and `S` is the map's
+/// [`StorageError`](crate::StorageError).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum InsertWithError<E> {
-    /// The map had no room. The closure was never called.
-    Full(FullError),
+pub enum InsertWithError<E, S> {
+    /// The map had no room, so the closure was never called.
+    Full(FullError<S>),
 
     /// Custom error that occurred mid-insert.
     Rejected(E),
 }
 
-impl<E> InsertWithError<E> {
-    /// Folds the error into `E` when `E` can represent a full map. This
-    /// lets a caller with its own error type get that type back:
+impl<E, S> InsertWithError<E, S> {
+    /// Folds the error into `E` when `E` can represent a full map, so that
+    /// a caller with its own error type gets that type back.
+    ///
+    /// # Examples
     ///
     /// ```
     /// use gen_map::{FullError, GenMap};
+    /// use std::collections::TryReserveError;
     ///
     /// #[derive(Debug)]
     /// enum MyError {
-    ///     Full(FullError),
+    ///     Full(FullError<TryReserveError>),
     ///     Parse,
     /// }
     ///
-    /// impl From<FullError> for MyError {
-    ///     fn from(e: FullError) -> Self {
+    /// impl From<FullError<TryReserveError>> for MyError {
+    ///     fn from(e: FullError<TryReserveError>) -> Self {
     ///         MyError::Full(e)
     ///     }
     /// }
@@ -111,7 +151,7 @@ impl<E> InsertWithError<E> {
     #[inline]
     pub fn flatten(self) -> E
     where
-        E: From<FullError>,
+        E: From<FullError<S>>,
     {
         match self {
             Self::Full(full) => E::from(full),
@@ -119,7 +159,7 @@ impl<E> InsertWithError<E> {
         }
     }
 
-    /// The closure's error, if that is what this is.
+    /// Returns the closure's error, or `None` if the map was full.
     #[inline]
     pub fn rejected(self) -> Option<E> {
         match self {
@@ -135,37 +175,18 @@ impl<E> InsertWithError<E> {
     }
 }
 
-impl<E> From<FullError> for InsertWithError<E> {
+impl<E, S> From<FullError<S>> for InsertWithError<E, S> {
     #[inline]
-    fn from(full: FullError) -> Self {
+    fn from(full: FullError<S>) -> Self {
         Self::Full(full)
     }
 }
 
-impl<E: fmt::Display> fmt::Display for InsertWithError<E> {
+impl<E: fmt::Display, S: fmt::Display> fmt::Display for InsertWithError<E, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Full(full) => fmt::Display::fmt(full, f),
             Self::Rejected(error) => fmt::Display::fmt(error, f),
-        }
-    }
-}
-
-// Written by hand so that it does not demand `Debug` from `T`.
-impl<T> fmt::Debug for InsertError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::IndexExhausted(_) => f.write_str("IndexExhausted(..)"),
-            Self::StorageFull(_) => f.write_str("StorageFull(..)"),
-        }
-    }
-}
-
-impl<T> fmt::Display for InsertError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::IndexExhausted(_) => f.write_str("the index type can not address another slot"),
-            Self::StorageFull(_) => f.write_str("the storage can not hold another slot"),
         }
     }
 }
@@ -209,28 +230,6 @@ impl fmt::Display for GetDisjointMutAtError {
         match self {
             Self::NoValue => f.write_str("one of the indices has no value"),
             Self::OverlappingIndices => f.write_str("two of the indices are the same"),
-        }
-    }
-}
-
-/// Why a [`SlotStorage`](crate::SlotStorage) could not make room.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReserveError {
-    /// The storage allocates and the allocation failed. This wraps the
-    /// error `Vec::try_reserve` gives.
-    Alloc(TryReserveError),
-
-    /// The storage has a fixed capacity and the items would not fit in it.
-    CapacityExceeded,
-}
-
-impl fmt::Display for ReserveError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Alloc(error) => fmt::Display::fmt(error, f),
-            Self::CapacityExceeded => {
-                f.write_str("the storage has a fixed capacity and the items would not fit in it")
-            }
         }
     }
 }

@@ -1,4 +1,5 @@
 mod basic;
+mod capped_storage;
 mod clone;
 mod detach;
 mod disjoint;

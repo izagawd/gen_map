@@ -40,19 +40,19 @@ fn try_insert_hands_the_value_back_when_the_index_runs_out() {
 
 #[test]
 fn into_inner_takes_the_value_back() {
-    assert_eq!(InsertError::IndexExhausted(5).into_inner(), 5);
-    assert_eq!(InsertError::StorageFull("x").into_inner(), "x");
+    assert_eq!(InsertError::<_, ()>::IndexExhausted(5).into_inner(), 5);
+    assert_eq!(InsertError::StorageFull("x", ()).into_inner(), "x");
 }
 
 #[test]
 fn the_error_does_not_need_debug_from_the_value() {
     struct Opaque;
-    let text = std::format!("{:?}", InsertError::IndexExhausted(Opaque));
+    let text = std::format!("{:?}", InsertError::<_, ()>::IndexExhausted(Opaque));
     assert_eq!(text, "IndexExhausted(..)");
-    let text = std::format!("{:?}", InsertError::StorageFull(Opaque));
-    assert_eq!(text, "StorageFull(..)");
-    let text = std::format!("{}", InsertError::StorageFull(Opaque));
-    assert!(text.contains("storage"));
+    let text = std::format!("{:?}", InsertError::StorageFull(Opaque, "why"));
+    assert_eq!(text, "StorageFull(.., \"why\")");
+    let text = std::format!("{}", InsertError::StorageFull(Opaque, "why"));
+    assert!(text.contains("storage") && text.contains("why"));
 }
 
 

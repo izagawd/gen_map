@@ -1,11 +1,10 @@
 use crate::config::{Config, DefaultConfig};
 use crate::error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
-    ReserveError,
 };
 use crate::key::Key;
 use crate::key_piece::KeyPiece;
-use crate::storage::SlotStorage;
+use crate::storage::{ReserveStorage, SlotStorage};
 use core::any::type_name;
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
@@ -20,10 +19,13 @@ union SlotData<T, Idx: Copy> {
     vacant: Option<Idx>,
 }
 
-/// One entry of the backing storage. An even generation means vacant and an
-/// odd one means occupied. Insert and remove each increment the generation, so every key
-/// carries an odd generation.
-struct Slot<T, C: Config> {
+/// One entry of a map's storage, the `S` of a config's `Storage<S>`. It has
+/// no public API.
+///
+/// An even generation means vacant and an odd one means occupied. Insert
+/// and remove each increment the generation, so every key carries an odd
+/// generation.
+pub struct Slot<T, C: Config> {
     generation: C::Gen,
     data: SlotData<T, C::Idx>,
 }
@@ -136,6 +138,11 @@ unsafe fn position_of<C: Config>(idx: C::Idx) -> usize {
 /// The storage a config gives the map for its slots.
 type Slots<T, C> = <C as Config>::Storage<Slot<T, C>>;
 
+/// The error the storage of a `GenMap<T, C>` gives when it can not make room
+/// for another slot. For a `Vec` this is `TryReserveError`.
+pub type StorageError<T, C> =
+    <<C as Config>::Storage<Slot<T, C>> as SlotStorage<Slot<T, C>>>::Error;
+
 /// Where the next inserted value will go, worked out before anything is
 /// written.
 struct Target<C: Config> {
@@ -149,7 +156,7 @@ struct Target<C: Config> {
 }
 
 impl<C: Config> Target<C> {
-    /// The key the value put here will get.
+    /// The key that a value put at this target gets.
     #[inline]
     fn key(&self) -> Key<C> {
         // SAFETY: a `Target` only ever comes from `next_target`, which makes
@@ -158,31 +165,28 @@ impl<C: Config> Target<C> {
     }
 }
 
-/// Panics with the message `insert` gives for a full map. Kept out of line
-/// so the insert paths stay small.
+/// Panics with the message `insert` gives for a full map. It is kept out of
+/// line so that the insert paths stay small.
 #[cold]
 #[inline(never)]
-fn panic_full<C: Config>(full: FullError, slots_len: usize) -> ! {
+fn panic_full<T, C: Config>(full: FullError<StorageError<T, C>>, slots_len: usize) -> ! {
     match full {
         FullError::IndexExhausted => panic!(
             "GenMap is full, {} can not address more than {} slots",
             type_name::<C::Idx>(),
             slots_len
         ),
-        FullError::StorageFull => panic!(
-            "GenMap is full, its storage can not hold more than {} slots",
-            slots_len
+        FullError::StorageFull(error) => panic!(
+            "GenMap is full, its storage can not make room for more than {} slots: {:?}",
+            slots_len, error
         ),
     }
 }
 
-/// A slot that the next insert would use, reserved by
-/// [`GenMap::vacant_entry`](GenMap::vacant_entry). Nothing is written to the
-/// map until [`insert`](Self::insert) is called, so an entry can be dropped
-/// without a trace, and the key it names stays invalid until then.
-///
-/// The entry holds a mutable borrow of the map, so the map can not change
-/// between [`key`](Self::key) and [`insert`](Self::insert).
+/// The slot the next insert would use, handed out by
+/// [`GenMap::vacant_entry`](GenMap::vacant_entry). Nothing is written until
+/// [`insert`](Self::insert) is called, so dropping the entry leaves the map
+/// as it was.
 pub struct VacantEntry<'a, T, C: Config> {
     map: &'a mut GenMap<T, C>,
     target: Target<C>,
@@ -239,6 +243,36 @@ impl<T> GenMap<T> {
     }
 }
 
+/// These methods need a storage that can grow on request, so a map on a
+/// fixed capacity storage does not have them.
+impl<T, C: Config> GenMap<T, C>
+where
+    Slots<T, C>: ReserveStorage<Slot<T, C>>,
+{
+    /// Reserves room for at least `additional` more slots.
+    ///
+    /// # Panics
+    ///
+    /// Panics or aborts if the storage can not make the room, as
+    /// `Vec::reserve` does. Use [`try_reserve`](Self::try_reserve) to get an
+    /// error instead.
+    #[inline]
+    pub fn reserve(&mut self, additional: usize) {
+        self.slots.reserve(additional);
+    }
+
+    /// The fallible form of [`reserve`](Self::reserve). After `Ok`, the next
+    /// `additional` inserts can not fail for lack of storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns what the storage says when it can not make the room.
+    #[inline]
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), StorageError<T, C>> {
+        self.slots.try_reserve(additional)
+    }
+}
+
 impl<T, C: Config> GenMap<T, C> {
     /// Creates an empty map with config `C`.
     ///
@@ -275,19 +309,6 @@ impl<T, C: Config> GenMap<T, C> {
             next_free: None,
             len: 0,
         }
-    }
-
-    /// Reserves room for at least `additional` more slots. A storage with a
-    /// fixed capacity does nothing.
-    #[inline]
-    pub fn reserve(&mut self, additional: usize) {
-        self.slots.reserve(additional);
-    }
-
-    /// The fallible form of [`reserve`](Self::reserve).
-    #[inline]
-    pub fn try_reserve(&mut self, additional: usize) -> Result<(), ReserveError> {
-        self.slots.try_reserve(additional)
     }
 
     /// How many slots the storage can hold before it has to grow, or in total
@@ -394,12 +415,12 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// There must be a slot at `idx` and it must hold a value, meaning
     /// [`key_at`](Self::key_at) returns `Some` for it. A vacant or detached
-    /// slot has an even generation, so the key would carry the slot's own
-    /// even generation, and if any lookup with that key, checked or not,
-    /// that would be UB.
-    /// A retired slot has a generation of zero, and
-    /// building a key from that is undefined behavior on its own, because
-    /// the key stores the generation as `NonZero`.
+    /// slot has an even generation, so the key would carry that even
+    /// generation, and any lookup with such a key, checked or not, is
+    /// undefined behavior, because the checked lookups rely on every key
+    /// being odd. A retired slot has a generation of zero, and building a
+    /// key from that is undefined behavior on its own, because the key
+    /// stores the generation as `NonZero`.
     #[inline]
     pub unsafe fn key_at_unchecked(&self, idx: C::Idx) -> Key<C> {
         debug_assert!(self.key_at(idx).is_some());
@@ -442,8 +463,10 @@ impl<T, C: Config> GenMap<T, C> {
     /// # Safety
     ///
     /// There must be a slot at `idx` and it must hold a value, meaning
-    /// [`key_at`](Self::key_at) returns `Some` for it, otherwise the slot is
-    /// read as if it held a value, which is undefined behavior.
+    /// [`key_at`](Self::key_at) returns `Some` for it. Otherwise the slot is
+    /// read as if it held a value, which is undefined behavior, and the key
+    /// is built from an even or zero generation, so using it in any later
+    /// lookup is undefined behavior as well, as described on
     /// [`key_at_unchecked`](Self::key_at_unchecked).
     #[inline]
     pub unsafe fn get_at_unchecked(&self, idx: C::Idx) -> (Key<C>, &T) {
@@ -640,6 +663,9 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// Every key must be valid, meaning [`contains_key`](Self::contains_key)
     /// returns `true` for it, and no two keys may point at the same slot.
+    /// Otherwise a slot is read as if it held a value, or two of the
+    /// references point at the same value, either of which is undefined
+    /// behavior.
     #[inline]
     pub unsafe fn get_disjoint_mut_unchecked<const N: usize>(
         &mut self,
@@ -664,8 +690,9 @@ impl<T, C: Config> GenMap<T, C> {
     /// # Panics
     ///
     /// Panics if the map is full, meaning it has `C::Idx::MAX + 1` slots or
-    /// the storage can not hold another one, and none of the slots are free.
-    /// Use [`try_insert`](Self::try_insert) to get the value back instead.
+    /// the storage can not make room for another one, and none of the slots
+    /// are free. Use [`try_insert`](Self::try_insert) to get the value back
+    /// instead.
     #[inline]
     pub fn insert(&mut self, value: T) -> Key<C> {
         self.insert_with_key(|_| value)
@@ -678,8 +705,8 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// Returns [`InsertError::IndexExhausted`] if the map has
     /// `C::Idx::MAX + 1` slots and none of them are free, and
-    /// [`InsertError::StorageFull`] if the storage can not hold another slot
-    /// and none of them are free.
+    /// [`InsertError::StorageFull`] if none of them are free and the storage
+    /// can not make room for another one.
     ///
     /// # Examples
     ///
@@ -701,11 +728,11 @@ impl<T, C: Config> GenMap<T, C> {
     /// assert!(matches!(map.try_insert(256), Err(InsertError::IndexExhausted(256))));
     /// ```
     #[inline]
-    pub fn try_insert(&mut self, value: T) -> Result<Key<C>, InsertError<T>> {
+    pub fn try_insert(&mut self, value: T) -> Result<Key<C>, InsertError<T, StorageError<T, C>>> {
         match self.vacant_entry() {
             Ok(entry) => Ok(entry.insert(value)),
             Err(FullError::IndexExhausted) => Err(InsertError::IndexExhausted(value)),
-            Err(FullError::StorageFull) => Err(InsertError::StorageFull(value)),
+            Err(FullError::StorageFull(error)) => Err(InsertError::StorageFull(value, error)),
         }
     }
 
@@ -726,7 +753,7 @@ impl<T, C: Config> GenMap<T, C> {
         // leaves the map untouched.
         let entry = match self.vacant_entry() {
             Ok(entry) => entry,
-            Err(full) => panic_full::<C>(full, self.slots.len()),
+            Err(full) => panic_full::<T, C>(full, self.slots.len()),
         };
         let value = f(entry.key());
         entry.insert(value)
@@ -756,7 +783,10 @@ impl<T, C: Config> GenMap<T, C> {
     /// assert_eq!(result, Err(InsertWithError::Rejected("no thanks")));
     /// assert_eq!(map.len(), 1);
     /// ```
-    pub fn try_insert_with_key<F, E>(&mut self, f: F) -> Result<Key<C>, InsertWithError<E>>
+    pub fn try_insert_with_key<F, E>(
+        &mut self,
+        f: F,
+    ) -> Result<Key<C>, InsertWithError<E, StorageError<T, C>>>
     where
         F: FnOnce(Key<C>) -> Result<T, E>,
     {
@@ -765,30 +795,33 @@ impl<T, C: Config> GenMap<T, C> {
         Ok(entry.insert(value))
     }
 
-    /// Reserves the slot the next insert would use, without writing to it.
-    /// The entry tells you the key the value will get, and
-    /// [`VacantEntry::insert`] then puts the value there. Dropping the entry
-    /// instead leaves the map as it was.
+    /// Hands out the slot the next insert would use, without writing to it.
+    /// [`VacantEntry::key`] is the key the value will get and
+    /// [`VacantEntry::insert`] puts it there. Dropping the entry leaves the
+    /// map as it was.
     ///
     /// # Errors
     ///
     /// Returns [`FullError::IndexExhausted`] if the map has
     /// `C::Idx::MAX + 1` slots and none of them are free, and
-    /// [`FullError::StorageFull`] if the storage can not hold another slot
-    /// and none of them are free.
+    /// [`FullError::StorageFull`] if none of them are free and the storage
+    /// can not make room for another one. A `Vec` that can not allocate
+    /// reports the second instead of aborting the program.
     #[inline]
-    pub fn vacant_entry(&mut self) -> Result<VacantEntry<'_, T, C>, FullError> {
+    pub fn vacant_entry(&mut self) -> Result<VacantEntry<'_, T, C>, FullError<StorageError<T, C>>> {
         let target = self.next_target()?;
         Ok(VacantEntry { map: self, target })
     }
 
-    /// Works out where the next value goes without writing anything. The
-    /// generation in the result is odd.
+    /// Works out where the next value goes without writing any slot. When a
+    /// slot has to be pushed, this makes sure there is room for it, so that
+    /// the push in [`fill`](Self::fill) can not fail. The generation in the
+    /// result is odd.
     ///
     /// When both the index type and the storage are exhausted, the index is
     /// the one reported.
     #[inline]
-    fn next_target(&self) -> Result<Target<C>, FullError> {
+    fn next_target(&mut self) -> Result<Target<C>, FullError<StorageError<T, C>>> {
         let (idx, position, generation, from_free_list) = match self.next_free {
             Some(idx) => {
                 // SAFETY: `idx` is on the free list, so it was the position
@@ -801,9 +834,7 @@ impl<T, C: Config> GenMap<T, C> {
             None => {
                 let position = self.slots.len();
                 let idx = C::Idx::from_usize(position).ok_or(FullError::IndexExhausted)?;
-                if self.slots.is_full() {
-                    return Err(FullError::StorageFull);
-                }
+                self.slots.ensure_room().map_err(FullError::StorageFull)?;
                 (idx, position, C::Gen::ZERO, false)
             }
         };
@@ -847,11 +878,11 @@ impl<T, C: Config> GenMap<T, C> {
                     occupied: ManuallyDrop::new(value),
                 },
             };
-            // `next_target` saw the storage was not full, and `SlotStorage`
-            // promises `push` succeeds then, so a refusal is a broken
+            // `next_target` made room for this slot, and `SlotStorage`
+            // promises `try_push` succeeds then, so a refusal is a broken
             // storage. The slot is dropped with its value in that case.
-            if self.slots.push(slot).is_err() {
-                panic!("SlotStorage::push failed although is_full returned false");
+            if self.slots.try_push(slot).is_err() {
+                panic!("SlotStorage::try_push failed although ensure_room returned Ok");
             }
         }
         self.len += 1;
@@ -1160,8 +1191,8 @@ impl<T: fmt::Debug, C: Config> fmt::Debug for GenMap<T, C> {
 /// slots, so a refusal breaks the [`SlotStorage`] contract, and this panics.
 /// The slot is dropped with its value in that case.
 fn push_cloned<T, C: Config>(slots: &mut Slots<T, C>, slot: Slot<T, C>) {
-    if slots.push(slot).is_err() {
-        panic!("SlotStorage::push failed while cloning a storage of the same type");
+    if slots.try_push(slot).is_err() {
+        panic!("SlotStorage::try_push failed while cloning a storage of the same type");
     }
 }
 
