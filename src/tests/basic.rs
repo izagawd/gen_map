@@ -1,4 +1,5 @@
 use crate::{GenMap, Key};
+use core::num::NonZero;
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::{String, ToString};
@@ -37,8 +38,8 @@ fn insert_then_get() {
 fn first_key_is_slot_zero_generation_one() {
     let mut map = Map::new();
     let k = map.insert(());
-    assert_eq!(k.index(), 0);
-    assert_eq!(k.generation(), 1);
+    assert_eq!(k.idx, 0);
+    assert_eq!(k.generation.get(), 1);
 }
 
 #[test]
@@ -74,9 +75,9 @@ fn remove_reuses_slot_with_bumped_generation() {
     assert_eq!(map.len(), 1);
     assert_eq!(map.slots_len(), 1);
 
-    assert_eq!(k1.index(), k2.index());
-    assert_ne!(k1.generation(), k2.generation());
-    assert_eq!(k2.generation(), k1.generation() + 2);
+    assert_eq!(k1.idx, k2.idx);
+    assert_ne!(k1.generation.get(), k2.generation.get());
+    assert_eq!(k2.generation.get(), k1.generation.get() + 2);
     assert!(map.get(k1).is_none());
 }
 
@@ -92,8 +93,8 @@ fn free_list_is_last_in_first_out() {
 
     let d = map.insert("d");
     let e = map.insert("e");
-    assert_eq!(d.index(), c.index());
-    assert_eq!(e.index(), a.index());
+    assert_eq!(d.idx, c.idx);
+    assert_eq!(e.idx, a.idx);
     assert_eq!(map[b], "b");
     assert_eq!(map[d], "d");
     assert_eq!(map[e], "e");
@@ -117,12 +118,12 @@ fn remove_then_mass_insert_keeps_old_key_invalid() {
 fn remove_with_bogus_key_returns_none() {
     let mut map = Map::new();
 
-    let bogus: Key = Key::from_parts(999_999, 41).unwrap();
+    let bogus: Key = Key { idx: 999_999, generation: NonZero::new(41).unwrap() };
     assert!(map.remove(bogus).is_none());
     assert!(map.get(bogus).is_none());
 
     let k = map.insert(1);
-    let wrong_generation = Key::from_parts(k.index(), k.generation() + 2).unwrap();
+    let wrong_generation = Key { idx: k.idx, generation: k.generation.checked_add(2).unwrap() };
     assert!(map.remove(wrong_generation).is_none());
     assert_eq!(map.len(), 1);
     assert_eq!(map[k], 1);
@@ -144,7 +145,7 @@ fn len_tracks_insert_remove_and_clear() {
     assert!(map.remove(k1).is_none());
     assert_eq!(map.len(), 1);
 
-    let stale = Key::from_parts(k2.index(), k2.generation() + 2).unwrap();
+    let stale = Key { idx: k2.idx, generation: k2.generation.checked_add(2).unwrap() };
     assert!(map.remove(stale).is_none());
     assert_eq!(map.len(), 1);
 
@@ -217,7 +218,7 @@ fn insert_and_insert_with_key_agree() {
     let k2 = map.insert_with_key(|_| "Y".to_string());
     assert_eq!(map[k1], "X");
     assert_eq!(map[k2], "Y");
-    assert_ne!(k1.index(), k2.index());
+    assert_ne!(k1.idx, k2.idx);
 }
 
 #[test]
@@ -238,8 +239,8 @@ fn try_insert_with_key_err_leaves_map_untouched_on_fresh_slot() {
     assert_eq!(map.slots_len(), 0);
 
     let k = map.insert(123);
-    assert_eq!(k.index(), 0);
-    assert_eq!(k.generation(), 1);
+    assert_eq!(k.idx, 0);
+    assert_eq!(k.generation.get(), 1);
     assert_eq!(map[k], 123);
 }
 
@@ -255,8 +256,8 @@ fn try_insert_with_key_err_leaves_map_untouched_on_reused_slot() {
     assert_eq!(map.slots_len(), 1);
 
     let k2 = map.try_insert_with_key(|_| Ok::<_, ()>(99)).unwrap();
-    assert_eq!(k2.index(), k1.index());
-    assert_ne!(k2.generation(), k1.generation());
+    assert_eq!(k2.idx, k1.idx);
+    assert_ne!(k2.generation.get(), k1.generation.get());
     assert_eq!(map[k2], 99);
     assert!(map.get(k1).is_none());
 }
@@ -286,7 +287,7 @@ fn panic_inside_insert_with_key_leaves_map_untouched() {
     assert_eq!(map.slots_len(), 0);
 
     let k = map.insert(123);
-    assert_eq!(k.index(), 0);
+    assert_eq!(k.idx, 0);
     assert_eq!(map[k], 123);
     assert_eq!(map.len(), 1);
 }
@@ -304,7 +305,7 @@ fn panic_inside_insert_with_key_keeps_freed_slot_on_free_list() {
     assert_eq!(map.len(), 0);
 
     let k2 = map.insert(2);
-    assert_eq!(k2.index(), k1.index());
+    assert_eq!(k2.idx, k1.idx);
     assert_eq!(map.slots_len(), 1);
 }
 
@@ -366,5 +367,5 @@ fn debug_output_lists_entries() {
     let k = map.insert(5);
     let text = std::format!("{map:?}");
     assert!(text.contains("5"));
-    assert!(text.contains(&std::format!("{}", k.index())));
+    assert!(text.contains(&std::format!("{}", k.idx)));
 }

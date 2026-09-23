@@ -75,8 +75,8 @@ fn clone_preserves_free_list_and_generations() {
     let from_map = map.insert(99);
     let from_clone = clone.insert(99);
     assert_eq!(from_map, from_clone);
-    assert_eq!(from_map.index(), k2.index());
-    assert_ne!(from_map.generation(), k2.generation());
+    assert_eq!(from_map.idx, k2.idx);
+    assert_ne!(from_map.generation.get(), k2.generation.get());
 
     assert_eq!(clone[k1], 10);
     assert_eq!(clone[k3], 30);
@@ -91,8 +91,8 @@ fn clone_preserves_free_list_order() {
     map.remove(keys[0]);
 
     let mut clone = map.clone();
-    let expected: Vec<_> = (0..3).map(|_| map.insert(0).index()).collect();
-    let got: Vec<_> = (0..3).map(|_| clone.insert(0).index()).collect();
+    let expected: Vec<_> = (0..3).map(|_| map.insert(0).idx).collect();
+    let got: Vec<_> = (0..3).map(|_| clone.insert(0).idx).collect();
     assert_eq!(expected, got);
     assert_eq!(expected, [0, 3, 1]);
 }
@@ -215,6 +215,6 @@ fn clone_from_leaves_an_empty_map_if_a_value_panics_while_cloning() {
     assert_eq!(target.slots_len(), 0);
     assert_eq!(target.iter().count(), 0);
     let k = target.insert(PanicsOnClone(7));
-    assert_eq!(k.index(), 0);
-    assert_eq!(k.generation(), 1);
+    assert_eq!(k.idx, 0);
+    assert_eq!(k.generation.get(), 1);
 }

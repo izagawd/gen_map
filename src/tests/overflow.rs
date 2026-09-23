@@ -35,7 +35,7 @@ fn stale_key_stays_dead_after_slot_retires() {
     let last_key = loop {
         value = map.len() as u32;
         let key = map.insert(value);
-        if key.generation() == u8::MAX {
+        if key.generation.get() == u8::MAX {
             break key;
         }
         assert_eq!(map.remove(key), Some(value));
@@ -56,24 +56,24 @@ fn retired_slot_is_never_reused() {
     let mut map = GenMap::<u32, Retire>::new_with_config();
 
     let first = map.insert(1000);
-    assert_eq!(first.index(), 0);
-    assert_eq!(first.generation(), 1);
+    assert_eq!(first.idx, 0);
+    assert_eq!(first.generation.get(), 1);
 
     let mut last = first;
     loop {
-        let generation = last.generation();
+        let generation = last.generation.get();
         map.remove(last);
         if generation == u8::MAX {
             break;
         }
         last = map.insert(0);
-        assert_eq!(last.index(), 0);
+        assert_eq!(last.idx, 0);
     }
     assert_eq!(map.slots_len(), 1);
 
     let after = map.insert(2222);
-    assert_eq!(after.index(), 1);
-    assert_eq!(after.generation(), 1);
+    assert_eq!(after.idx, 1);
+    assert_eq!(after.generation.get(), 1);
     assert_eq!(map.slots_len(), 2);
     assert!(map.get(first).is_none());
     assert_eq!(map.len(), 1);
@@ -85,13 +85,13 @@ fn wrap_config_reuses_slot_and_reissues_key_values() {
     let mut map = GenMap::<u32, Wrap>::new_with_config();
 
     let first = map.insert(1000);
-    assert_eq!(first.index(), 0);
-    assert_eq!(first.generation(), 1);
+    assert_eq!(first.idx, 0);
+    assert_eq!(first.generation.get(), 1);
 
     let mut last = first;
     let mut expected = 1000;
     loop {
-        let generation = last.generation();
+        let generation = last.generation.get();
         assert_eq!(map.remove(last), Some(expected));
         assert_eq!(map.slots_len(), 1);
         if generation == u8::MAX {
@@ -99,7 +99,7 @@ fn wrap_config_reuses_slot_and_reissues_key_values() {
         }
         last = map.insert(7);
         expected = 7;
-        assert_eq!(last.index(), 0);
+        assert_eq!(last.idx, 0);
     }
 
     let revived = map.insert(2222);
@@ -117,7 +117,7 @@ fn retired_slots_survive_clear_and_clone() {
 
     let mut last = map.insert(0);
     loop {
-        let generation = last.generation();
+        let generation = last.generation.get();
         map.remove(last);
         if generation == u8::MAX {
             break;
@@ -126,7 +126,7 @@ fn retired_slots_survive_clear_and_clone() {
     }
 
     let live = map.insert(5);
-    assert_eq!(live.index(), 1);
+    assert_eq!(live.idx, 1);
 
     let clone = map.clone();
     assert_eq!(clone[live], 5);
@@ -135,7 +135,7 @@ fn retired_slots_survive_clear_and_clone() {
 
     map.clear();
     let next = map.insert(6);
-    assert_eq!(next.index(), 1, "clear must not revive a retired slot");
+    assert_eq!(next.idx, 1, "clear must not revive a retired slot");
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn map_holds_exactly_idx_max_plus_one_slots() {
     let mut map = GenMap::<u16, Retire>::new_with_config();
     for i in 0..256u16 {
         let key = map.insert(i);
-        assert_eq!(key.index() as u16, i);
+        assert_eq!(key.idx as u16, i);
     }
     assert_eq!(map.len(), 256);
     assert_eq!(map.slots_len(), 256);
@@ -164,6 +164,6 @@ fn full_map_still_accepts_inserts_after_a_remove() {
     let keys: std::vec::Vec<_> = (0..256u16).map(|i| map.insert(i)).collect();
     map.remove(keys[100]);
     let key = map.insert(1234);
-    assert_eq!(key.index(), 100);
+    assert_eq!(key.idx, 100);
     assert_eq!(map[key], 1234);
 }

@@ -224,8 +224,8 @@ impl<T, C: Config> GenMap<T, C> {
     /// Returns a reference to the value corresponding to `key`.
     #[inline]
     pub fn get(&self, key: KeyOf<C>) -> Option<&T> {
-        let slot = self.slots.get(key.index().into_usize()?)?;
-        if slot.generation != key.generation() {
+        let slot = self.slots.get(key.idx.into_usize()?)?;
+        if slot.generation != C::Gen::from_non_zero(key.generation) {
             return None;
         }
         // SAFETY: a key's generation is always odd, so a matching slot is
@@ -236,8 +236,8 @@ impl<T, C: Config> GenMap<T, C> {
     /// Returns a mutable reference to the value corresponding to `key`.
     #[inline]
     pub fn get_mut(&mut self, key: KeyOf<C>) -> Option<&mut T> {
-        let slot = self.slots.get_mut(key.index().into_usize()?)?;
-        if slot.generation != key.generation() {
+        let slot = self.slots.get_mut(key.idx.into_usize()?)?;
+        if slot.generation != C::Gen::from_non_zero(key.generation) {
             return None;
         }
         // SAFETY: a key's generation is always odd, so a matching slot is
@@ -255,7 +255,7 @@ impl<T, C: Config> GenMap<T, C> {
     pub unsafe fn get_unchecked(&self, key: KeyOf<C>) -> &T {
         debug_assert!(self.contains_key(key));
         self.slots
-            .get_unchecked(key.index().into_usize().unwrap_unchecked())
+            .get_unchecked(key.idx.into_usize().unwrap_unchecked())
             .value()
     }
 
@@ -269,7 +269,7 @@ impl<T, C: Config> GenMap<T, C> {
     pub unsafe fn get_unchecked_mut(&mut self, key: KeyOf<C>) -> &mut T {
         debug_assert!(self.contains_key(key));
         self.slots
-            .get_unchecked_mut(key.index().into_usize().unwrap_unchecked())
+            .get_unchecked_mut(key.idx.into_usize().unwrap_unchecked())
             .value_mut()
     }
 
@@ -367,14 +367,14 @@ impl<T, C: Config> GenMap<T, C> {
     /// key is invalid.
     #[inline]
     pub fn remove(&mut self, key: KeyOf<C>) -> Option<T> {
-        let position = key.index().into_usize()?;
+        let position = key.idx.into_usize()?;
         let slot = self.slots.get(position)?;
-        if slot.generation != key.generation() {
+        if slot.generation != C::Gen::from_non_zero(key.generation) {
             return None;
         }
         // SAFETY: a key's generation is always odd, so a matching slot is
         // occupied.
-        Some(unsafe { self.take(key.index(), position) })
+        Some(unsafe { self.take(key.idx, position) })
     }
 
     /// Moves the value out of the slot at `position` and frees it, or retires

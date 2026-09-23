@@ -69,8 +69,8 @@ fn drain_frees_slots_for_reuse() {
     let _: Vec<_> = map.drain().collect();
 
     let k2 = map.insert(200);
-    assert_eq!(k2.index(), k1.index());
-    assert_ne!(k2.generation(), k1.generation());
+    assert_eq!(k2.idx, k1.idx);
+    assert_ne!(k2.generation.get(), k1.generation.get());
     assert_eq!(map[k2], 200);
     assert_eq!(map.len(), 1);
     assert_eq!(map.slots_len(), 1);

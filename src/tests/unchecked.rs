@@ -39,7 +39,7 @@ fn get_unchecked_after_remove_and_reinsert() {
 
     map.remove(k1);
     let k3 = map.insert(300);
-    assert_eq!(k3.index(), k1.index());
+    assert_eq!(k3.idx, k1.idx);
 
     unsafe {
         assert_eq!(*map.get_unchecked(k2), 200);

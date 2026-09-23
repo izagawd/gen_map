@@ -60,8 +60,8 @@ fn retain_frees_slots_for_reuse_with_bumped_generation() {
     assert_eq!(map.len(), 0);
 
     let k2 = map.insert(99);
-    assert_eq!(k2.index(), k1.index());
-    assert_ne!(k2.generation(), k1.generation());
+    assert_eq!(k2.idx, k1.idx);
+    assert_ne!(k2.generation.get(), k1.generation.get());
     assert_eq!(map[k2], 99);
 }
 

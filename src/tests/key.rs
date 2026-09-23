@@ -1,5 +1,6 @@
 use crate::{Config, DefaultConfig, GenMap, Key, KeyOf};
 use core::mem::size_of;
+use core::num::NonZero;
 
 #[test]
 fn default_key_matches_default_config() {
@@ -28,34 +29,10 @@ fn option_of_key_costs_nothing_extra() {
 }
 
 #[test]
-fn from_parts_round_trips_a_real_key() {
-    let mut map = GenMap::new();
-    let k = map.insert("v");
-    let rebuilt = Key::from_parts(k.index(), k.generation()).unwrap();
-    assert_eq!(rebuilt, k);
-    assert_eq!(map[rebuilt], "v");
-}
-
-#[test]
-fn from_parts_rejects_even_generations() {
-    assert!(Key::<u32, u32>::from_parts(0, 0).is_none());
-    assert!(Key::<u32, u32>::from_parts(0, 2).is_none());
-    assert!(Key::<u32, u32>::from_parts(3, 1).is_some());
-    assert!(Key::<u8, u8>::from_parts(3, u8::MAX).is_some());
-}
-
-#[test]
-fn key_accessors_return_the_parts() {
-    let k = Key::<u16, u16>::from_parts(5, 9).unwrap();
-    assert_eq!(k.index(), 5);
-    assert_eq!(k.generation(), 9);
-}
-
-#[test]
 fn keys_are_ordered_by_index_then_generation() {
-    let a = Key::<u32, u32>::from_parts(1, 3).unwrap();
-    let b = Key::<u32, u32>::from_parts(1, 5).unwrap();
-    let c = Key::<u32, u32>::from_parts(2, 1).unwrap();
+    let a = Key::<u32, u32> { idx: 1, generation: NonZero::new(3).unwrap() };
+    let b = Key::<u32, u32> { idx: 1, generation: NonZero::new(5).unwrap() };
+    let c = Key::<u32, u32> { idx: 2, generation: NonZero::new(1).unwrap() };
     assert!(a < b);
     assert!(b < c);
     let mut sorted = [c, b, a];
@@ -65,7 +42,7 @@ fn keys_are_ordered_by_index_then_generation() {
 
 #[test]
 fn key_debug_prints_both_parts() {
-    let k = Key::<u32, u32>::from_parts(4, 7).unwrap();
+    let k = Key::<u32, u32> { idx: 4, generation: NonZero::new(7).unwrap() };
     let text = std::format!("{k:?}");
     assert!(text.contains("idx: 4"));
     assert!(text.contains("generation: 7"));
@@ -92,8 +69,8 @@ fn every_integer_type_works_as_a_config() {
     let mut wide = GenMap::<i32, Wide>::default();
     let k = wide.insert(2);
     assert_eq!(wide[k], 2);
-    assert_eq!(k.index(), 0u128);
-    assert_eq!(k.generation(), 1usize);
+    assert_eq!(k.idx, 0u128);
+    assert_eq!(k.generation.get(), 1usize);
 }
 
 #[test]
@@ -115,8 +92,8 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     let mut map = GenMap::<i32, Wide>::new_with_config();
     let k = map.insert(1);
     // Same low bits as `k`, so a truncating conversion would land on its slot.
-    let too_wide = (1u128 << 64) | k.index();
-    let bogus = Key::<u128, u32>::from_parts(too_wide, k.generation()).unwrap();
+    let too_wide = (1u128 << 64) | k.idx;
+    let bogus = Key::<u128, u32> { idx: too_wide, generation: k.generation };
 
     assert!(map.get(bogus).is_none());
     assert!(map.get_mut(bogus).is_none());

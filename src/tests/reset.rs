@@ -34,14 +34,14 @@ fn reset_starts_keys_over() {
     let k = map.insert(1);
     map.remove(k);
     let k2 = map.insert(2);
-    assert_eq!(k2.generation(), 3);
+    assert_eq!(k2.generation.get(), 3);
 
     map.reset();
     assert!(map.get(k2).is_none());
 
     let k3 = map.insert(999);
-    assert_eq!(k3.index(), 0);
-    assert_eq!(k3.generation(), 1);
+    assert_eq!(k3.idx, 0);
+    assert_eq!(k3.generation.get(), 1);
     assert_eq!(k3, k);
     // The key handed out before the reset now finds the new value, which is
     // the hazard the docs warn about.
