@@ -1,4 +1,5 @@
 use crate::GenMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 #[test]
 fn reset_empties_the_map_and_drops_every_slot() {
@@ -77,4 +78,33 @@ fn reset_drops_values() {
     tracker.assert_none_dropped();
     map.reset();
     tracker.assert_all_dropped_exactly_once(4);
+}
+
+#[test]
+fn reset_stays_consistent_when_a_drop_panics() {
+    struct Bomb(bool);
+    impl Drop for Bomb {
+        fn drop(&mut self) {
+            if self.0 && !std::thread::panicking() {
+                panic!("boom");
+            }
+        }
+    }
+
+    let mut map = GenMap::new();
+    map.insert(Bomb(true));
+    map.insert(Bomb(false));
+    let vacant = map.insert(Bomb(false));
+    // Leaves a slot on the free list, which the reset must forget.
+    assert!(map.remove(vacant).is_some());
+
+    assert!(catch_unwind(AssertUnwindSafe(|| map.reset())).is_err());
+
+    // The map must look empty, not half reset, so the free list can not
+    // point at slots that no longer exist.
+    assert!(map.is_empty());
+    assert_eq!(map.slots_len(), 0);
+    let k = map.insert(Bomb(false));
+    assert!(map.contains_key(k));
+    assert_eq!(map.slots_len(), 1);
 }

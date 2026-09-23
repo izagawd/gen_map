@@ -436,9 +436,13 @@ impl<T, C: Config> GenMap<T, C> {
     /// key from before the call match a value inserted after it.
     #[inline]
     pub fn reset(&mut self) {
-        self.slots.clear();
+        // Reset the bookkeeping first. If a value's `drop` panics inside
+        // `clear`, the `Vec` is already empty, and a free list or `len` that
+        // still described the old slots would let the next insert read past
+        // it.
         self.next_free = None;
         self.len = 0;
+        self.slots.clear();
     }
 
     /// Keeps only the values for which `f` returns `true`. `f` may mutate
