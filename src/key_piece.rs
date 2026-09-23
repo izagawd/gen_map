@@ -14,7 +14,8 @@ use core::num::NonZero;
 /// [`into_non_zero`](Self::into_non_zero) must return `Some` for every value
 /// except [`ZERO`](Self::ZERO), and [`from_usize`](Self::from_usize) and
 /// [`into_usize`](Self::into_usize) must return `None` for a value that does
-/// not fit.
+/// not fit and round-trip otherwise, and the largest value must be odd: the
+/// map relies on all of this without checking.
 pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static {
     /// The `NonZero` form of this integer. A key stores its generation in
     /// this form, which makes `Option<Key>` the same size as `Key`.

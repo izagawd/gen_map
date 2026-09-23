@@ -299,7 +299,8 @@ impl<T, C: Config> GenMap<T, C> {
     }
 
     /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail. On
-    /// `Err` nothing is inserted.
+    /// `Err` nothing is inserted, and the key `f` was given stays invalid
+    /// until a later insert hands it out again.
     ///
     /// # Panics
     ///
