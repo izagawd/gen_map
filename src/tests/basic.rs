@@ -1,4 +1,4 @@
-use crate::{GenMap, Key};
+use crate::{GenMap, InsertWithError, Key};
 use core::num::NonZero;
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -243,7 +243,7 @@ fn try_insert_with_key_err_leaves_map_untouched_on_fresh_slot() {
     let mut map: Map<i32> = Map::new();
 
     let res = map.try_insert_with_key(|_| Err::<i32, _>("nope"));
-    assert_eq!(res, Err("nope"));
+    assert_eq!(res, Err(InsertWithError::Rejected("nope")));
     assert_eq!(map.len(), 0);
     assert_eq!(map.slots_len(), 0);
 

@@ -53,11 +53,14 @@ mod map;
 mod storage;
 
 pub use config::{Config, DefaultConfig};
-pub use error::{GetDisjointMutAtError, GetDisjointMutError, InsertError, ReserveError};
+pub use error::{
+    FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
+    ReserveError,
+};
 pub use key::Key;
 pub use key_piece::KeyPiece;
-pub use map::{Drain, GenMap, IntoIter, Iter, IterMut, Keys, Values, ValuesMut};
-pub use storage::{SlotStorage};
+pub use map::{Drain, GenMap, IntoIter, Iter, IterMut, Keys, VacantEntry, Values, ValuesMut};
+pub use storage::SlotStorage;
 
 #[cfg(test)]
 mod tests;

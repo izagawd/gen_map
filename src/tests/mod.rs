@@ -13,6 +13,7 @@ mod reset;
 mod retain;
 mod try_insert;
 mod unchecked;
+mod vacant_entry;
 
 use crate::{Config, KeyPiece};
 use core::marker::PhantomData;

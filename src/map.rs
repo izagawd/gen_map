@@ -1,5 +1,8 @@
 use crate::config::{Config, DefaultConfig};
-use crate::error::{GetDisjointMutAtError, GetDisjointMutError, InsertError, ReserveError};
+use crate::error::{
+    FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
+    ReserveError,
+};
 use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use crate::storage::SlotStorage;
@@ -145,12 +148,68 @@ struct Target<C: Config> {
     from_free_list: bool,
 }
 
-/// Why there is nowhere to put a new value.
-enum Full {
-    /// The next position does not fit in `C::Idx`.
-    Index,
-    /// The storage refuses to grow.
-    Storage,
+impl<C: Config> Target<C> {
+    /// The key the value put here will get.
+    #[inline]
+    fn key(&self) -> Key<C> {
+        // SAFETY: a `Target` only ever comes from `next_target`, which makes
+        // the generation odd, so it is not zero.
+        unsafe { Key::<C>::from_raw_parts(self.idx, self.generation.into_non_zero_unchecked()) }
+    }
+}
+
+/// Panics with the message `insert` gives for a full map. Kept out of line
+/// so the insert paths stay small.
+#[cold]
+#[inline(never)]
+fn panic_full<C: Config>(full: FullError, slots_len: usize) -> ! {
+    match full {
+        FullError::IndexExhausted => panic!(
+            "GenMap is full, {} can not address more than {} slots",
+            type_name::<C::Idx>(),
+            slots_len
+        ),
+        FullError::StorageFull => panic!(
+            "GenMap is full, its storage can not hold more than {} slots",
+            slots_len
+        ),
+    }
+}
+
+/// A slot that the next insert would use, reserved by
+/// [`GenMap::vacant_entry`](GenMap::vacant_entry). Nothing is written to the
+/// map until [`insert`](Self::insert) is called, so an entry can be dropped
+/// without a trace, and the key it names stays invalid until then.
+///
+/// The entry holds a mutable borrow of the map, so the map can not change
+/// between [`key`](Self::key) and [`insert`](Self::insert).
+pub struct VacantEntry<'a, T, C: Config> {
+    map: &'a mut GenMap<T, C>,
+    target: Target<C>,
+}
+
+impl<'a, T, C: Config> VacantEntry<'a, T, C> {
+    /// The key the value will get. It is invalid until
+    /// [`insert`](Self::insert) is called.
+    #[inline]
+    pub fn key(&self) -> Key<C> {
+        self.target.key()
+    }
+
+    /// Puts `value` in the slot and returns its key, which is the one
+    /// [`key`](Self::key) gave.
+    #[inline]
+    pub fn insert(self, value: T) -> Key<C> {
+        // SAFETY: `target` came from `next_target`, and this entry has held
+        // `&mut` on the map since, so nothing has touched it.
+        unsafe { self.map.fill(self.target, value) }
+    }
+}
+
+impl<T, C: Config> fmt::Debug for VacantEntry<'_, T, C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VacantEntry").field("key", &self.key()).finish()
+    }
 }
 
 /// A generational map whose key is configured by `C`.
@@ -643,14 +702,11 @@ impl<T, C: Config> GenMap<T, C> {
     /// ```
     #[inline]
     pub fn try_insert(&mut self, value: T) -> Result<Key<C>, InsertError<T>> {
-        let target = match self.next_target() {
-            Ok(target) => target,
-            Err(Full::Index) => return Err(InsertError::IndexExhausted(value)),
-            Err(Full::Storage) => return Err(InsertError::StorageFull(value)),
-        };
-        // SAFETY: `target` was just worked out and nothing has touched the
-        // map since.
-        Ok(unsafe { self.fill(target, value) })
+        match self.vacant_entry() {
+            Ok(entry) => Ok(entry.insert(value)),
+            Err(FullError::IndexExhausted) => Err(InsertError::IndexExhausted(value)),
+            Err(FullError::StorageFull) => Err(InsertError::StorageFull(value)),
+        }
     }
 
     /// Inserts the value returned by `f`, which is given the value's key.
@@ -659,49 +715,71 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// Panics if the map is full, meaning it has `C::Idx::MAX + 1` slots or
     /// the storage can not hold another one, and none of the slots are free.
+    /// Use [`try_insert_with_key`](Self::try_insert_with_key) or
+    /// [`vacant_entry`](Self::vacant_entry) to get an error instead.
     #[inline]
     pub fn insert_with_key<F>(&mut self, f: F) -> Key<C>
     where
         F: FnOnce(Key<C>) -> T,
     {
-        // `Infallible` has no values, so the `Err` arm can never run and the
-        // empty match on it is complete.
-        unsafe{ self.try_insert_with_key(|key| Ok::<T, core::convert::Infallible>(f(key))).unwrap_unchecked() }
+        // Nothing is written until `f` has returned, so a panicking `f`
+        // leaves the map untouched.
+        let entry = match self.vacant_entry() {
+            Ok(entry) => entry,
+            Err(full) => panic_full::<C>(full, self.slots.len()),
+        };
+        let value = f(entry.key());
+        entry.insert(value)
     }
 
-    /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail. On
-    /// `Err` nothing is inserted, and the key `f` was given stays invalid
-    /// until a later insert hands it out again.
+    /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail and
+    /// a full map is an error rather than a panic. On either error nothing
+    /// is inserted, and the key `f` was given stays invalid until a later
+    /// insert hands it out again.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the map is full, meaning it has `C::Idx::MAX + 1` slots or
-    /// the storage can not hold another one, and none of the slots are free.
-    pub fn try_insert_with_key<F, E>(&mut self, f: F) -> Result<Key<C>, E>
+    /// Returns [`InsertWithError::Full`] if the map is full. `f` is not
+    /// called in that case. Returns [`InsertWithError::Rejected`] with
+    /// whatever `f` returned if `f` fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{GenMap, InsertWithError};
+    ///
+    /// let mut map = GenMap::new();
+    /// let key = map.try_insert_with_key(|key| Ok::<_, ()>(key)).unwrap();
+    /// assert_eq!(map[key], key);
+    ///
+    /// let result = map.try_insert_with_key(|_| Err::<_, &str>("no thanks"));
+    /// assert_eq!(result, Err(InsertWithError::Rejected("no thanks")));
+    /// assert_eq!(map.len(), 1);
+    /// ```
+    pub fn try_insert_with_key<F, E>(&mut self, f: F) -> Result<Key<C>, InsertWithError<E>>
     where
         F: FnOnce(Key<C>) -> Result<T, E>,
     {
-        // Nothing is written until `f` has succeeded, so a failing or
-        // panicking `f` leaves the map untouched.
-        let target = match self.next_target() {
-            Ok(target) => target,
-            Err(Full::Index) => panic!(
-                "GenMap is full, {} can not address more than {} slots",
-                type_name::<C::Idx>(),
-                self.slots.len()
-            ),
-            Err(Full::Storage) => panic!(
-                "GenMap is full, its storage can not hold more than {} slots",
-                self.slots.len()
-            ),
-        };
-        // SAFETY: `generation` is odd, as `next_target` promises.
-        let key = unsafe { Key::<C>::from_raw_parts(target.idx, target.generation.into_non_zero_unchecked()) };
-        let value = f(key)?;
-        // SAFETY: `f` holds no reference to the map, so nothing has touched
-        // it since `target` was worked out.
-        unsafe { self.fill(target, value) };
-        Ok(key)
+        let entry = self.vacant_entry()?;
+        let value = f(entry.key()).map_err(InsertWithError::Rejected)?;
+        Ok(entry.insert(value))
+    }
+
+    /// Reserves the slot the next insert would use, without writing to it.
+    /// The entry tells you the key the value will get, and
+    /// [`VacantEntry::insert`] then puts the value there. Dropping the entry
+    /// instead leaves the map as it was.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FullError::IndexExhausted`] if the map has
+    /// `C::Idx::MAX + 1` slots and none of them are free, and
+    /// [`FullError::StorageFull`] if the storage can not hold another slot
+    /// and none of them are free.
+    #[inline]
+    pub fn vacant_entry(&mut self) -> Result<VacantEntry<'_, T, C>, FullError> {
+        let target = self.next_target()?;
+        Ok(VacantEntry { map: self, target })
     }
 
     /// Works out where the next value goes without writing anything. The
@@ -710,7 +788,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// When both the index type and the storage are exhausted, the index is
     /// the one reported.
     #[inline]
-    fn next_target(&self) -> Result<Target<C>, Full> {
+    fn next_target(&self) -> Result<Target<C>, FullError> {
         let (idx, position, generation, from_free_list) = match self.next_free {
             Some(idx) => {
                 // SAFETY: `idx` is on the free list, so it was the position
@@ -722,9 +800,9 @@ impl<T, C: Config> GenMap<T, C> {
             }
             None => {
                 let position = self.slots.len();
-                let idx = C::Idx::from_usize(position).ok_or(Full::Index)?;
+                let idx = C::Idx::from_usize(position).ok_or(FullError::IndexExhausted)?;
                 if self.slots.is_full() {
-                    return Err(Full::Storage);
+                    return Err(FullError::StorageFull);
                 }
                 (idx, position, C::Gen::ZERO, false)
             }
@@ -752,8 +830,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// nothing having touched the map since.
     #[inline]
     unsafe fn fill(&mut self, target: Target<C>, value: T) -> Key<C> {
-        // SAFETY: `next_target` made the generation odd.
-        let key = unsafe { Key::<C>::from_raw_parts(target.idx, target.generation.into_non_zero_unchecked()) };
+        let key = target.key();
         if target.from_free_list {
             // SAFETY: `position` was in bounds when `next_target` looked, and
             // nothing has changed since.
