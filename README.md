@@ -1,10 +1,7 @@
 # gen_map
 
-A generational map. `insert` returns a `Key`, and removing the value
-invalidates it, so a stale key gives `None` instead of whatever moved into its
-slot later. Insert, remove and lookup are O(1). The integers inside the key are
-configurable, so a key can be as small as two bytes. The crate is `no_std`
-with `alloc`, has no dependencies, and needs Rust 1.85 or later.
+A customizable generational map that returns a `Key` upon inserting a value. The key can be used to later access or remove the value, and removing a value bumps its slot's generation, so the old key no longer matches.
+The operations for inserting, removing and accessing a value are all O(1).
 
 ```toml
 [dependencies]
