@@ -1,10 +1,4 @@
 //! A generational map with a configurable key.
-//!
-//! [`GenMap`] hands out a [`Key`] for every inserted value. Removing the value
-//! invalidates the key, so a stale key returns `None` instead of whatever
-//! moved into its slot later. A [`Config`] picks the integer types the key is
-//! made of and what happens when a slot's generation overflows.
-//!
 //! # Examples
 //!
 //! ```
