@@ -31,8 +31,7 @@ fn option_of_key_costs_nothing_extra() {
 fn from_parts_round_trips_a_real_key() {
     let mut map = GenMap::new();
     let k = map.insert("v");
-    let (idx, generation) = k.into_parts();
-    let rebuilt = Key::from_parts(idx, generation).unwrap();
+    let rebuilt = Key::from_parts(k.index(), k.generation()).unwrap();
     assert_eq!(rebuilt, k);
     assert_eq!(map[rebuilt], "v");
 }
@@ -46,12 +45,10 @@ fn from_parts_rejects_even_generations() {
 }
 
 #[test]
-fn key_accessors_agree_with_into_parts() {
+fn key_accessors_return_the_parts() {
     let k = Key::<u16, u16>::from_parts(5, 9).unwrap();
     assert_eq!(k.index(), 5);
     assert_eq!(k.generation(), 9);
-    assert_eq!(k.generation_non_zero().get(), 9);
-    assert_eq!(k.into_parts(), (5, 9));
 }
 
 #[test]
@@ -117,17 +114,13 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
 
     let mut map = GenMap::<i32, Wide>::new_with_config();
     let k = map.insert(1);
-    let (idx, generation) = k.into_parts();
-
     // Same low bits as `k`, so a truncating conversion would land on its slot.
-    let too_wide = (1u128 << 64) | idx;
-    let bogus = Key::<u128, u32>::from_parts(too_wide, generation).unwrap();
+    let too_wide = (1u128 << 64) | k.index();
+    let bogus = Key::<u128, u32>::from_parts(too_wide, k.generation()).unwrap();
 
     assert!(map.get(bogus).is_none());
     assert!(map.get_mut(bogus).is_none());
     assert!(!map.contains_key(bogus));
-    assert!(map.get_by_index_only(too_wide).is_none());
-    assert!(map.get_by_index_only_mut(too_wide).is_none());
     assert!(map.remove(bogus).is_none());
     assert_eq!(map.len(), 1);
     assert_eq!(map[k], 1);

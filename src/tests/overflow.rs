@@ -76,7 +76,8 @@ fn retired_slot_is_never_reused() {
     assert_eq!(after.generation(), 1);
     assert_eq!(map.slots_len(), 2);
     assert!(map.get(first).is_none());
-    assert!(map.get_by_index_only(0).is_none());
+    assert_eq!(map.len(), 1);
+    assert!(map.keys().eq([after]));
 }
 
 #[test]
@@ -129,7 +130,8 @@ fn retired_slots_survive_clear_and_clone() {
 
     let clone = map.clone();
     assert_eq!(clone[live], 5);
-    assert!(clone.get_by_index_only(0).is_none());
+    assert_eq!(clone.len(), 1);
+    assert!(clone.keys().eq([live]));
 
     map.clear();
     let next = map.insert(6);

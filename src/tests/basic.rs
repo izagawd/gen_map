@@ -309,31 +309,6 @@ fn panic_inside_insert_with_key_keeps_freed_slot_on_free_list() {
 }
 
 #[test]
-fn get_by_index_only_round_trips_key() {
-    let mut map = Map::new();
-    let k = map.insert(777);
-
-    let (k2, v) = map.get_by_index_only(k.index()).unwrap();
-    assert_eq!(k2, k);
-    assert_eq!(*v, 777);
-
-    let (k3, v) = map.get_by_index_only_mut(k.index()).unwrap();
-    assert_eq!(k3, k);
-    *v = 778;
-    assert_eq!(map[k], 778);
-}
-
-#[test]
-fn get_by_index_only_returns_none_for_vacant_or_missing_slot() {
-    let mut map = Map::new();
-    let k = map.insert(42);
-    map.remove(k);
-    assert!(map.get_by_index_only(k.index()).is_none());
-    assert!(map.get_by_index_only_mut(k.index()).is_none());
-    assert!(map.get_by_index_only(500).is_none());
-}
-
-#[test]
 #[should_panic]
 fn index_with_stale_key_panics() {
     let mut map = Map::new();

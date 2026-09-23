@@ -15,12 +15,12 @@ pub struct Key<
 pub type KeyOf<C> = Key<<C as Config>::Idx, <C as Config>::Gen>;
 
 impl<Idx: KeyPiece, Gen: KeyPiece> Key<Idx, Gen> {
-    /// Rebuilds a key from the parts [`into_parts`](Self::into_parts) gave out.
+    /// Builds a key from an index and a generation.
     ///
     /// Returns `None` if `generation` is even, since such a key could never
     /// match a slot.
     #[inline]
-    pub fn from_parts(idx: Idx, generation: Gen) -> Option<Self> {
+    pub(crate) fn from_parts(idx: Idx, generation: Gen) -> Option<Self> {
         if !generation.is_odd() {
             return None;
         }
@@ -30,35 +30,23 @@ impl<Idx: KeyPiece, Gen: KeyPiece> Key<Idx, Gen> {
         })
     }
 
-    /// Splits the key into its index and generation.
-    #[inline]
-    pub fn into_parts(self) -> (Idx, Gen) {
-        (self.idx, self.generation())
-    }
-
     /// The slot's index.
     #[inline]
-    pub fn index(&self) -> Idx {
+    pub(crate) fn index(&self) -> Idx {
         self.idx
     }
 
     /// The slot's generation.
     #[inline]
-    pub fn generation(&self) -> Gen {
+    pub(crate) fn generation(&self) -> Gen {
         Gen::from_non_zero(self.generation)
-    }
-
-    /// The slot's generation in its `NonZero` form.
-    #[inline]
-    pub fn generation_non_zero(&self) -> Gen::NonZero {
-        self.generation
     }
 
     /// # Safety
     ///
     /// `generation` must be odd.
     #[inline]
-    pub unsafe fn from_parts_unchecked(idx: Idx, generation: Gen) -> Self {
+    pub(crate) unsafe fn from_parts_unchecked(idx: Idx, generation: Gen) -> Self {
         debug_assert!(generation.is_odd());
         Self {
             idx,
