@@ -30,9 +30,18 @@ fn option_of_key_costs_nothing_extra() {
 
 #[test]
 fn keys_are_ordered_by_index_then_generation() {
-    let a = Key::<u32, u32> { idx: 1, generation: NonZero::new(3).unwrap() };
-    let b = Key::<u32, u32> { idx: 1, generation: NonZero::new(5).unwrap() };
-    let c = Key::<u32, u32> { idx: 2, generation: NonZero::new(1).unwrap() };
+    let a = Key::<u32, u32> {
+        idx: 1,
+        generation: NonZero::new(3).unwrap(),
+    };
+    let b = Key::<u32, u32> {
+        idx: 1,
+        generation: NonZero::new(5).unwrap(),
+    };
+    let c = Key::<u32, u32> {
+        idx: 2,
+        generation: NonZero::new(1).unwrap(),
+    };
     assert!(a < b);
     assert!(b < c);
     let mut sorted = [c, b, a];
@@ -42,7 +51,10 @@ fn keys_are_ordered_by_index_then_generation() {
 
 #[test]
 fn key_debug_prints_both_parts() {
-    let k = Key::<u32, u32> { idx: 4, generation: NonZero::new(7).unwrap() };
+    let k = Key::<u32, u32> {
+        idx: 4,
+        generation: NonZero::new(7).unwrap(),
+    };
     let text = std::format!("{k:?}");
     assert!(text.contains("idx: 4"));
     assert!(text.contains("generation: 7"));
@@ -93,7 +105,10 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     let k = map.insert(1);
     // Same low bits as `k`, so a truncating conversion would land on its slot.
     let too_wide = (1u128 << 64) | k.idx;
-    let bogus = Key::<u128, u32> { idx: too_wide, generation: k.generation };
+    let bogus = Key::<u128, u32> {
+        idx: too_wide,
+        generation: k.generation,
+    };
 
     assert!(map.get(bogus).is_none());
     assert!(map.get_mut(bogus).is_none());

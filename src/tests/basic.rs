@@ -118,12 +118,18 @@ fn remove_then_mass_insert_keeps_old_key_invalid() {
 fn remove_with_bogus_key_returns_none() {
     let mut map = Map::new();
 
-    let bogus: Key = Key { idx: 999_999, generation: NonZero::new(41).unwrap() };
+    let bogus: Key = Key {
+        idx: 999_999,
+        generation: NonZero::new(41).unwrap(),
+    };
     assert!(map.remove(bogus).is_none());
     assert!(map.get(bogus).is_none());
 
     let k = map.insert(1);
-    let wrong_generation = Key { idx: k.idx, generation: k.generation.checked_add(2).unwrap() };
+    let wrong_generation = Key {
+        idx: k.idx,
+        generation: k.generation.checked_add(2).unwrap(),
+    };
     assert!(map.remove(wrong_generation).is_none());
     assert_eq!(map.len(), 1);
     assert_eq!(map[k], 1);
@@ -145,7 +151,10 @@ fn len_tracks_insert_remove_and_clear() {
     assert!(map.remove(k1).is_none());
     assert_eq!(map.len(), 1);
 
-    let stale = Key { idx: k2.idx, generation: k2.generation.checked_add(2).unwrap() };
+    let stale = Key {
+        idx: k2.idx,
+        generation: k2.generation.checked_add(2).unwrap(),
+    };
     assert!(map.remove(stale).is_none());
     assert_eq!(map.len(), 1);
 

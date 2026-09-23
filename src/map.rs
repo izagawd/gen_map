@@ -99,7 +99,10 @@ impl<T, C: Config> Drop for Slot<T, C> {
 #[inline]
 unsafe fn index_of<C: Config>(position: usize) -> C::Idx {
     let idx = C::Idx::from_usize(position);
-    debug_assert!(idx.is_some(), "every slot position fits in the configured index type");
+    debug_assert!(
+        idx.is_some(),
+        "every slot position fits in the configured index type"
+    );
     unsafe { idx.unwrap_unchecked() }
 }
 
@@ -295,7 +298,10 @@ impl<T, C: Config> GenMap<T, C> {
     where
         F: FnOnce(KeyOf<C>) -> T,
     {
-        unsafe{ self.try_insert_with_key(|key| Ok::<T, core::convert::Infallible>(f(key))).unwrap_unchecked() }
+        unsafe {
+            self.try_insert_with_key(|key| Ok::<T, core::convert::Infallible>(f(key)))
+                .unwrap_unchecked()
+        }
     }
 
     /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail. On
@@ -563,7 +569,7 @@ impl<T, C: Config> Drop for ClearOnUnwind<'_, T, C> {
 impl<T: Clone, C: Config> Clone for GenMap<T, C> {
     /// The clone has the same slots, free list and generations, so every key
     /// of the original works on it.
-    fn clone(&self) -> Self { 
+    fn clone(&self) -> Self {
         Self {
             slots: self.slots.iter().map(Slot::clone_slot).collect(),
             next_free: self.next_free,
