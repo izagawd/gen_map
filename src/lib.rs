@@ -1,4 +1,4 @@
-//! A generational map with a configurable key.
+//! A configurable generational map.
 //! # Examples
 //!
 //! ```
@@ -22,7 +22,7 @@
 //! With a custom config:
 //!
 //! ```
-//! use gen_map::{Config, GenMap, KeyOf};
+//! use gen_map::{Config, GenMap, Key};
 //!
 //! struct Tiny;
 //!
@@ -32,7 +32,7 @@
 //! }
 //!
 //! let mut map = GenMap::<u64, Tiny>::new_with_config();
-//! let key: KeyOf<Tiny> = map.insert(7);
+//! let key: Key<Tiny> = map.insert(7);
 //! assert_eq!(core::mem::size_of_val(&key), 2);
 //! assert_eq!(map[key], 7);
 //! ```
@@ -51,7 +51,7 @@ mod key_piece;
 mod map;
 
 pub use config::{Config, DefaultConfig};
-pub use key::{Key, KeyOf};
+pub use key::Key;
 pub use key_piece::KeyPiece;
 pub use map::{Drain, GenMap, IntoIter, Iter, IterMut, Keys, Values, ValuesMut};
 

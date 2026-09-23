@@ -8,9 +8,21 @@ mod reset;
 mod retain;
 mod unchecked;
 
+use crate::{Config, KeyPiece};
+use core::marker::PhantomData;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+
+/// A config made of the two integer types it is given. It is only ever
+/// named as a type, never built.
+#[allow(dead_code)]
+pub(crate) struct Cfg<Idx, Gen>(PhantomData<(Idx, Gen)>);
+
+impl<Idx: KeyPiece, Gen: KeyPiece> Config for Cfg<Idx, Gen> {
+    type Idx = Idx;
+    type Gen = Gen;
+}
 
 /// Hands out numbered items and records how many times each one has been
 /// dropped. A second drop of the same item panics on the spot, so a failure

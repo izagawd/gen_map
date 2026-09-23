@@ -1,5 +1,5 @@
 use crate::config::{Config, DefaultConfig};
-use crate::key::KeyOf;
+use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use alloc::collections::TryReserveError;
 use alloc::vec::Vec;
@@ -35,8 +35,8 @@ impl<T, C: Config> Slot<T, C> {
     ///
     /// The slot must be occupied and `idx` must be its position in the `Vec`.
     #[inline]
-    unsafe fn key(&self, idx: C::Idx) -> KeyOf<C> {
-        KeyOf::<C>::from_parts_unchecked(idx, self.generation)
+    unsafe fn key(&self, idx: C::Idx) -> Key<C> {
+        Key::<C>::from_parts_unchecked(idx, self.generation)
     }
 
     /// # Safety
@@ -220,13 +220,13 @@ impl<T, C: Config> GenMap<T, C> {
 
     /// Returns `true` if `key` is valid.
     #[inline]
-    pub fn contains_key(&self, key: KeyOf<C>) -> bool {
+    pub fn contains_key(&self, key: Key<C>) -> bool {
         self.get(key).is_some()
     }
 
     /// Returns a reference to the value corresponding to `key`.
     #[inline]
-    pub fn get(&self, key: KeyOf<C>) -> Option<&T> {
+    pub fn get(&self, key: Key<C>) -> Option<&T> {
         let slot = self.slots.get(key.idx.into_usize()?)?;
         if slot.generation != C::Gen::from_non_zero(key.generation) {
             return None;
@@ -238,7 +238,7 @@ impl<T, C: Config> GenMap<T, C> {
 
     /// Returns a mutable reference to the value corresponding to `key`.
     #[inline]
-    pub fn get_mut(&mut self, key: KeyOf<C>) -> Option<&mut T> {
+    pub fn get_mut(&mut self, key: Key<C>) -> Option<&mut T> {
         let slot = self.slots.get_mut(key.idx.into_usize()?)?;
         if slot.generation != C::Gen::from_non_zero(key.generation) {
             return None;
@@ -255,7 +255,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// `key` must be valid, meaning [`contains_key`](Self::contains_key)
     /// returns `true` for it.
     #[inline]
-    pub unsafe fn get_unchecked(&self, key: KeyOf<C>) -> &T {
+    pub unsafe fn get_unchecked(&self, key: Key<C>) -> &T {
         debug_assert!(self.contains_key(key));
         self.slots
             .get_unchecked(key.idx.into_usize().unwrap_unchecked())
@@ -269,7 +269,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// `key` must be valid, meaning [`contains_key`](Self::contains_key)
     /// returns `true` for it.
     #[inline]
-    pub unsafe fn get_unchecked_mut(&mut self, key: KeyOf<C>) -> &mut T {
+    pub unsafe fn get_unchecked_mut(&mut self, key: Key<C>) -> &mut T {
         debug_assert!(self.contains_key(key));
         self.slots
             .get_unchecked_mut(key.idx.into_usize().unwrap_unchecked())
@@ -283,7 +283,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// Panics if the map is full, meaning it has `C::Idx::MAX + 1` slots and
     /// none of them are free.
     #[inline]
-    pub fn insert(&mut self, value: T) -> KeyOf<C> {
+    pub fn insert(&mut self, value: T) -> Key<C> {
         self.insert_with_key(|_| value)
     }
 
@@ -294,9 +294,9 @@ impl<T, C: Config> GenMap<T, C> {
     /// Panics if the map is full, meaning it has `C::Idx::MAX + 1` slots and
     /// none of them are free.
     #[inline]
-    pub fn insert_with_key<F>(&mut self, f: F) -> KeyOf<C>
+    pub fn insert_with_key<F>(&mut self, f: F) -> Key<C>
     where
-        F: FnOnce(KeyOf<C>) -> T,
+        F: FnOnce(Key<C>) -> T,
     {
         unsafe {
             self.try_insert_with_key(|key| Ok::<T, core::convert::Infallible>(f(key)))
@@ -312,9 +312,9 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// Panics if the map is full, meaning it has `C::Idx::MAX + 1` slots and
     /// none of them are free.
-    pub fn try_insert_with_key<F, E>(&mut self, f: F) -> Result<KeyOf<C>, E>
+    pub fn try_insert_with_key<F, E>(&mut self, f: F) -> Result<Key<C>, E>
     where
-        F: FnOnce(KeyOf<C>) -> Result<T, E>,
+        F: FnOnce(Key<C>) -> Result<T, E>,
     {
         // Nothing is written until `f` has succeeded, so a failing or
         // panicking `f` leaves the map untouched.
@@ -344,7 +344,7 @@ impl<T, C: Config> GenMap<T, C> {
         let generation = unsafe { generation.checked_add(C::Gen::ONE).unwrap_unchecked() };
 
         // SAFETY: `generation` was even and had one added, so it is odd.
-        let key = unsafe { KeyOf::<C>::from_parts_unchecked(idx, generation) };
+        let key = unsafe { Key::<C>::from_parts_unchecked(idx, generation) };
 
         let value = f(key)?;
 
@@ -373,7 +373,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// Removes and returns the value corresponding to `key`, or `None` if the
     /// key is invalid.
     #[inline]
-    pub fn remove(&mut self, key: KeyOf<C>) -> Option<T> {
+    pub fn remove(&mut self, key: Key<C>) -> Option<T> {
         let position = key.idx.into_usize()?;
         let slot = self.slots.get(position)?;
         if slot.generation != C::Gen::from_non_zero(key.generation) {
@@ -456,7 +456,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// them.
     pub fn retain<F>(&mut self, mut f: F)
     where
-        F: FnMut(KeyOf<C>, &mut T) -> bool,
+        F: FnMut(Key<C>, &mut T) -> bool,
     {
         for position in 0..self.slots.len() {
             // SAFETY: `position` is below the slot count, which neither
@@ -533,18 +533,18 @@ impl<T, C: Config> Default for GenMap<T, C> {
     }
 }
 
-impl<T, C: Config> Index<KeyOf<C>> for GenMap<T, C> {
+impl<T, C: Config> Index<Key<C>> for GenMap<T, C> {
     type Output = T;
 
     #[inline]
-    fn index(&self, key: KeyOf<C>) -> &T {
+    fn index(&self, key: Key<C>) -> &T {
         self.get(key).expect("invalid GenMap key")
     }
 }
 
-impl<T, C: Config> IndexMut<KeyOf<C>> for GenMap<T, C> {
+impl<T, C: Config> IndexMut<Key<C>> for GenMap<T, C> {
     #[inline]
-    fn index_mut(&mut self, key: KeyOf<C>) -> &mut T {
+    fn index_mut(&mut self, key: Key<C>) -> &mut T {
         self.get_mut(key).expect("invalid GenMap key")
     }
 }
@@ -598,7 +598,7 @@ pub struct Iter<'a, T, C: Config> {
 }
 
 impl<'a, T, C: Config> Iterator for Iter<'a, T, C> {
-    type Item = (KeyOf<C>, &'a T);
+    type Item = (Key<C>, &'a T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -653,7 +653,7 @@ pub struct IterMut<'a, T, C: Config> {
 }
 
 impl<'a, T, C: Config> Iterator for IterMut<'a, T, C> {
-    type Item = (KeyOf<C>, &'a mut T);
+    type Item = (Key<C>, &'a mut T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -698,7 +698,7 @@ pub struct Keys<'a, T, C: Config> {
 }
 
 impl<T, C: Config> Iterator for Keys<'_, T, C> {
-    type Item = KeyOf<C>;
+    type Item = Key<C>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -804,7 +804,7 @@ pub struct IntoIter<T, C: Config> {
 }
 
 impl<T, C: Config> Iterator for IntoIter<T, C> {
-    type Item = (KeyOf<C>, T);
+    type Item = (Key<C>, T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -854,7 +854,7 @@ impl<T, C: Config> ExactSizeIterator for IntoIter<T, C> {}
 impl<T, C: Config> FusedIterator for IntoIter<T, C> {}
 
 impl<T, C: Config> IntoIterator for GenMap<T, C> {
-    type Item = (KeyOf<C>, T);
+    type Item = (Key<C>, T);
     type IntoIter = IntoIter<T, C>;
 
     #[inline]
@@ -867,7 +867,7 @@ impl<T, C: Config> IntoIterator for GenMap<T, C> {
 }
 
 impl<'a, T, C: Config> IntoIterator for &'a GenMap<T, C> {
-    type Item = (KeyOf<C>, &'a T);
+    type Item = (Key<C>, &'a T);
     type IntoIter = Iter<'a, T, C>;
 
     #[inline]
@@ -877,7 +877,7 @@ impl<'a, T, C: Config> IntoIterator for &'a GenMap<T, C> {
 }
 
 impl<'a, T, C: Config> IntoIterator for &'a mut GenMap<T, C> {
-    type Item = (KeyOf<C>, &'a mut T);
+    type Item = (Key<C>, &'a mut T);
     type IntoIter = IterMut<'a, T, C>;
 
     #[inline]
@@ -894,7 +894,7 @@ pub struct Drain<'a, T, C: Config> {
 }
 
 impl<T, C: Config> Iterator for Drain<'_, T, C> {
-    type Item = (KeyOf<C>, T);
+    type Item = (Key<C>, T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {

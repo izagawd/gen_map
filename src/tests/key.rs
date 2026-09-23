@@ -1,4 +1,5 @@
-use crate::{Config, DefaultConfig, GenMap, Key, KeyOf};
+use super::Cfg;
+use crate::{Config, DefaultConfig, GenMap, Key};
 use core::mem::size_of;
 use core::num::NonZero;
 
@@ -6,39 +7,39 @@ use core::num::NonZero;
 fn default_key_matches_default_config() {
     let mut map = GenMap::new();
     let key: Key = map.insert(1);
-    let same: KeyOf<DefaultConfig> = key;
+    let same: Key<DefaultConfig> = key;
     assert_eq!(map[same], 1);
 }
 
 #[test]
 fn key_sizes_follow_the_config() {
-    assert_eq!(size_of::<Key<u8, u8>>(), 2);
-    assert_eq!(size_of::<Key<u16, u16>>(), 4);
-    assert_eq!(size_of::<Key<u32, u32>>(), 8);
-    assert_eq!(size_of::<Key<u32, u16>>(), 8);
-    assert_eq!(size_of::<Key<u64, u64>>(), 16);
+    assert_eq!(size_of::<Key<Cfg<u8, u8>>>(), 2);
+    assert_eq!(size_of::<Key<Cfg<u16, u16>>>(), 4);
+    assert_eq!(size_of::<Key<Cfg<u32, u32>>>(), 8);
+    assert_eq!(size_of::<Key<Cfg<u32, u16>>>(), 8);
+    assert_eq!(size_of::<Key<Cfg<u64, u64>>>(), 16);
     assert_eq!(size_of::<Key>(), 8);
 }
 
 #[test]
 fn option_of_key_costs_nothing_extra() {
-    assert_eq!(size_of::<Option<Key<u8, u8>>>(), 2);
-    assert_eq!(size_of::<Option<Key<u16, u16>>>(), 4);
-    assert_eq!(size_of::<Option<Key<u32, u32>>>(), 8);
-    assert_eq!(size_of::<Option<Key<u64, u64>>>(), 16);
+    assert_eq!(size_of::<Option<Key<Cfg<u8, u8>>>>(), 2);
+    assert_eq!(size_of::<Option<Key<Cfg<u16, u16>>>>(), 4);
+    assert_eq!(size_of::<Option<Key<Cfg<u32, u32>>>>(), 8);
+    assert_eq!(size_of::<Option<Key<Cfg<u64, u64>>>>(), 16);
 }
 
 #[test]
 fn keys_are_ordered_by_index_then_generation() {
-    let a = Key::<u32, u32> {
+    let a = Key::<DefaultConfig> {
         idx: 1,
         generation: NonZero::new(3).unwrap(),
     };
-    let b = Key::<u32, u32> {
+    let b = Key::<DefaultConfig> {
         idx: 1,
         generation: NonZero::new(5).unwrap(),
     };
-    let c = Key::<u32, u32> {
+    let c = Key::<DefaultConfig> {
         idx: 2,
         generation: NonZero::new(1).unwrap(),
     };
@@ -51,7 +52,7 @@ fn keys_are_ordered_by_index_then_generation() {
 
 #[test]
 fn key_debug_prints_both_parts() {
-    let k = Key::<u32, u32> {
+    let k = Key::<DefaultConfig> {
         idx: 4,
         generation: NonZero::new(7).unwrap(),
     };
@@ -105,7 +106,7 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     let k = map.insert(1);
     // Same low bits as `k`, so a truncating conversion would land on its slot.
     let too_wide = (1u128 << 64) | k.idx;
-    let bogus = Key::<u128, u32> {
+    let bogus = Key::<Wide> {
         idx: too_wide,
         generation: k.generation,
     };
