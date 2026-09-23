@@ -1,6 +1,14 @@
 [package]
 name = "gen_map"
 version = "0.1.0"
-edition = "2024"
-
+edition = "2021"
+rust-version = "1.79.0"
+authors = ["Izagawd <theizaboss@gmail.com>"]
+keywords = ["gen_map", "allocator", "arena", "reference"]
+categories = ["memory-management", "data-structures"]
+license = "MIT"
+repository = "https://github.com/izagawd/gen_map"
+readme = "README.md"
+description = "This crate provides customizable generational maps."
+homepage = "https://github.com/izagawd/gen_map"
 [dependencies]
