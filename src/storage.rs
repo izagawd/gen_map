@@ -141,6 +141,10 @@ unsafe impl<S> SlotStorage<S> for Vec<S> {
             Err(_) => Err(item),
         }
     }
+    #[inline]
+    fn clear(&mut self) {
+        Vec::clear(self)
+    }
 
     #[inline]
     fn truncate(&mut self, len: usize) {
