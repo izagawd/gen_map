@@ -958,7 +958,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// A retired slot is never used again until [`reset`](Self::reset), no
     /// matter how the map is configured, so no key to it can ever match a new
     /// value. Useful for when a map's config wraps, but you want to retire
-    /// slots under certain conditions. 
+    /// slots under certain conditions.
     ///
     /// # Examples
     ///
