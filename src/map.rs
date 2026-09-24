@@ -1,4 +1,6 @@
-use crate::config::{Config, DefaultConfig};
+use crate::config::Config;
+#[cfg(feature = "alloc")]
+use crate::config::DefaultConfig;
 use crate::error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
 };
@@ -161,7 +163,8 @@ fn next_generation<C: Config>(generation: C::Gen) -> Option<C::Gen> {
 }
 
 /// The error the storage of a `GenMap<T, C>` gives when it can not make room
-/// for another slot. For a `Vec` this is `TryReserveError`.
+/// for another slot. It is `TryReserveError` for a `Vec`, `CapacityError` for
+/// an `ArrayVec` and `CollectionAllocErr` for a `SmallVec`.
 pub type StorageError<T, C> =
     <<C as Config>::Storage<Slot<T, C>> as SlotStorage<Slot<T, C>>>::Error;
 
@@ -243,12 +246,17 @@ impl<T, C: Config> fmt::Debug for VacantEntry<'_, T, C> {
 /// A generational map whose key is configured by `C`.
 ///
 /// See the [crate documentation](crate) for examples.
-pub struct GenMap<T, C: Config = DefaultConfig> {
+pub struct GenMap<
+    T,
+    #[cfg(feature = "alloc")] C: Config = DefaultConfig,
+    #[cfg(not(feature = "alloc"))] C: Config,
+> {
     slots: Slots<T, C>,
     next_free: Option<C::Idx>,
     len: usize,
 }
 
+#[cfg(feature = "alloc")]
 impl<T> GenMap<T> {
     /// Creates an empty map with the [`DefaultConfig`].
     ///
@@ -611,7 +619,7 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// There must be a slot at every index and each must hold a value,
     /// meaning [`key_at`](Self::key_at) returns `Some` for every one of them,
-    /// and no two indices provided may be the same.
+    /// and no two indices of the keys provided may be the same.
     #[inline]
     pub unsafe fn get_disjoint_mut_at_unchecked<const N: usize>(
         &mut self,

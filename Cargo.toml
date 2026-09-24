@@ -11,4 +11,12 @@ repository = "https://github.com/izagawd/gen_map"
 readme = "README.md"
 description = "This crate provides customizable generational maps."
 
+[features]
+default = ["alloc", "arrayvec", "smallvec"]
+alloc = []
+arrayvec = ["dep:arrayvec"]
+smallvec = ["dep:smallvec"]
+
 [dependencies]
+arrayvec = { version = "0.7", default-features = false, optional = true }
+smallvec = { version = "2.0.0-beta.1", features = [], optional = true }

@@ -42,6 +42,46 @@ impl Config for SmallWrap {
     const WRAP_ON_OVERFLOW: bool = true;
 }
 
+/// The keys of [`Small`] in an `ArrayVec` of twelve, so the storage runs out
+/// before the index does.
+#[cfg(feature = "arrayvec")]
+struct InlineRetiring;
+
+#[cfg(feature = "arrayvec")]
+impl Config for InlineRetiring {
+    type Idx = u8;
+    type Gen = u8;
+    type Layout = Packed<u8, 4>;
+    type Storage<S> = arrayvec::ArrayVec<S, 12>;
+}
+
+/// The keys of [`SmallWrap`] in an `ArrayVec` of sixteen, so the storage and
+/// the index run out together.
+#[cfg(feature = "arrayvec")]
+struct InlineWrap;
+
+#[cfg(feature = "arrayvec")]
+impl Config for InlineWrap {
+    type Idx = u8;
+    type Gen = u8;
+    type Layout = Packed<u8, 4>;
+    type Storage<S> = arrayvec::ArrayVec<S, 16>;
+    const WRAP_ON_OVERFLOW: bool = true;
+}
+
+/// The keys of [`Retiring`] in a `SmallVec` that holds four slots inline, so
+/// the storage moves to the heap and back as the map grows and empties.
+#[cfg(feature = "smallvec")]
+struct Spilling;
+
+#[cfg(feature = "smallvec")]
+impl Config for Spilling {
+    type Idx = u16;
+    type Gen = u8;
+    type Layout = Packed<u16, 4>;
+    type Storage<S> = smallvec::SmallVec<S, 4>;
+}
+
 #[test]
 fn the_default_config_agrees_with_the_model() {
     run_seeds::<DefaultConfig>();
@@ -60,6 +100,24 @@ fn a_small_packed_config_agrees_with_the_model() {
 #[test]
 fn a_small_packed_config_that_wraps_agrees_with_the_model() {
     run_seeds::<SmallWrap>();
+}
+
+#[cfg(feature = "arrayvec")]
+#[test]
+fn an_array_vec_that_fills_up_agrees_with_the_model() {
+    run_seeds::<InlineRetiring>();
+}
+
+#[cfg(feature = "arrayvec")]
+#[test]
+fn an_array_vec_as_large_as_the_index_agrees_with_the_model() {
+    run_seeds::<InlineWrap>();
+}
+
+#[cfg(feature = "smallvec")]
+#[test]
+fn a_small_vec_agrees_with_the_model() {
+    run_seeds::<Spilling>();
 }
 
 /// Runs every seed for `C`. Miri is far slower than a normal run, so it gets
@@ -227,26 +285,40 @@ fn insert<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut R
         Err(InsertError::IndexExhausted(back)) => {
             assert_eq!(back, value);
             assert!(promised.is_none());
-            // Every slot the keys can address exists, and none of them can
-            // take a value.
+            // Every slot the keys can address exists.
             assert_eq!(Some(map.slots_len()), slot_count_limit::<C>());
-            let retired = if C::WRAP_ON_OVERFLOW {
-                0
-            } else {
-                (0..map.slots_len())
-                    .filter(|&position| {
-                        let idx = C::Idx::from_usize(position).unwrap();
-                        map.generation_at(idx) == Some(C::Gen::ZERO)
-                    })
-                    .count()
-            };
-            assert_eq!(
-                model.live.len() + model.detached.len() + retired,
-                map.slots_len()
-            );
+            assert_no_slot_is_free(map, model);
         }
-        Err(InsertError::StorageFull(..)) => panic!("a Vec never runs out of room here"),
+        Err(InsertError::StorageFull(back, _)) => {
+            assert_eq!(back, value);
+            assert!(promised.is_none());
+            // The storage holds every slot it can, and the keys could still
+            // address another one, because the index is the error reported
+            // when both run out.
+            assert_eq!(map.slots_len(), map.capacity());
+            assert!(slot_count_limit::<C>().map_or(true, |limit| map.slots_len() < limit));
+            assert_no_slot_is_free(map, model);
+        }
     }
+}
+
+/// Checks that every slot holds a value, is detached or is retired, so none
+/// of them can take a new value.
+fn assert_no_slot_is_free<C: Config>(map: &GenMap<u32, C>, model: &Model<C>) {
+    let retired = if C::WRAP_ON_OVERFLOW {
+        0
+    } else {
+        (0..map.slots_len())
+            .filter(|&position| {
+                let idx = C::Idx::from_usize(position).unwrap();
+                map.generation_at(idx) == Some(C::Gen::ZERO)
+            })
+            .count()
+    };
+    assert_eq!(
+        model.live.len() + model.detached.len() + retired,
+        map.slots_len()
+    );
 }
 
 fn remove<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {

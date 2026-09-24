@@ -64,7 +64,7 @@ unsafe impl<S> SlotStorage<S> for Capped<S> {
     }
 
     fn clear(&mut self) {
-        self.0.clear()
+        self.0.clear();
     }
 }
 

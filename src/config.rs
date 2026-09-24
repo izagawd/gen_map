@@ -1,6 +1,9 @@
-use crate::key_layout::{KeyLayout, Split};
+use crate::key_layout::KeyLayout;
+#[cfg(feature = "alloc")]
+use crate::key_layout::Split;
 use crate::key_piece::KeyPiece;
 use crate::storage::SlotStorage;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 /// Compile time configuration of a [`GenMap`](crate::GenMap).
@@ -36,9 +39,9 @@ pub trait Config {
     /// The integer type that represents the generation of a slot.
     type Gen: KeyPiece;
 
-    /// How a key stores its index and generation. [`Split`] keeps them as
-    /// two fields and [`Packed`](crate::Packed) puts them in the bits of one
-    /// integer.
+    /// How a key stores its index and generation. [`Split`](crate::Split)
+    /// keeps them as two fields and [`Packed`](crate::Packed) puts them in
+    /// the bits of one integer.
     type Layout: KeyLayout<Self::Idx, Self::Gen>;
 
     /// The collection the map keeps its slots in. `S` is the map's
@@ -59,9 +62,12 @@ pub trait Config {
 ///
 /// Keys are a `u32` index and a `u32` generation stored as two fields,
 /// slots live in a `Vec`, and slots retire when their generation overflows.
+/// It needs the `alloc` feature, which is on by default.
+#[cfg(feature = "alloc")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct DefaultConfig;
 
+#[cfg(feature = "alloc")]
 impl Config for DefaultConfig {
     type Idx = u32;
     type Gen = u32;

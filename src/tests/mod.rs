@@ -1,3 +1,5 @@
+#[cfg(feature = "arrayvec")]
+mod arrayvec_storage;
 mod basic;
 mod capped_storage;
 mod clone;
@@ -14,6 +16,9 @@ mod overflow;
 mod packed;
 mod reset;
 mod retain;
+#[cfg(feature = "smallvec")]
+mod smallvec_storage;
+mod storage_contract;
 mod try_insert;
 mod unchecked;
 mod vacant_entry;

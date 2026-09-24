@@ -7,7 +7,8 @@
 //! anything else that refers to values by handle.
 //!
 //! Inserting, removing and looking up a value are all O(1). The crate is
-//! `no_std` and only needs `alloc`.
+//! `no_std`, and it only needs an allocator for its `Vec` storage, which can
+//! be turned off. See [Cargo features](#cargo-features).
 //!
 //! # Examples
 //!
@@ -146,8 +147,10 @@
 //! ## Storage
 //!
 //! The slots can live in any collection that implements [`SlotStorage`]. A
-//! `Vec` does, and so could a collection with a fixed capacity, such as one
-//! backed by an array. [`SlotStorage`] is an unsafe trait, because the map
+//! `Vec` does, and so do two collections from other crates when their
+//! features are on. `ArrayVec` from `arrayvec` has a fixed capacity and
+//! never allocates, and `SmallVec` from `smallvec` keeps a few slots inline
+//! before it allocates. [`SlotStorage`] is an unsafe trait, because the map
 //! relies on the storage behaving like a `Vec` when it reads slots without
 //! bounds checks.
 //!
@@ -299,13 +302,33 @@
 //! layout, and a key that breaks either rule makes later lookups undefined
 //! behavior.
 //!
+//! # Cargo features
+//!
+//! - `alloc` is on by default. It adds the `Vec` storage, [`DefaultConfig`]
+//!   and [`GenMap::new`], and makes [`DefaultConfig`] the config that
+//!   [`GenMap`] and [`Key`] use when none is named. Without it the crate
+//!   needs no allocator, and every map needs a config whose storage does not
+//!   allocate, such as an `ArrayVec`.
+//! - `arrayvec` lets an `arrayvec::ArrayVec` hold the slots.
+//! - `smallvec` lets a `smallvec::SmallVec` hold the slots. It uses the 2.0
+//!   beta of `smallvec`, which needs an allocator and Rust 1.86.
+//!
+//! A map with no allocator at all turns `alloc` off and `arrayvec` on.
+//!
+//! ```toml
+//! [dependencies]
+//! gen_map = { version = "0.2", default-features = false, features = ["arrayvec"] }
+//! ```
+//!
 //! # Minimum supported Rust version
 //!
-//! The crate builds on Rust 1.79 and later.
+//! The crate builds on Rust 1.79 and later. The `smallvec` feature needs
+//! Rust 1.86, because the 2.0 beta of `smallvec` does.
 
 #![no_std]
 #![warn(missing_docs)]
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 #[cfg(test)]
@@ -319,7 +342,9 @@ mod key_piece;
 mod map;
 mod storage;
 
-pub use config::{Config, DefaultConfig};
+pub use config::Config;
+#[cfg(feature = "alloc")]
+pub use config::DefaultConfig;
 pub use error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
 };
@@ -332,5 +357,6 @@ pub use map::{
 };
 pub use storage::{ReserveStorage, SlotStorage};
 
-#[cfg(test)]
+// The tests use `Vec` storage and the default config, so they need `alloc`.
+#[cfg(all(test, feature = "alloc"))]
 mod tests;

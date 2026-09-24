@@ -1,4 +1,6 @@
-use crate::config::{Config, DefaultConfig};
+use crate::config::Config;
+#[cfg(feature = "alloc")]
+use crate::config::DefaultConfig;
 use crate::key_layout::KeyLayout;
 use crate::key_piece::KeyPiece;
 use core::cmp::Ordering;
@@ -14,7 +16,10 @@ type Repr<C> = <Layout<C> as KeyLayout<<C as Config>::Idx, <C as Config>::Gen>>:
 /// A key to a value in a [`GenMap`](crate::GenMap), returned by `insert`.
 /// The config's [`Layout`](Config::Layout) says how it stores its index and
 /// generation.
-pub struct Key<C: Config = DefaultConfig> {
+pub struct Key<
+    #[cfg(feature = "alloc")] C: Config = DefaultConfig,
+    #[cfg(not(feature = "alloc"))] C: Config,
+> {
     repr: Repr<C>,
 }
 
