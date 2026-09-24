@@ -7,7 +7,7 @@ The crate is `no_std` and only needs `alloc`.
 
 ```toml
 [dependencies]
-gen_map = "0.1"
+gen_map = "0.2.1"
 ```
 
 ## Example
