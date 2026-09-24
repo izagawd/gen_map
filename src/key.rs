@@ -28,7 +28,7 @@ impl<C: Config> Key<C> {
     /// The generation of the slot this key refers to at the time this key was handed out.
     #[inline]
     pub fn generation(&self) -> C::Gen {
-       let generation =  <Layout<C> as KeyLayout<C::Idx, C::Gen>>::generation(self.repr);
+        let generation = <Layout<C> as KeyLayout<C::Idx, C::Gen>>::generation(self.repr);
         C::Gen::from_non_zero(generation)
     }
 

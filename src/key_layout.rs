@@ -197,6 +197,9 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32> KeyL
         check_packed::<Idx, Gen, R, GEN_BITS>();
         // SAFETY: the generation field has at most as many bits as `Gen`,
         // which the check makes sure of.
-        unsafe { Gen::from_u128_unchecked(R::from_non_zero(repr).into_u128() & low_bits(GEN_BITS)).into_non_zero_unchecked() }
+        unsafe {
+            Gen::from_u128_unchecked(R::from_non_zero(repr).into_u128() & low_bits(GEN_BITS))
+                .into_non_zero_unchecked()
+        }
     }
 }

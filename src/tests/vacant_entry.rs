@@ -163,7 +163,7 @@ fn full_error_as_ref_borrows_the_storage_error() {
 #[test]
 #[ignore]
 fn a_vec_that_can_not_allocate_reports_storage_full_instead_of_aborting() {
-    type Huge = [u8;  (1 << 47) - 64];
+    type Huge = [u8; (1 << 47) - 64];
     let mut map: GenMap<Huge> = GenMap::new();
 
     match map.vacant_entry() {
