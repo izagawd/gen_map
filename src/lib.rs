@@ -323,6 +323,8 @@
 //! - `arrayvec` lets a config use `arrayvec::ArrayVec` as its storage.
 //! - `smallvec` lets a config use `smallvec::SmallVec` as its storage. It
 //!   uses the 2.0 beta of `smallvec`, which needs an allocator and Rust 1.86.
+//!   Until smallvec 2.0 is released, a newer smallvec beta or a new release
+//!   of gen_map may break this feature, so it is not covered by semver.
 //!
 //! To use the map without any allocator, turn `alloc` off and `arrayvec` on.
 //!

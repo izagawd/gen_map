@@ -28,7 +28,7 @@ let c = map.insert("c"); // This takes the slot `a` had, but under a new key.
 assert_ne!(a, c);
 
 for (key, value) in &map {
-    println!("{key:?} = {value}");
+println!("{key:?} = {value}");
 }
 ```
 
@@ -98,6 +98,10 @@ and the `SmallVec` from `smallvec` work out of the box when the crate's
 capacity and never allocates, and a `SmallVec` keeps a few slots inline
 before it allocates.
 
+The `smallvec` feature uses a beta of smallvec 2.0. Until smallvec 2.0 is
+released, a newer smallvec beta or a new release of gen_map may break this
+feature, so it is not covered by semver.
+
 `reserve`, `try_reserve` and the `with_capacity` constructors are only there
 when the storage also implements `ReserveStorage`, which `Vec` and
 `SmallVec` do.
@@ -122,7 +126,7 @@ impl Config for Tiny {
 
 let mut map = GenMap::<u32, Tiny>::new_with_config();
 for i in 0..256 {
-    map.insert(i);
+map.insert(i);
 }
 assert!(matches!(map.try_insert(256), Err(InsertError::IndexExhausted(256))));
 ```
