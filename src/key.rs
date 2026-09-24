@@ -37,7 +37,6 @@ impl<C: Config> Key<C> {
     /// always odd, so it is never zero.
     #[inline]
     pub fn generation_non_zero(&self) -> <C::Gen as KeyPiece>::NonZero {
-        // SAFETY: a key's generation is always odd, so it is not zero.
         <Layout<C> as KeyLayout<C::Idx, C::Gen>>::generation(self.repr)
     }
 

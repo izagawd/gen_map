@@ -12,6 +12,11 @@ use core::marker::PhantomData;
 /// [`pack_unchecked`](Self::pack_unchecked) was given, two `Repr` values
 /// must be equal only if they were packed from the same parts, and
 /// [`max_generation`](Self::max_generation) must be odd.
+///
+/// `generation` is safe to call and returns a `NonZero`, so safe code must
+/// not be able to make a `Repr` that `pack_unchecked` did not return. A
+/// `Repr` with private fields, like [`SplitRepr`] and [`PackedRepr`], does
+/// that.
 pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
     /// What the key holds.
     type Repr: Copy + Eq + Hash + Send + Sync + 'static;
@@ -123,6 +128,12 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Packed<R, const GEN_BITS: u32>(PhantomData<R>);
 
+/// What a key with the [`Packed`] layout holds. Only
+/// [`pack_unchecked`](KeyLayout::pack_unchecked) can make one, so its
+/// generation field is never zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PackedRepr<R: KeyPiece>(R::NonZero);
+
 /// Fails to compile when the bit counts of a [`Packed`] layout do not add
 /// up. The `const` block is evaluated for each set of types it is used with.
 #[inline(always)]
@@ -154,7 +165,7 @@ fn low_bits(bits: u32) -> u128 {
 unsafe impl<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32> KeyLayout<Idx, Gen>
     for Packed<R, GEN_BITS>
 {
-    type Repr = R::NonZero;
+    type Repr = PackedRepr<R>;
 
     #[inline]
     fn max_idx() -> Idx {
@@ -172,7 +183,7 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32> KeyL
     }
 
     #[inline]
-    unsafe fn pack_unchecked(idx: Idx, generation: Gen) -> R::NonZero {
+    unsafe fn pack_unchecked(idx: Idx, generation: Gen) -> PackedRepr<R> {
         check_packed::<Idx, Gen, R, GEN_BITS>();
         debug_assert!(idx <= <Self as KeyLayout<Idx, Gen>>::max_idx());
         debug_assert!(generation.is_odd());
@@ -181,24 +192,26 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32> KeyL
         // SAFETY: the caller promises that `idx` fits in the index field and
         // `generation` in the generation field, so `bits` fits in `R`, and
         // that `generation` is odd, so `bits` is not zero.
-        unsafe { R::from_u128_unchecked(bits).into_non_zero_unchecked() }
+        PackedRepr(unsafe { R::from_u128_unchecked(bits).into_non_zero_unchecked() })
     }
 
     #[inline]
-    fn idx(repr: R::NonZero) -> Idx {
+    fn idx(repr: PackedRepr<R>) -> Idx {
         check_packed::<Idx, Gen, R, GEN_BITS>();
         // SAFETY: the index field has at most as many bits as `Idx`, which
         // the check makes sure of.
-        unsafe { Idx::from_u128_unchecked(R::from_non_zero(repr).into_u128() >> GEN_BITS) }
+        unsafe { Idx::from_u128_unchecked(R::from_non_zero(repr.0).into_u128() >> GEN_BITS) }
     }
 
     #[inline]
-    fn generation(repr: R::NonZero) -> Gen::NonZero {
+    fn generation(repr: PackedRepr<R>) -> Gen::NonZero {
         check_packed::<Idx, Gen, R, GEN_BITS>();
         // SAFETY: the generation field has at most as many bits as `Gen`,
-        // which the check makes sure of.
+        // which the check makes sure of. A `PackedRepr` only comes from
+        // `pack_unchecked`, whose caller promised an odd generation, so the
+        // field is not zero.
         unsafe {
-            Gen::from_u128_unchecked(R::from_non_zero(repr).into_u128() & low_bits(GEN_BITS))
+            Gen::from_u128_unchecked(R::from_non_zero(repr.0).into_u128() & low_bits(GEN_BITS))
                 .into_non_zero_unchecked()
         }
     }
