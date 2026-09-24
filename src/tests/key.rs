@@ -110,7 +110,7 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     let too_wide = (1u128 << 64) | k.idx();
     // SAFETY: the generation is the one of a live key, and both parts fit
     // the `Split` layout of `Wide`.
-    let bogus = unsafe { Key::<Wide>::from_raw_parts(too_wide, k.generation_non_zero()) };
+    let bogus = unsafe { Key::<Wide>::from_raw_parts(too_wide, k.non_zero_generation()) };
 
     assert!(map.get(bogus).is_none());
     assert!(map.get_mut(bogus).is_none());
@@ -148,13 +148,13 @@ fn a_generation_is_always_odd() {
 }
 
 #[test]
-fn generation_non_zero_is_the_generation() {
+fn non_zero_generation_is_the_generation() {
     let mut map = GenMap::new();
     let a = map.insert(1);
     map.remove(a);
     let b = map.insert(2);
     for key in [a, b] {
-        assert_eq!(key.generation_non_zero().get(), key.generation());
+        assert_eq!(key.non_zero_generation().get(), key.generation());
     }
 }
 
@@ -162,7 +162,7 @@ fn generation_non_zero_is_the_generation() {
 fn from_raw_parts_rebuilds_a_key() {
     let mut map = GenMap::new();
     let key = map.insert(42);
-    let (idx, generation) = (key.idx(), key.generation_non_zero());
+    let (idx, generation) = (key.idx(), key.non_zero_generation());
 
     let rebuilt = unsafe { Key::<DefaultConfig>::from_raw_parts(idx, generation) };
     assert_eq!(rebuilt, key);
@@ -178,7 +178,7 @@ fn a_rebuilt_key_from_the_past_matches_nothing() {
     assert_eq!(new.idx(), old.idx());
 
     let rebuilt =
-        unsafe { Key::<DefaultConfig>::from_raw_parts(old.idx(), old.generation_non_zero()) };
+        unsafe { Key::<DefaultConfig>::from_raw_parts(old.idx(), old.non_zero_generation()) };
     assert!(map.get(rebuilt).is_none());
     assert!(map.get_mut(rebuilt).is_none());
     assert!(map.remove(rebuilt).is_none());

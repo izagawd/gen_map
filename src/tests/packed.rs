@@ -157,7 +157,7 @@ fn parts_round_trip_through_a_packed_key() {
         let k = key::<Compact>(idx, generation);
         assert_eq!(k.idx(), idx);
         assert_eq!(k.generation(), generation);
-        assert_eq!(k.generation_non_zero().get(), generation);
+        assert_eq!(k.non_zero_generation().get(), generation);
     }
 
     let k = key::<Huge>(u64::MAX as u128, u64::MAX as u128);
