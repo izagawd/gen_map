@@ -193,3 +193,23 @@ fn a_rebuilt_key_for_a_missing_slot_matches_nothing() {
     let rebuilt = unsafe { Key::<DefaultConfig>::from_raw_parts(99, NonZero::new(1).unwrap()) };
     assert!(map.get(rebuilt).is_none());
 }
+
+#[test]
+fn is_max_generation_is_true_only_at_the_last_generation() {
+    let mut map = GenMap::<i32, Cfg<u8, u8>>::new_with_config();
+    let mut key = map.insert(0);
+    while key.generation() != u8::MAX {
+        assert!(!key.is_max_generation());
+        map.remove(key);
+        key = map.insert(0);
+    }
+    assert!(key.is_max_generation());
+    assert!(map.detach(key).is_none());
+
+    // The slot retires when its last value is removed, so the next value
+    // goes into a new slot, with a key that is not at the last generation.
+    map.remove(key);
+    let fresh = map.insert(1);
+    assert_ne!(fresh.idx(), key.idx());
+    assert!(!fresh.is_max_generation());
+}

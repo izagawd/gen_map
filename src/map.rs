@@ -597,6 +597,7 @@ impl<T, C: Config> GenMap<T, C> {
     ///     Err(GetDisjointMutAtError::OverlappingIndices)
     /// );
     /// ```
+    #[inline]
     pub fn get_disjoint_mut_at<const N: usize>(
         &mut self,
         idxs: [C::Idx; N],
@@ -680,6 +681,7 @@ impl<T, C: Config> GenMap<T, C> {
     ///     Err(GetDisjointMutError::OverlappingKeys)
     /// );
     /// ```
+    #[inline]
     pub fn get_disjoint_mut<const N: usize>(
         &mut self,
         keys: [Key<C>; N],
@@ -947,6 +949,58 @@ impl<T, C: Config> GenMap<T, C> {
         // SAFETY: a key's generation is always odd, so a matching slot is
         // occupied.
         Some(unsafe { self.take(key.idx(), position) })
+    }
+
+    /// Removes and returns the value corresponding to `key` like
+    /// [`remove`](Self::remove), but retires its slot instead of freeing it.
+    /// Returns `None` if the key is invalid.
+    ///
+    /// A retired slot is never used again until [`reset`](Self::reset), no
+    /// matter how the map is configured, so no key to it can ever match a new
+    /// value. Useful for when a map's config wraps, but you want to retire
+    /// slots under certain conditions. 
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{Config, GenMap, Packed};
+    ///
+    /// /// Sixteen slots whose generations wrap after eight values.
+    /// struct Wrapping;
+    ///
+    /// impl Config for Wrapping {
+    ///     type Idx = u8;
+    ///     type Gen = u8;
+    ///     type Layout = Packed<u8, 4>;
+    ///     type Storage<S> = Vec<S>;
+    ///     const WRAP_ON_OVERFLOW: bool = true;
+    /// }
+    ///
+    /// let mut map = GenMap::<&str, Wrapping>::new_with_config();
+    /// let key = map.insert("a");
+    /// assert_eq!(map.retire(key), Some("a"));
+    /// assert!(map.get(key).is_none());
+    /// assert_eq!(map.generation_at(key.idx()), Some(0));
+    ///
+    /// // The retired slot is skipped, so the next value gets a new slot.
+    /// let other = map.insert("b");
+    /// assert_ne!(other.idx(), key.idx());
+    /// ```
+    #[inline]
+    pub fn retire(&mut self, key: Key<C>) -> Option<T> {
+        let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
+        if slot.generation != key.generation() {
+            return None;
+        }
+        // SAFETY: a key's generation is always odd, so the matching slot is
+        // occupied and `occupied` is the live field.
+        let value = unsafe { ManuallyDrop::take(&mut slot.data.occupied) };
+        // A generation of zero and no link to a free slot is what a retired
+        // slot looks like, and nothing puts it back on the free list.
+        slot.generation = C::Gen::ZERO;
+        slot.data.vacant = None;
+        self.len -= 1;
+        Some(value)
     }
 
     /// Moves the value out of the slot at `position`. The slot then goes on

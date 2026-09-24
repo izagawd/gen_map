@@ -16,6 +16,7 @@ mod overflow;
 mod packed;
 mod reset;
 mod retain;
+mod retire;
 #[cfg(feature = "smallvec")]
 mod smallvec_storage;
 mod storage_contract;

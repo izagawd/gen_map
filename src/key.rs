@@ -46,6 +46,15 @@ impl<C: Config> Key<C> {
         <Layout<C> as KeyLayout<C::Idx, C::Gen>>::generation(self.repr)
     }
 
+    /// Returns `true` if the key's generation is the largest one its layout
+    /// can hold. While the key is valid, removing its value wraps or retires
+    /// the slot, as the config says, and [`detach`](crate::GenMap::detach)
+    /// refuses it.
+    #[inline]
+    pub fn is_max_generation(&self) -> bool {
+        self.generation() == <Layout<C> as KeyLayout<C::Idx, C::Gen>>::max_generation()
+    }
+
     /// Builds a key from an index and a generation.
     ///
     /// # Safety

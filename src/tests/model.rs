@@ -168,6 +168,10 @@ struct Model<C: Config> {
     /// The value the next insert uses. Every value is different, so a value
     /// that shows up under the wrong key is caught.
     next_value: u32,
+    /// How many slots were retired with `retire`. A config that wraps can
+    /// not tell these apart from free slots by their generation, since both
+    /// have a generation of zero.
+    retired: usize,
 }
 
 impl<C: Config> Model<C> {
@@ -209,6 +213,7 @@ fn run<C: Config>(seed: u64, steps: usize) {
         detached: Vec::new(),
         dead: Vec::new(),
         next_value: 0,
+        retired: 0,
     };
     let mut context = Context { seed, step: 0 };
 
@@ -217,7 +222,8 @@ fn run<C: Config>(seed: u64, steps: usize) {
         // The weights are out of a thousand.
         match rng.below(1000) {
             0..=299 => insert(&mut map, &mut model, &mut rng),
-            300..=449 => remove(&mut map, &mut model, &mut rng),
+            300..=429 => remove(&mut map, &mut model, &mut rng),
+            430..=449 => retire(&mut map, &mut model, &mut rng),
             450..=499 => look_up_invalid(&mut map, &mut model, &mut rng),
             500..=599 => overwrite(&mut map, &mut model, &mut rng),
             600..=669 => detach(&mut map, &mut model, &mut rng),
@@ -238,6 +244,7 @@ fn run<C: Config>(seed: u64, steps: usize) {
                 model.live.clear();
                 model.detached.clear();
                 model.dead.clear();
+                model.retired = 0;
             }
         }
         check(&map, &model, &mut rng);
@@ -308,7 +315,7 @@ fn insert<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut R
 /// of them can take a new value.
 fn assert_no_slot_is_free<C: Config>(map: &GenMap<u32, C>, model: &Model<C>) {
     let retired = if C::WRAP_ON_OVERFLOW {
-        0
+        model.retired
     } else {
         (0..map.slots_len())
             .filter(|&position| {
@@ -323,6 +330,17 @@ fn assert_no_slot_is_free<C: Config>(map: &GenMap<u32, C>, model: &Model<C>) {
     );
 }
 
+fn retire<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+    if model.live.is_empty() {
+        return;
+    }
+    let (key, value) = model.live.swap_remove(rng.below(model.live.len()));
+    assert_eq!(map.retire(key), Some(value));
+    assert_eq!(map.generation_at(key.idx()), Some(C::Gen::ZERO));
+    model.dead.push(key);
+    model.retired += 1;
+}
+
 fn remove<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     if model.live.is_empty() {
         return;
@@ -332,8 +350,8 @@ fn remove<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut R
     model.dead.push(key);
 }
 
-/// Tries every kind of lookup with a removed or detached key, none of which
-/// may find anything.
+/// Tries every kind of lookup with a removed, retired or detached key, none
+/// of which may find anything.
 fn look_up_invalid<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     let count = model.dead.len() + model.detached.len();
     if count == 0 {
@@ -348,6 +366,7 @@ fn look_up_invalid<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rn
     assert!(map.get_mut(key).is_none());
     assert!(!map.contains_key(key));
     assert!(map.remove(key).is_none());
+    assert!(map.retire(key).is_none());
     assert!(map.detach(key).is_none());
 }
 
@@ -376,6 +395,7 @@ fn detach<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut R
         None => {
             // `detach` only refuses a slot whose generation is already the
             // largest one, and the value then stays in the map.
+            assert!(key.is_max_generation());
             assert_eq!(key.generation(), largest_generation::<C>());
             assert_eq!(map.get(key), Some(&value));
             model.live.push((key, value));

@@ -150,6 +150,11 @@
 //! the slot is reused. No slot is ever lost, but a key that is old enough can
 //! match a new value once the generation wraps around to it again.
 //!
+//! [`retire`](GenMap::retire) removes a value and retires its slot, no
+//! matter how the map is configured. Code built on a map that wraps can use
+//! it to keep the slots it chooses from wrapping, and
+//! [`Key::is_max_generation`] can be used to determine when a slot has reached that point.
+//!
 //! ## Storage
 //!
 //! The slots can live in any collection that implements [`SlotStorage`]. A
