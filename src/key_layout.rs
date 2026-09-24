@@ -43,7 +43,8 @@ pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
 }
 
 /// Stores the index and the generation as two fields, so a key is as large
-/// as the two put together. Every value of `Idx` and `Gen` fits.
+/// as the two put together, plus any padding their alignment needs. Every
+/// value of `Idx` and `Gen` fits.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Split;
 

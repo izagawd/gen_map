@@ -17,8 +17,9 @@ use core::num::NonZero;
 /// not fit, and converting a value that fits there and back must give the
 /// same value. The largest value must be odd.
 pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static {
-    /// The `NonZero` form of this integer. A key stores its generation in
-    /// this form, which makes `Option<Key>` the same size as `Key`.
+    /// The `NonZero` form of this integer. A key hands out its generation in
+    /// this form, and a [`Split`](crate::Split) key stores it this way, which
+    /// makes `Option<Key>` the same size as `Key`.
     type NonZero: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static;
 
     /// The value zero.

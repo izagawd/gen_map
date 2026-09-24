@@ -13,9 +13,10 @@ use core::iter::{Enumerate, FusedIterator};
 use core::mem::ManuallyDrop;
 use core::ops::{Index, IndexMut};
 
-/// The payload of a slot. `occupied` is live while the slot holds a value and
-/// `vacant` while it sits on the free list. The owning [`Slot`] tells the two
-/// apart by its generation.
+/// The payload of a slot. `occupied` is live while the slot holds a value, and
+/// `vacant` is live the rest of the time. For a slot on the free list,
+/// `vacant` names the next free slot. The owning [`Slot`] tells the two
+/// fields apart by its generation.
 union SlotData<T, Idx: Copy> {
     occupied: ManuallyDrop<T>,
     vacant: Option<Idx>,
@@ -24,9 +25,9 @@ union SlotData<T, Idx: Copy> {
 /// One entry of a map's storage, the `S` of a config's `Storage<S>`. It has
 /// no public API.
 ///
-/// An even generation means vacant and an odd one means occupied. Insert
-/// and remove each increment the generation, so every key carries an odd
-/// generation.
+/// An odd generation means the slot holds a value, and an even one means it
+/// does not. Insert and remove each increment the generation, so every key
+/// carries an odd generation.
 pub struct Slot<T, C: Config> {
     generation: C::Gen,
     data: SlotData<T, C::Idx>,
@@ -370,7 +371,7 @@ impl<T, C: Config> GenMap<T, C> {
         self.len == 0
     }
 
-    /// The number of slots, occupied and vacant together.
+    /// The number of slots, whether they hold a value or not.
     #[inline]
     pub fn slots_len(&self) -> usize {
         self.slots.len()
