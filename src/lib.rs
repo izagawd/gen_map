@@ -313,7 +313,7 @@
 //! - `smallvec` lets a `smallvec::SmallVec` hold the slots. It uses the 2.0
 //!   beta of `smallvec`, which needs an allocator and Rust 1.86.
 //!
-//! A map with no allocator at all turns `alloc` off and `arrayvec` on.
+//! To use the map without any allocator, turn `alloc` off and `arrayvec` on.
 //!
 //! ```toml
 //! [dependencies]
