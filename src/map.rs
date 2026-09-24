@@ -611,7 +611,7 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// There must be a slot at every index and each must hold a value,
     /// meaning [`key_at`](Self::key_at) returns `Some` for every one of them,
-    /// and no two indices of the keys provided may be the same.
+    /// and no two indices provided may be the same.
     #[inline]
     pub unsafe fn get_disjoint_mut_at_unchecked<const N: usize>(
         &mut self,
