@@ -7,9 +7,9 @@
 //! anything else that refers to values by handle.
 //!
 //! Inserting, removing and looking up a value are all O(1). The crate is
-//! `no_std`. Only its `Vec` storage needs an allocator, and that storage comes
-//! from the `alloc` feature, which is on by default and can be turned off.
-//! See [Cargo features](#cargo-features).
+//! `no_std`, and it only needs an allocator for storage that uses the heap,
+//! such as `Vec`. The `Vec` storage comes from the `alloc` feature, which is
+//! on by default and can be turned off. See [Cargo features](#cargo-features).
 //!
 //! # Examples
 //!
@@ -161,9 +161,9 @@
 //! The methods that make room ahead of time, which are
 //! [`reserve`](GenMap::reserve), [`try_reserve`](GenMap::try_reserve),
 //! [`with_capacity`](GenMap::with_capacity) and
-//! [`with_capacity_and_config`](GenMap::with_capacity_and_config), are only
-//! there when the storage also implements [`ReserveStorage`], as a `Vec`
-//! does.
+//! [`with_capacity_and_config`](GenMap::with_capacity_and_config), only
+//! exist when the storage also implements [`ReserveStorage`], as `Vec` and
+//! `SmallVec` do.
 //!
 //! # When the map is full
 //!
@@ -173,7 +173,7 @@
 //! 256 slots.
 //!
 //! [`insert`](GenMap::insert) panics on a full map. The other ways to insert
-//! report it as an error.
+//! report a full map as an error.
 //!
 //! - [`try_insert`](GenMap::try_insert) returns an [`InsertError`] that hands
 //!   the value back.

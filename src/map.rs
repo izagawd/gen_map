@@ -1039,8 +1039,8 @@ impl<T, C: Config> GenMap<T, C> {
         Some(value)
     }
 
-    /// Puts a value back under a key that [`detach`](Self::detach) took the
-    /// value out from. The key is valid again afterwards.
+    /// Puts a value back under a key whose value [`detach`](Self::detach)
+    /// took out. The key is valid again afterwards.
     ///
     /// # Panics
     ///

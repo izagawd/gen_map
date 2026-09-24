@@ -1,5 +1,5 @@
-//! A storage with a fixed capacity and no `ReserveStorage`, to check that the
-//! map works on one and reports the storage's own error.
+//! A storage with a fixed capacity and no `ReserveStorage`, to check that a
+//! map works with such a storage and reports the storage's own error type.
 
 use crate::{
     Config, FullError, GenMap, InsertError, InsertWithError, SlotStorage, Split, StorageError,

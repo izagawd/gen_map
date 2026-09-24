@@ -71,7 +71,8 @@ fn clone_preserves_free_list_and_generations() {
     assert_eq!(clone.slots_len(), 3);
     assert!(clone.get(k2).is_none());
 
-    // Both maps hand out the same next key, since they share history.
+    // Both maps hand out the same next key, since the clone copied the free
+    // list and the generations.
     let from_map = map.insert(99);
     let from_clone = clone.insert(99);
     assert_eq!(from_map, from_clone);

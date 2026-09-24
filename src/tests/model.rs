@@ -260,7 +260,7 @@ fn slot_count_limit<C: Config>() -> Option<usize> {
 
 fn insert<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     // Dropping the entry leaves the map as it was, so the insert below must
-    // hand out the key it promised.
+    // hand out the key the entry promised.
     let promised = map.vacant_entry().ok().map(|entry| entry.key());
 
     if rng.chance(10) {

@@ -52,7 +52,8 @@ pub unsafe trait SlotStorage<S>:
     fn as_mut_slice(&mut self) -> &mut [S];
 
     /// Makes sure the next [`try_push`](Self::try_push) will succeed,
-    /// growing if the storage can and has to, or says why it will not.
+    /// growing if the storage can and has to, or returns the reason the push
+    /// would fail.
     fn ensure_room(&mut self) -> Result<(), Self::Error>;
 
     /// Appends `item`, or hands it back if the storage can not make room for

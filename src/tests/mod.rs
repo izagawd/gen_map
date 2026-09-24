@@ -138,9 +138,9 @@ impl Drop for DropItem {
 
 /// A value whose drop panics when it is armed. It holds a [`DropItem`], and
 /// the item is still dropped while the panic unwinds, so a [`DropTracker`]
-/// sees every bomb dropped exactly once whether it went off or not. A bomb
-/// never goes off while the thread is already panicking, since a second
-/// panic would abort the tests.
+/// sees every bomb dropped exactly once, whether its drop panicked or not.
+/// An armed bomb does not panic while the thread is already panicking, since
+/// a second panic would abort the tests.
 pub(crate) struct Bomb {
     armed: bool,
     _item: DropItem,
