@@ -1,5 +1,5 @@
 use super::Cfg;
-use crate::{Config, DefaultConfig, GenMap, Key, KeyPiece};
+use crate::{Config, DefaultConfig, GenMap, Key, Split};
 use core::mem::size_of;
 use core::num::NonZero;
 use std::vec::Vec;
@@ -32,17 +32,13 @@ fn option_of_key_costs_nothing_extra() {
 
 #[test]
 fn keys_are_ordered_by_index_then_generation() {
-    let a = Key::<DefaultConfig> {
-        idx: 1,
-        generation: NonZero::new(3).unwrap(),
-    };
-    let b = Key::<DefaultConfig> {
-        idx: 1,
-        generation: NonZero::new(5).unwrap(),
-    };
-    let c = Key::<DefaultConfig> {
-        idx: 2,
-        generation: NonZero::new(1).unwrap(),
+    // SAFETY: every generation is odd and everything fits a `u32`.
+    let (a, b, c) = unsafe {
+        (
+            Key::<DefaultConfig>::from_raw_parts(1, NonZero::new(3).unwrap()),
+            Key::<DefaultConfig>::from_raw_parts(1, NonZero::new(5).unwrap()),
+            Key::<DefaultConfig>::from_raw_parts(2, NonZero::new(1).unwrap()),
+        )
     };
     assert!(a < b);
     assert!(b < c);
@@ -53,10 +49,8 @@ fn keys_are_ordered_by_index_then_generation() {
 
 #[test]
 fn key_debug_prints_both_parts() {
-    let k = Key::<DefaultConfig> {
-        idx: 4,
-        generation: NonZero::new(7).unwrap(),
-    };
+    // SAFETY: 7 is odd and both parts fit a `u32`.
+    let k = unsafe { Key::<DefaultConfig>::from_raw_parts(4, NonZero::new(7).unwrap()) };
     let text = std::format!("{k:?}");
     assert!(text.contains("idx: 4"));
     assert!(text.contains("generation: 7"));
@@ -68,6 +62,7 @@ fn every_integer_type_works_as_a_config() {
     impl Config for Mixed {
         type Idx = u64;
         type Gen = u8;
+        type Layout = Split;
         type Storage<S> = Vec<S>;
     }
 
@@ -75,6 +70,7 @@ fn every_integer_type_works_as_a_config() {
     impl Config for Wide {
         type Idx = u128;
         type Gen = usize;
+        type Layout = Split;
         type Storage<S> = Vec<S>;
     }
 
@@ -85,8 +81,8 @@ fn every_integer_type_works_as_a_config() {
     let mut wide = GenMap::<i32, Wide>::default();
     let k = wide.insert(2);
     assert_eq!(wide[k], 2);
-    assert_eq!(k.idx, 0u128);
-    assert_eq!(k.generation.get(), 1usize);
+    assert_eq!(k.idx(), 0u128);
+    assert_eq!(k.generation(), 1usize);
 }
 
 #[test]
@@ -103,17 +99,17 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     impl Config for Wide {
         type Idx = u128;
         type Gen = u32;
+        type Layout = Split;
         type Storage<S> = Vec<S>;
     }
 
     let mut map = GenMap::<i32, Wide>::new_with_config();
     let k = map.insert(1);
     // Same low bits as `k`, so a truncating conversion would land on its slot.
-    let too_wide = (1u128 << 64) | k.idx;
-    let bogus = Key::<Wide> {
-        idx: too_wide,
-        generation: k.generation,
-    };
+    let too_wide = (1u128 << 64) | k.idx();
+    // SAFETY: the generation is the one of a live key, and both parts fit
+    // the `Split` layout of `Wide`.
+    let bogus = unsafe { Key::<Wide>::from_raw_parts(too_wide, k.generation_non_zero()) };
 
     assert!(map.get(bogus).is_none());
     assert!(map.get_mut(bogus).is_none());
@@ -151,12 +147,23 @@ fn a_generation_is_always_odd() {
 }
 
 #[test]
+fn generation_non_zero_is_the_generation() {
+    let mut map = GenMap::new();
+    let a = map.insert(1);
+    map.remove(a);
+    let b = map.insert(2);
+    for key in [a, b] {
+        assert_eq!(key.generation_non_zero().get(), key.generation());
+    }
+}
+
+#[test]
 fn from_raw_parts_rebuilds_a_key() {
     let mut map = GenMap::new();
     let key = map.insert(42);
-    let (idx, generation) = (key.idx(), key.generation());
+    let (idx, generation) = (key.idx(), key.generation_non_zero());
 
-    let rebuilt = unsafe { Key::<DefaultConfig>::from_raw_parts(idx, generation.into_non_zero().unwrap()) };
+    let rebuilt = unsafe { Key::<DefaultConfig>::from_raw_parts(idx, generation) };
     assert_eq!(rebuilt, key);
     assert_eq!(map.get(rebuilt), Some(&42));
 }
@@ -169,7 +176,8 @@ fn a_rebuilt_key_from_the_past_matches_nothing() {
     let new = map.insert(2);
     assert_eq!(new.idx(), old.idx());
 
-    let rebuilt = unsafe { Key::<DefaultConfig>::from_raw_parts(old.idx(), old.generation().into_non_zero().unwrap()) };
+    let rebuilt =
+        unsafe { Key::<DefaultConfig>::from_raw_parts(old.idx(), old.generation_non_zero()) };
     assert!(map.get(rebuilt).is_none());
     assert!(map.get_mut(rebuilt).is_none());
     assert!(map.remove(rebuilt).is_none());

@@ -1,4 +1,4 @@
-use crate::{Config, GenMap, InsertError};
+use crate::{Config, GenMap, InsertError, Split};
 use std::string::{String, ToString};
 use std::vec::Vec;
 
@@ -7,10 +7,9 @@ struct Byte;
 impl Config for Byte {
     type Idx = u8;
     type Gen = u8;
+    type Layout = Split;
     type Storage<S> = Vec<S>;
 }
-
-
 
 #[test]
 fn try_insert_works_like_insert_while_there_is_room() {
@@ -36,8 +35,6 @@ fn try_insert_hands_the_value_back_when_the_index_runs_out() {
     assert_eq!(map.slots_len(), 256);
 }
 
-
-
 #[test]
 fn into_inner_takes_the_value_back() {
     assert_eq!(InsertError::<_, ()>::IndexExhausted(5).into_inner(), 5);
@@ -54,7 +51,6 @@ fn the_error_does_not_need_debug_from_the_value() {
     let text = std::format!("{}", InsertError::StorageFull(Opaque, "why"));
     assert!(text.contains("storage") && text.contains("why"));
 }
-
 
 #[test]
 #[should_panic(expected = "can not address more than 256 slots")]

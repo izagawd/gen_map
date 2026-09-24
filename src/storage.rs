@@ -96,7 +96,7 @@ pub trait ReserveStorage<S>: SlotStorage<S> {
     fn try_reserve(&mut self, additional: usize) -> Result<(), Self::Error>;
 }
 
-// SAFETY: `Vec::push` itself
+// SAFETY: `Vec` is the behaviour the trait describes. `Vec::push` itself
 // panics on capacity overflow and aborts on allocation failure, so both
 // `ensure_room` and `try_push` go through `try_reserve`, which reports the
 // two as errors.

@@ -5,12 +5,12 @@ use core::fmt;
 /// what the other insert errors wrap. `E` is the map's
 /// [`StorageError`](crate::StorageError).
 ///
-/// When the index type and the storage are both exhausted,
+/// When the keys' index and the storage are both exhausted,
 /// [`IndexExhausted`](Self::IndexExhausted) is the one reported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FullError<E> {
-    /// The map has `C::Idx::MAX + 1` slots and none of them are free, so
-    /// there is no index left for a new slot.
+    /// The map has a slot at every index its keys can hold and none of
+    /// them are free.
     IndexExhausted,
 
     /// None of the slots are free and the storage could not make room for
@@ -34,7 +34,7 @@ impl<E> FullError<E> {
 impl<E: fmt::Display> fmt::Display for FullError<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::IndexExhausted => f.write_str("the index type can not address another slot"),
+            Self::IndexExhausted => f.write_str("the keys can not address another slot"),
             Self::StorageFull(error) => {
                 write!(f, "the storage can not make room for another slot: {error}")
             }
@@ -46,11 +46,11 @@ impl<E: fmt::Display> fmt::Display for FullError<E> {
 /// Each variant hands the value back so that the caller can keep it. `E` is
 /// the map's [`StorageError`](crate::StorageError).
 ///
-/// When the index type and the storage are both exhausted,
+/// When the keys' index and the storage are both exhausted,
 /// [`IndexExhausted`](Self::IndexExhausted) is the one reported.
 pub enum InsertError<T, E> {
-    /// The map has `C::Idx::MAX + 1` slots and none of them are free, so
-    /// there is no index left for a new slot.
+    /// The map has a slot at every index its keys can hold and none of
+    /// them are free.
     IndexExhausted(T),
 
     /// None of the slots are free and the storage could not make room for
@@ -112,7 +112,7 @@ pub enum InsertWithError<E, S> {
     /// The map had no room, so the closure was never called.
     Full(FullError<S>),
 
-    /// Custom error that occurred mid-insert.
+    /// The closure returned this error, so nothing was inserted.
     Rejected(E),
 }
 
@@ -199,7 +199,7 @@ pub enum GetDisjointMutError {
     /// [`contains_key`](crate::GenMap::contains_key) returns `false` for it.
     InvalidKey,
 
-    /// Two of the keys point at the same slot, so the references would
+    /// Two or more of the keys point at the same slot, so the references would
     /// alias.
     OverlappingKeys,
 }

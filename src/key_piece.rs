@@ -26,6 +26,12 @@ pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'stati
     /// The value one.
     const ONE: Self;
 
+    /// The largest value.
+    const MAX: Self;
+
+    /// The number of bits.
+    const BITS: u32;
+
     /// Returns `self + rhs`, or `None` if the sum does not fit in this type.
     fn checked_add(self, rhs: Self) -> Option<Self>;
 
@@ -73,6 +79,20 @@ pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'stati
 
     /// Converts a `NonZero` value back to the plain integer.
     fn from_non_zero(v: Self::NonZero) -> Self;
+
+    /// Converts the value to a `u128`, which every value fits in.
+    fn into_u128(self) -> u128;
+
+    /// Converts a `u128` to this type, or returns `None` if it does not fit.
+    fn from_u128(v: u128) -> Option<Self>;
+
+    /// [`from_u128`](Self::from_u128) for a value that is known to fit.
+    ///
+    /// # Safety
+    ///
+    /// `v` must fit in this type, meaning [`from_u128`](Self::from_u128)
+    /// returns `Some` for it.
+    unsafe fn from_u128_unchecked(v: u128) -> Self;
 }
 
 macro_rules! impl_key_piece {
@@ -83,6 +103,8 @@ macro_rules! impl_key_piece {
 
                 const ZERO: Self = 0;
                 const ONE: Self = 1;
+                const MAX: Self = <$t>::MAX;
+                const BITS: u32 = <$t>::BITS;
 
                 #[inline]
                 fn checked_add(self, rhs: Self) -> Option<Self> {
@@ -140,6 +162,23 @@ macro_rules! impl_key_piece {
                 #[inline]
                 fn from_non_zero(v: Self::NonZero) -> Self {
                     v.get()
+                }
+
+                #[inline]
+                fn into_u128(self) -> u128 {
+                    self as u128
+                }
+
+                #[inline]
+                fn from_u128(v: u128) -> Option<Self> {
+                    <$t>::try_from(v).ok()
+                }
+
+                /// The same cast as `from_usize_unchecked`, for a `u128`.
+                #[inline]
+                unsafe fn from_u128_unchecked(v: u128) -> Self {
+                    debug_assert!(<$t>::try_from(v).is_ok());
+                    v as $t
                 }
             }
         )*

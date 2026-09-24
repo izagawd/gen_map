@@ -22,13 +22,14 @@
 //! With a custom config:
 //!
 //! ```
-//! use gen_map::{Config, GenMap, Key};
+//! use gen_map::{Config, GenMap, Key, Split};
 //!
 //! struct Tiny;
 //!
 //! impl Config for Tiny {
 //!     type Idx = u8;
 //!     type Gen = u8;
+//!     type Layout = Split;
 //!     type Storage<S> = Vec<S>;
 //! }
 //!
@@ -49,6 +50,7 @@ extern crate std;
 mod config;
 mod error;
 mod key;
+mod key_layout;
 mod key_piece;
 mod map;
 mod storage;
@@ -58,6 +60,7 @@ pub use error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
 };
 pub use key::Key;
+pub use key_layout::{KeyLayout, Packed, Split, SplitRepr};
 pub use key_piece::KeyPiece;
 pub use map::{
     Drain, GenMap, IntoIter, Iter, IterMut, Keys, Slot, StorageError, VacantEntry, Values,

@@ -1,5 +1,5 @@
 use super::{Cfg, DropTracker};
-use crate::{Config, GenMap, GetDisjointMutAtError, Key};
+use crate::{Config, GenMap, GetDisjointMutAtError, Key, Split};
 use std::vec::Vec;
 
 type Tiny = Cfg<u8, u8>;
@@ -78,6 +78,7 @@ fn get_at_with_an_index_that_does_not_fit_in_usize_is_none() {
     impl Config for Wide {
         type Idx = u128;
         type Gen = u32;
+        type Layout = Split;
         type Storage<S> = Vec<S>;
     }
 
