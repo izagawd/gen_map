@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 /// ```
 /// use gen_map::{Config, GenMap, Split};
 ///
-/// /// Four byte keys, and slots get reused forever.
+/// /// Four byte keys, and slots are never retired.
 /// struct Small;
 ///
 /// impl Config for Small {
@@ -20,9 +20,9 @@ use alloc::vec::Vec;
 ///     type Idx = u16;
 ///     // generation type
 ///     type Gen = u16;
-///     // how a key stores the two
+///     // How a key stores the index and the generation.
 ///     type Layout = Split;
-///     // where the slots live
+///     // The collection the slots live in.
 ///     type Storage<S> = Vec<S>;
 ///     const WRAP_ON_OVERFLOW: bool = true;
 /// }
