@@ -1238,13 +1238,19 @@ impl<T: Clone, C: Config> Clone for GenMap<T, C> {
         }
     }
 
-    /// Reuses this map's allocation. If a value's `clone` panics, this map is
-    /// left empty.
+    /// Reuses this map's allocation if it is large enough, and otherwise
+    /// makes one of the right size before cloning any slot. If a value's
+    /// `clone` panics, this map is left empty.
     fn clone_from(&mut self, source: &Self) {
         self.next_free = None;
         self.len = 0;
         let guard: ClearOnUnwind<'_, T, C> = ClearOnUnwind(&mut self.slots);
         SlotStorage::clear(guard.0);
+        // An allocation that is too small would grow several times while the
+        // slots are pushed, so it is swapped for one of the right size.
+        if guard.0.capacity() < source.slots.len() {
+            *guard.0 = Slots::<T, C>::with_capacity(source.slots.len());
+        }
         for slot in source.slots.as_slice() {
             push_cloned(guard.0, slot.clone_slot());
         }

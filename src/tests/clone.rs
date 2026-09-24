@@ -163,6 +163,32 @@ fn clone_from_overwrites_a_larger_target() {
 }
 
 #[test]
+fn clone_from_sizes_a_small_target_once() {
+    let mut source = Map::new();
+    let keys: Vec<_> = (0..100).map(|i| source.insert(i)).collect();
+    let mut target = Map::new();
+    target.insert(-1);
+
+    target.clone_from(&source);
+    assert_eq!(target.capacity(), source.slots_len());
+    for (i, key) in keys.iter().enumerate() {
+        assert_eq!(target[*key], i as i32);
+    }
+}
+
+#[test]
+fn clone_from_keeps_an_allocation_that_is_large_enough() {
+    let mut source = Map::new();
+    let key = source.insert(1);
+    let mut target = Map::with_capacity(64);
+    let capacity = target.capacity();
+
+    target.clone_from(&source);
+    assert_eq!(target.capacity(), capacity);
+    assert_eq!(target[key], 1);
+}
+
+#[test]
 fn clone_from_is_drop_balanced() {
     let tracker = DropTracker::new();
     let mut source = GenMap::new();
