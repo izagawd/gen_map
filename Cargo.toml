@@ -1,6 +1,6 @@
 [package]
 name = "gen_map"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.79.0"
 authors = ["Izagawd <theizaboss@gmail.com>"]
@@ -12,7 +12,7 @@ readme = "README.md"
 description = "This crate provides customizable generational maps."
 
 [features]
-default = ["alloc", "arrayvec", "smallvec"]
+default = ["alloc"]
 alloc = []
 arrayvec = ["dep:arrayvec"]
 smallvec = ["dep:smallvec"]
