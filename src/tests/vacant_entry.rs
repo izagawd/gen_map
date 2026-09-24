@@ -154,3 +154,13 @@ fn full_error_as_ref_borrows_the_storage_error() {
         FullError::IndexExhausted
     );
 }
+
+#[test]
+fn vacant_entry_debug_prints_the_key() {
+    let mut map = GenMap::<i32>::new();
+    map.insert(1);
+    let entry = map.vacant_entry().unwrap();
+    let text = std::format!("{entry:?}");
+    assert!(text.starts_with("VacantEntry"));
+    assert!(text.contains(&std::format!("{:?}", entry.key())));
+}

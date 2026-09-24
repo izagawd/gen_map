@@ -1,5 +1,6 @@
-use super::{DropItem, DropTracker};
+use super::{Bomb, DropItem, DropTracker};
 use crate::GenMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
 
 type Map = GenMap<i32>;
@@ -170,4 +171,53 @@ fn drain_with_gaps_drops_only_occupied_slots() {
 
     tracker.assert_all_dropped_exactly_once(3);
     assert_eq!(map.len(), 0);
+}
+
+#[test]
+fn dropping_a_drain_stays_consistent_when_a_drop_panics() {
+    let tracker = DropTracker::new();
+    let mut map = GenMap::new();
+    let keys: Vec<_> = (0..5)
+        .map(|i| map.insert(Bomb::new(&tracker, i == 2)))
+        .collect();
+
+    let mut drain = map.drain();
+    drop(drain.next());
+    assert!(catch_unwind(AssertUnwindSafe(move || drop(drain))).is_err());
+
+    // The panic stopped the drain right after it took out the value at 2.
+    assert_eq!(map.len(), 2);
+    for key in &keys[..3] {
+        assert!(map.get(*key).is_none());
+    }
+    for key in &keys[3..] {
+        assert!(map.contains_key(*key));
+    }
+
+    drop(map);
+    tracker.assert_all_dropped_exactly_once(5);
+}
+
+#[test]
+fn a_panic_while_draining_still_empties_the_map() {
+    let tracker = DropTracker::new();
+    let mut map = GenMap::new();
+    for _ in 0..5 {
+        map.insert(tracker.make_item());
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        for (i, (_, item)) in map.drain().enumerate() {
+            drop(item);
+            if i == 2 {
+                panic!("boom");
+            }
+        }
+    }));
+    assert!(result.is_err());
+
+    // The drain is dropped while the panic unwinds, and dropping it removes
+    // what it had not yielded yet.
+    assert!(map.is_empty());
+    tracker.assert_all_dropped_exactly_once(5);
 }

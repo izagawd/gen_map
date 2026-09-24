@@ -1,3 +1,4 @@
+use super::{Bomb, DropTracker};
 use crate::{GenMap, InsertWithError, Key};
 use core::num::NonZero;
 use std::collections::HashSet;
@@ -20,6 +21,10 @@ fn new_map_is_empty() {
 #[test]
 fn with_capacity_reserves_slots() {
     let map: Map<i32> = Map::with_capacity(64);
+    assert!(map.capacity() >= 64);
+    assert_eq!(map.slots_len(), 0);
+
+    let map = GenMap::<i32, super::Cfg<u8, u8>>::with_capacity_and_config(64);
     assert!(map.capacity() >= 64);
     assert_eq!(map.slots_len(), 0);
 }
@@ -373,4 +378,39 @@ fn debug_output_lists_entries() {
     let text = std::format!("{map:?}");
     assert!(text.contains("5"));
     assert!(text.contains(&std::format!("{}", k.idx())));
+}
+
+#[test]
+fn clear_stays_consistent_when_a_drop_panics() {
+    let tracker = DropTracker::new();
+    let mut map = GenMap::new();
+    let keys: Vec<_> = (0..5)
+        .map(|i| map.insert(Bomb::new(&tracker, i == 2)))
+        .collect();
+
+    assert!(catch_unwind(AssertUnwindSafe(|| map.clear())).is_err());
+
+    // The panic stopped `clear` right after it took out the value at 2.
+    assert_eq!(map.len(), 2);
+    for key in &keys[..3] {
+        assert!(map.get(*key).is_none());
+    }
+    for key in &keys[3..] {
+        assert!(map.contains_key(*key));
+    }
+
+    map.clear();
+    assert!(map.is_empty());
+    tracker.assert_all_dropped_exactly_once(5);
+}
+
+#[test]
+fn dropping_the_map_drops_every_value_once_when_a_drop_panics() {
+    let tracker = DropTracker::new();
+    let mut map = GenMap::new();
+    for i in 0..5 {
+        map.insert(Bomb::new(&tracker, i == 2));
+    }
+    assert!(catch_unwind(AssertUnwindSafe(move || drop(map))).is_err());
+    tracker.assert_all_dropped_exactly_once(5);
 }
