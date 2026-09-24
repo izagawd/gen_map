@@ -3,11 +3,11 @@
 A customizable generational map that returns a `Key` upon inserting a value. The key can be used to later access or remove the value, and removing a value bumps its slot's generation, so the old key no longer matches.
 The operations for inserting, removing and accessing a value are all O(1).
 
-The crate is `no_std` and only needs `alloc`.
+The crate is `no_std`.
 
 ```toml
 [dependencies]
-gen_map = "0.2.1"
+gen_map = "0.2.2"
 ```
 
 ## Example
