@@ -1,10 +1,12 @@
 //! A generational map with a configurable key.
 //!
 //! [`GenMap`] stores values and hands out a [`Key`] for each one. A key stays
-//! valid until its value is removed, and it never matches the value that
-//! later takes the same slot. That makes keys safe to hold on to where plain
-//! indices or references are not, such as in graphs, entity systems and
-//! anything else that refers to values by handle.
+//! valid until its value is removed, and by default it never matches a value
+//! that later takes the same slot. The only exceptions are a config that
+//! wraps generations and [`reset`](GenMap::reset), both described below.
+//! That makes keys safe to hold on to where plain indices or references are
+//! not, such as in graphs, entity systems and anything else that refers to
+//! values by handle.
 //!
 //! Inserting, removing and looking up a value are all O(1). The crate is
 //! `no_std`, and it only needs an allocator for storage that uses the heap,
@@ -297,8 +299,8 @@
 //! # Unchecked access
 //!
 //! Every lookup has an `_unchecked` form, such as
-//! [`get_unchecked`](GenMap::get_unchecked), that skips the bounds and
-//! generation checks for code that already knows its key or index is valid.
+//! [`get_unchecked`](GenMap::get_unchecked), that skips the checks the
+//! normal form makes, for code that already knows its key or index is valid.
 //! Calling one with an invalid key or index is undefined behavior.
 //!
 //! [`Key::from_raw_parts`] builds a key from an index and a generation. It

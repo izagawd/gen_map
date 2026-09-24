@@ -998,9 +998,10 @@ impl<T, C: Config> GenMap<T, C> {
     /// not counted by [`len`](Self::len), but the slot is not on the free
     /// list, so no insert call uses it.
     ///
-    /// Returns `None` if the key is invalid, and also if adding one to the
-    /// slot's generation would overflow, because a slot that is about to
-    /// retire or wrap can not promise to give the same key back. The value
+    /// Returns `None` if the key is invalid, and also if the slot's
+    /// generation is already the largest one its key can hold, because a
+    /// slot that is about to retire or wrap can not promise to give the same
+    /// key back. The value
     /// stays in the map in that case.
     ///
     /// [`clear`](Self::clear) and [`retain`](Self::retain) leave a detached
