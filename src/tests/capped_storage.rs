@@ -63,8 +63,8 @@ unsafe impl<S> SlotStorage<S> for Capped<S> {
         }
     }
 
-    fn truncate(&mut self, len: usize) {
-        self.0.truncate(len);
+    fn clear(&mut self) {
+        self.0.clear()
     }
 }
 

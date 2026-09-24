@@ -57,10 +57,6 @@ pub unsafe trait SlotStorage<S>:
     /// it.
     fn try_push(&mut self, item: S) -> Result<(), S>;
 
-    /// Drops every item past the first `len` of them. Does nothing if there
-    /// are no more than `len` items.
-    fn truncate(&mut self, len: usize);
-
     /// The number of items.
     #[inline]
     fn len(&self) -> usize {
@@ -75,9 +71,7 @@ pub unsafe trait SlotStorage<S>:
 
     /// Drops every item.
     #[inline]
-    fn clear(&mut self) {
-        self.truncate(0);
-    }
+    fn clear(&mut self);
 }
 
 /// A [`SlotStorage`] that can make room for more items on request. After
@@ -144,11 +138,6 @@ unsafe impl<S> SlotStorage<S> for Vec<S> {
     #[inline]
     fn clear(&mut self) {
         Vec::clear(self)
-    }
-
-    #[inline]
-    fn truncate(&mut self, len: usize) {
-        Vec::truncate(self, len);
     }
 }
 
