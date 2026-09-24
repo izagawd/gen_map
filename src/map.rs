@@ -1083,40 +1083,6 @@ impl<T, C: Config> GenMap<T, C> {
         self.slots.clear();
     }
 
-    /// Takes every slot at `new_len` or past it off the free list, keeping
-    /// the order of the rest.
-    fn unlink_free_from(&mut self, new_len: usize) {
-        // The list is singly linked, so unlinking is done through a pointer
-        // to the link that names each slot, starting at `next_free`. The
-        // whole walk uses raw pointers, because the link lives in the map for
-        // the first slot and inside a slot for the rest, and a fresh borrow
-        // of the slots on every step would invalidate a link that points
-        // into an earlier one.
-        let slots: *mut Slot<T, C> = self.slots.as_mut_slice().as_mut_ptr();
-        let mut link: *mut Option<C::Idx> = &mut self.next_free;
-        // SAFETY: `link` points either at `next_free` or at the `vacant`
-        // field of a slot on the free list. Both stay in place, and nothing
-        // else touches the slots, while the walk runs.
-        while let Some(idx) = unsafe { *link } {
-            // SAFETY: `idx` is on the free list, so it was the position of a
-            // slot that still exists, and the slot is vacant, so `vacant` is
-            // its live field.
-            let vacant = unsafe {
-                let slot = slots.add(position_of::<C>(idx));
-                core::ptr::addr_of_mut!((*slot).data.vacant)
-            };
-            // SAFETY: `idx` was a slot's position, so it fits in `usize`.
-            if unsafe { position_of::<C>(idx) } >= new_len {
-                // Skip over the slot. The link that named it now names the
-                // slot after it, and stays where it is for the next round.
-                // SAFETY: as above.
-                unsafe { *link = *vacant };
-            } else {
-                link = vacant;
-            }
-        }
-    }
-
     /// Keeps only the values for which `f` returns `true`. `f` may mutate
     /// them.
     pub fn retain<F>(&mut self, mut f: F)
