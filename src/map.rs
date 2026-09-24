@@ -956,9 +956,8 @@ impl<T, C: Config> GenMap<T, C> {
     /// Returns `None` if the key is invalid.
     ///
     /// A retired slot is never used again until [`reset`](Self::reset), no
-    /// matter how the map is configured, so no key to it can ever match a new
-    /// value. Useful for when a map's config wraps on exceeding max generation, but you want to retire
-    /// slots under certain conditions.
+    /// matter how the map is configured, so no key to it can ever match a new value.
+    /// This is useful when a map's config wraps on exceeding the max generation, but you want to retire slots under certain conditions.
     ///
     /// # Examples
     ///
