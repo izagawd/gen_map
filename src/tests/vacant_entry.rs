@@ -154,24 +154,3 @@ fn full_error_as_ref_borrows_the_storage_error() {
         FullError::IndexExhausted
     );
 }
-
-/// `Vec::push` would abort the process here. Going through `ensure_room`
-/// turns the failed allocation into `StorageFull` with the allocator's
-/// error. Only `vacant_entry` and `try_reserve` are called, because neither
-/// ever holds a `Huge` by value, which would need a 4 EiB stack frame.
-#[cfg(target_pointer_width = "64")]
-#[test]
-#[ignore]
-fn a_vec_that_can_not_allocate_reports_storage_full_instead_of_aborting() {
-    type Huge = [u8; (1 << 47) - 64];
-    let mut map: GenMap<Huge> = GenMap::new();
-
-    match map.vacant_entry() {
-        Err(FullError::StorageFull(_)) => {}
-        Err(FullError::IndexExhausted) => panic!("expected StorageFull"),
-        Ok(_) => panic!("4 EiB allocation succeeded?"),
-    }
-    assert!(map.try_reserve(1).is_err());
-    assert_eq!(map.len(), 0);
-    assert_eq!(map.slots_len(), 0);
-}

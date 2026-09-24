@@ -262,8 +262,12 @@ impl<T> GenMap<T> {
     /// Creates an empty map with the [`DefaultConfig`] and room for `capacity`
     /// slots.
     #[inline]
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self::with_capacity_and_config(capacity)
+    pub fn with_capacity(capacity: usize) -> Self where Slots<T, DefaultConfig>: ReserveStorage<Slot<T, DefaultConfig>> {
+        Self {
+            slots: Slots::<T, DefaultConfig>::with_capacity(capacity),
+            next_free: None,
+            len: 0,
+        }
     }
 }
 
@@ -273,6 +277,17 @@ impl<T, C: Config> GenMap<T, C>
 where
     Slots<T, C>: ReserveStorage<Slot<T, C>>,
 {
+    /// Creates an empty map with config `C` and room for `capacity` slots.
+    #[inline]
+    pub fn with_capacity_and_config(capacity: usize) -> Self {
+        Self {
+            slots: Slots::<T, C>::with_capacity(capacity),
+            next_free: None,
+            len: 0,
+        }
+    }
+
+
     /// Reserves room for at least `additional` more slots.
     ///
     /// # Panics
@@ -325,16 +340,6 @@ impl<T, C: Config> GenMap<T, C> {
         }
     }
 
-    /// Creates an empty map with config `C` and room for `capacity` slots. A
-    /// storage with a fixed capacity ignores the argument.
-    #[inline]
-    pub fn with_capacity_and_config(capacity: usize) -> Self {
-        Self {
-            slots: Slots::<T, C>::with_capacity(capacity),
-            next_free: None,
-            len: 0,
-        }
-    }
 
     /// How many slots the storage can hold before it has to grow, or in total
     /// if it can not grow.
