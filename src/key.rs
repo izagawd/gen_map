@@ -1,31 +1,85 @@
-use crate::config::{Config, DefaultConfig};
+use crate::config::Config;
+#[cfg(feature = "alloc")]
+use crate::config::DefaultConfig;
+use crate::key_layout::KeyLayout;
 use crate::key_piece::KeyPiece;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{Hash, Hasher};
 
+/// The layout of `C`'s keys.
+type Layout<C> = <C as Config>::Layout;
+
+/// The type a key of `C` stores its index and generation in.
+type Repr<C> = <Layout<C> as KeyLayout<<C as Config>::Idx, <C as Config>::Gen>>::Repr;
+
 /// A key to a value in a [`GenMap`](crate::GenMap), returned by `insert`.
-pub struct Key<C: Config = DefaultConfig> {
-    pub(crate) idx: C::Idx,
-    pub(crate) generation: <C::Gen as KeyPiece>::NonZero,
+/// The config's [`Layout`](Config::Layout) says how the key stores its index
+/// and generation.
+pub struct Key<
+    #[cfg(feature = "alloc")] C: Config = DefaultConfig,
+    #[cfg(not(feature = "alloc"))] C: Config,
+> {
+    repr: Repr<C>,
 }
 
 impl<C: Config> Key<C> {
+    /// The index of the slot this key refers to.
+    #[inline]
+    pub fn idx(&self) -> C::Idx {
+        <Layout<C> as KeyLayout<C::Idx, C::Gen>>::idx(self.repr)
+    }
+
+    /// The generation of the slot this key refers to at the time this key was handed out.
+    #[inline]
+    pub fn generation(&self) -> C::Gen {
+        let generation = <Layout<C> as KeyLayout<C::Idx, C::Gen>>::generation(self.repr);
+        C::Gen::from_non_zero(generation)
+    }
+
+    /// Returns the same generation as [`generation`](Self::generation), but
+    /// as a `NonZero`, which is the type
+    /// [`from_raw_parts`](Self::from_raw_parts) takes. A key's generation is
+    /// always odd, so it is never zero.
+    #[inline]
+    pub fn non_zero_generation(&self) -> <C::Gen as KeyPiece>::NonZero {
+        <Layout<C> as KeyLayout<C::Idx, C::Gen>>::generation(self.repr)
+    }
+
+    /// Returns `true` if the key's generation is the largest one its layout
+    /// can hold. While the key is valid, removing its value wraps or retires
+    /// the slot, as the config says, and [`detach`](crate::GenMap::detach)
+    /// refuses it.
+    #[inline]
+    pub fn is_max_generation(&self) -> bool {
+        self.generation() == <Layout<C> as KeyLayout<C::Idx, C::Gen>>::max_generation()
+    }
+
+    /// Builds a key from an index and a generation.
+    ///
     /// # Safety
     ///
-    /// `generation` must be odd.
+    /// `generation` must be odd. The map only hands out odd generations, and
+    /// an even one is what a vacant or detached slot holds. A key with an
+    /// even generation could match such a slot, and a lookup would then read
+    /// a value that is not there, which is undefined behavior.
+    /// Both parts must also fit the layout, meaning `idx` is at most
+    /// [`KeyLayout::max_idx`] and `generation` at most
+    /// [`KeyLayout::max_generation`].
     #[inline]
-    pub(crate) unsafe fn from_parts_unchecked(idx: C::Idx, generation: C::Gen) -> Self {
+    pub unsafe fn from_raw_parts(idx: C::Idx, generation: <C::Gen as KeyPiece>::NonZero) -> Self {
+        let generation = C::Gen::from_non_zero(generation);
         debug_assert!(generation.is_odd());
-        Self {
-            idx,
-            generation: generation.into_non_zero().unwrap_unchecked(),
-        }
+        // SAFETY: the caller promises an odd generation that fits the
+        // layout, and an index that fits it.
+        let repr =
+            unsafe { <Layout<C> as KeyLayout<C::Idx, C::Gen>>::pack_unchecked(idx, generation) };
+        Self { repr }
     }
 }
 
-// The traits below are written by hand because a derive would also demand
-// them from `C`, and a config is only a marker type.
+// The traits below are written by hand because a derive would also require
+// `C` to implement them, and a config is only a marker type.
 
 impl<C: Config> Clone for Key<C> {
     #[inline]
@@ -39,7 +93,7 @@ impl<C: Config> Copy for Key<C> {}
 impl<C: Config> PartialEq for Key<C> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.idx == other.idx && self.generation == other.generation
+        self.repr == other.repr
     }
 }
 
@@ -52,29 +106,28 @@ impl<C: Config> PartialOrd for Key<C> {
     }
 }
 
-/// Keys are ordered by index, then by generation.
+/// Keys are ordered by index, then by generation, whatever the layout.
 impl<C: Config> Ord for Key<C> {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        self.idx
-            .cmp(&other.idx)
-            .then(self.generation.cmp(&other.generation))
+        self.idx()
+            .cmp(&other.idx())
+            .then(self.generation().cmp(&other.generation()))
     }
 }
 
 impl<C: Config> Hash for Key<C> {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.idx.hash(state);
-        self.generation.hash(state);
+        self.repr.hash(state);
     }
 }
 
 impl<C: Config> fmt::Debug for Key<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Key")
-            .field("idx", &self.idx)
-            .field("generation", &self.generation)
+            .field("idx", &self.idx())
+            .field("generation", &self.generation())
             .finish()
     }
 }

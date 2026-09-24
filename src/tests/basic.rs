@@ -1,4 +1,5 @@
-use crate::{GenMap, Key};
+use super::{Bomb, DropTracker};
+use crate::{GenMap, InsertWithError, Key};
 use core::num::NonZero;
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -22,6 +23,10 @@ fn with_capacity_reserves_slots() {
     let map: Map<i32> = Map::with_capacity(64);
     assert!(map.capacity() >= 64);
     assert_eq!(map.slots_len(), 0);
+
+    let map = GenMap::<i32, super::Cfg<u8, u8>>::with_capacity_and_config(64);
+    assert!(map.capacity() >= 64);
+    assert_eq!(map.slots_len(), 0);
 }
 
 #[test]
@@ -38,8 +43,8 @@ fn insert_then_get() {
 fn first_key_is_slot_zero_generation_one() {
     let mut map = Map::new();
     let k = map.insert(());
-    assert_eq!(k.idx, 0);
-    assert_eq!(k.generation.get(), 1);
+    assert_eq!(k.idx(), 0);
+    assert_eq!(k.generation(), 1);
 }
 
 #[test]
@@ -75,9 +80,9 @@ fn remove_reuses_slot_with_bumped_generation() {
     assert_eq!(map.len(), 1);
     assert_eq!(map.slots_len(), 1);
 
-    assert_eq!(k1.idx, k2.idx);
-    assert_ne!(k1.generation.get(), k2.generation.get());
-    assert_eq!(k2.generation.get(), k1.generation.get() + 2);
+    assert_eq!(k1.idx(), k2.idx());
+    assert_ne!(k1.generation(), k2.generation());
+    assert_eq!(k2.generation(), k1.generation() + 2);
     assert!(map.get(k1).is_none());
 }
 
@@ -93,8 +98,8 @@ fn free_list_is_last_in_first_out() {
 
     let d = map.insert("d");
     let e = map.insert("e");
-    assert_eq!(d.idx, c.idx);
-    assert_eq!(e.idx, a.idx);
+    assert_eq!(d.idx(), c.idx());
+    assert_eq!(e.idx(), a.idx());
     assert_eq!(map[b], "b");
     assert_eq!(map[d], "d");
     assert_eq!(map[e], "e");
@@ -118,18 +123,15 @@ fn remove_then_mass_insert_keeps_old_key_invalid() {
 fn remove_with_bogus_key_returns_none() {
     let mut map = Map::new();
 
-    let bogus: Key = Key {
-        idx: 999_999,
-        generation: NonZero::new(41).unwrap(),
-    };
+    // SAFETY: 41 is odd and both parts fit a `u32`.
+    let bogus: Key = unsafe { Key::from_raw_parts(999_999, NonZero::new(41).unwrap()) };
     assert!(map.remove(bogus).is_none());
     assert!(map.get(bogus).is_none());
 
     let k = map.insert(1);
-    let wrong_generation = Key {
-        idx: k.idx,
-        generation: k.generation.checked_add(2).unwrap(),
-    };
+    // SAFETY: two past an odd generation is odd, and it fits a `u32`.
+    let wrong_generation =
+        unsafe { Key::from_raw_parts(k.idx(), NonZero::new(k.generation() + 2).unwrap()) };
     assert!(map.remove(wrong_generation).is_none());
     assert_eq!(map.len(), 1);
     assert_eq!(map[k], 1);
@@ -151,10 +153,9 @@ fn len_tracks_insert_remove_and_clear() {
     assert!(map.remove(k1).is_none());
     assert_eq!(map.len(), 1);
 
-    let stale = Key {
-        idx: k2.idx,
-        generation: k2.generation.checked_add(2).unwrap(),
-    };
+    // SAFETY: two past an odd generation is odd, and it fits a `u32`.
+    let stale =
+        unsafe { Key::from_raw_parts(k2.idx(), NonZero::new(k2.generation() + 2).unwrap()) };
     assert!(map.remove(stale).is_none());
     assert_eq!(map.len(), 1);
 
@@ -227,7 +228,7 @@ fn insert_and_insert_with_key_agree() {
     let k2 = map.insert_with_key(|_| "Y".to_string());
     assert_eq!(map[k1], "X");
     assert_eq!(map[k2], "Y");
-    assert_ne!(k1.idx, k2.idx);
+    assert_ne!(k1.idx(), k2.idx());
 }
 
 #[test]
@@ -243,13 +244,13 @@ fn try_insert_with_key_err_leaves_map_untouched_on_fresh_slot() {
     let mut map: Map<i32> = Map::new();
 
     let res = map.try_insert_with_key(|_| Err::<i32, _>("nope"));
-    assert_eq!(res, Err("nope"));
+    assert_eq!(res, Err(InsertWithError::Rejected("nope")));
     assert_eq!(map.len(), 0);
     assert_eq!(map.slots_len(), 0);
 
     let k = map.insert(123);
-    assert_eq!(k.idx, 0);
-    assert_eq!(k.generation.get(), 1);
+    assert_eq!(k.idx(), 0);
+    assert_eq!(k.generation(), 1);
     assert_eq!(map[k], 123);
 }
 
@@ -265,8 +266,8 @@ fn try_insert_with_key_err_leaves_map_untouched_on_reused_slot() {
     assert_eq!(map.slots_len(), 1);
 
     let k2 = map.try_insert_with_key(|_| Ok::<_, ()>(99)).unwrap();
-    assert_eq!(k2.idx, k1.idx);
-    assert_ne!(k2.generation.get(), k1.generation.get());
+    assert_eq!(k2.idx(), k1.idx());
+    assert_ne!(k2.generation(), k1.generation());
     assert_eq!(map[k2], 99);
     assert!(map.get(k1).is_none());
 }
@@ -296,7 +297,7 @@ fn panic_inside_insert_with_key_leaves_map_untouched() {
     assert_eq!(map.slots_len(), 0);
 
     let k = map.insert(123);
-    assert_eq!(k.idx, 0);
+    assert_eq!(k.idx(), 0);
     assert_eq!(map[k], 123);
     assert_eq!(map.len(), 1);
 }
@@ -314,7 +315,7 @@ fn panic_inside_insert_with_key_keeps_freed_slot_on_free_list() {
     assert_eq!(map.len(), 0);
 
     let k2 = map.insert(2);
-    assert_eq!(k2.idx, k1.idx);
+    assert_eq!(k2.idx(), k1.idx());
     assert_eq!(map.slots_len(), 1);
 }
 
@@ -376,5 +377,40 @@ fn debug_output_lists_entries() {
     let k = map.insert(5);
     let text = std::format!("{map:?}");
     assert!(text.contains("5"));
-    assert!(text.contains(&std::format!("{}", k.idx)));
+    assert!(text.contains(&std::format!("{}", k.idx())));
+}
+
+#[test]
+fn clear_stays_consistent_when_a_drop_panics() {
+    let tracker = DropTracker::new();
+    let mut map = GenMap::new();
+    let keys: Vec<_> = (0..5)
+        .map(|i| map.insert(Bomb::new(&tracker, i == 2)))
+        .collect();
+
+    assert!(catch_unwind(AssertUnwindSafe(|| map.clear())).is_err());
+
+    // The panic stopped `clear` right after it took out the value at 2.
+    assert_eq!(map.len(), 2);
+    for key in &keys[..3] {
+        assert!(map.get(*key).is_none());
+    }
+    for key in &keys[3..] {
+        assert!(map.contains_key(*key));
+    }
+
+    map.clear();
+    assert!(map.is_empty());
+    tracker.assert_all_dropped_exactly_once(5);
+}
+
+#[test]
+fn dropping_the_map_drops_every_value_once_when_a_drop_panics() {
+    let tracker = DropTracker::new();
+    let mut map = GenMap::new();
+    for i in 0..5 {
+        map.insert(Bomb::new(&tracker, i == 2));
+    }
+    assert!(catch_unwind(AssertUnwindSafe(move || drop(map))).is_err());
+    tracker.assert_all_dropped_exactly_once(5);
 }

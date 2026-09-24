@@ -1,5 +1,7 @@
+use super::{Bomb, DropTracker};
 use crate::GenMap;
 use std::collections::HashSet;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
 
 type Map = GenMap<i32>;
@@ -134,7 +136,7 @@ fn into_iter_is_double_ended() {
 
 #[test]
 fn into_iter_drops_each_value_exactly_once() {
-    let tracker = super::DropTracker::new();
+    let tracker = DropTracker::new();
     let mut map = GenMap::new();
     let keys: Vec<_> = (0..6).map(|_| map.insert(tracker.make_item())).collect();
     map.remove(keys[2]);
@@ -148,6 +150,88 @@ fn into_iter_drops_each_value_exactly_once() {
     tracker.assert_all_dropped_exactly_once(6);
 }
 
+/// A map that held 0 to 7 and had 0, 3 and 7 removed, so it has gaps at
+/// both ends and in the middle. The values left are 1, 2, 4, 5 and 6.
+fn map_with_gaps() -> Map {
+    let mut map = Map::new();
+    let keys: Vec<_> = (0..8).map(|i| map.insert(i)).collect();
+    for i in [0, 3, 7] {
+        map.remove(keys[i]);
+    }
+    map
+}
+
+#[test]
+fn every_iterator_skips_gaps_from_the_back() {
+    let mut map = map_with_gaps();
+    let expected = [6, 5, 4, 2, 1];
+
+    let values: Vec<_> = map.iter().rev().map(|(_, v)| *v).collect();
+    assert_eq!(values, expected);
+    let values: Vec<_> = map.keys().rev().map(|key| map[key]).collect();
+    assert_eq!(values, expected);
+    let values: Vec<_> = map.values().rev().copied().collect();
+    assert_eq!(values, expected);
+    let values: Vec<_> = map.iter_mut().rev().map(|(_, v)| *v).collect();
+    assert_eq!(values, expected);
+    let values: Vec<_> = map.values_mut().rev().map(|v| *v).collect();
+    assert_eq!(values, expected);
+    let values: Vec<_> = map.into_iter().rev().map(|(_, v)| v).collect();
+    assert_eq!(values, expected);
+}
+
+/// Takes from both ends of `iter`, which must yield the values of
+/// [`map_with_gaps`], until the two ends meet in the middle.
+fn meet_in_the_middle(mut iter: impl DoubleEndedIterator<Item = i32> + ExactSizeIterator) {
+    assert_eq!((iter.next(), iter.next_back()), (Some(1), Some(6)));
+    assert_eq!(iter.len(), 3);
+    assert_eq!((iter.next(), iter.next_back()), (Some(2), Some(5)));
+    assert_eq!((iter.next_back(), iter.len()), (Some(4), 0));
+    assert_eq!((iter.next(), iter.next_back()), (None, None));
+}
+
+#[test]
+fn iterators_stop_where_the_front_and_the_back_meet() {
+    let mut map = map_with_gaps();
+    meet_in_the_middle(map.iter().map(|(_, v)| *v));
+    meet_in_the_middle(map.iter_mut().map(|(_, v)| *v));
+    meet_in_the_middle(map.into_iter().map(|(_, v)| v));
+}
+
+#[test]
+fn mutable_iterators_know_their_length() {
+    let mut map = map_with_gaps();
+    assert_eq!(map.iter_mut().len(), 5);
+    let mut values = map.values_mut();
+    assert_eq!(values.len(), 5);
+    values.next_back();
+    assert_eq!(values.size_hint(), (4, Some(4)));
+}
+
+#[test]
+fn a_cloned_iterator_carries_on_by_itself() {
+    let map = map_with_gaps();
+    let rest = [2, 4, 5, 6];
+
+    let mut iter = map.iter();
+    iter.next();
+    let copy = iter.clone();
+    assert_eq!(iter.map(|(_, v)| *v).collect::<Vec<_>>(), rest);
+    assert_eq!(copy.map(|(_, v)| *v).collect::<Vec<_>>(), rest);
+
+    let mut keys = map.keys();
+    keys.next();
+    let copy = keys.clone();
+    assert_eq!(keys.map(|key| map[key]).collect::<Vec<_>>(), rest);
+    assert_eq!(copy.map(|key| map[key]).collect::<Vec<_>>(), rest);
+
+    let mut values = map.values();
+    values.next();
+    let copy = values.clone();
+    assert_eq!(values.copied().collect::<Vec<_>>(), rest);
+    assert_eq!(copy.copied().collect::<Vec<_>>(), rest);
+}
+
 #[test]
 fn iterators_are_fused() {
     let mut map = Map::new();
@@ -156,4 +240,18 @@ fn iterators_are_fused() {
     assert!(iter.next().is_some());
     assert!(iter.next().is_none());
     assert!(iter.next().is_none());
+}
+
+#[test]
+fn into_iter_drops_every_value_once_when_a_drop_panics() {
+    let tracker = DropTracker::new();
+    let mut map = GenMap::new();
+    for i in 0..5 {
+        map.insert(Bomb::new(&tracker, i == 2));
+    }
+
+    let mut iter = map.into_iter();
+    drop(iter.next());
+    assert!(catch_unwind(AssertUnwindSafe(move || drop(iter))).is_err());
+    tracker.assert_all_dropped_exactly_once(5);
 }

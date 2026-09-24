@@ -71,12 +71,13 @@ fn clone_preserves_free_list_and_generations() {
     assert_eq!(clone.slots_len(), 3);
     assert!(clone.get(k2).is_none());
 
-    // Both maps hand out the same next key, since they share history.
+    // Both maps hand out the same next key, since the clone copied the free
+    // list and the generations.
     let from_map = map.insert(99);
     let from_clone = clone.insert(99);
     assert_eq!(from_map, from_clone);
-    assert_eq!(from_map.idx, k2.idx);
-    assert_ne!(from_map.generation.get(), k2.generation.get());
+    assert_eq!(from_map.idx(), k2.idx());
+    assert_ne!(from_map.generation(), k2.generation());
 
     assert_eq!(clone[k1], 10);
     assert_eq!(clone[k3], 30);
@@ -91,8 +92,8 @@ fn clone_preserves_free_list_order() {
     map.remove(keys[0]);
 
     let mut clone = map.clone();
-    let expected: Vec<_> = (0..3).map(|_| map.insert(0).idx).collect();
-    let got: Vec<_> = (0..3).map(|_| clone.insert(0).idx).collect();
+    let expected: Vec<_> = (0..3).map(|_| map.insert(0).idx()).collect();
+    let got: Vec<_> = (0..3).map(|_| clone.insert(0).idx()).collect();
     assert_eq!(expected, got);
     assert_eq!(expected, [0, 3, 1]);
 }
@@ -162,6 +163,32 @@ fn clone_from_overwrites_a_larger_target() {
 }
 
 #[test]
+fn clone_from_sizes_a_small_target_once() {
+    let mut source = Map::new();
+    let keys: Vec<_> = (0..100).map(|i| source.insert(i)).collect();
+    let mut target = Map::new();
+    target.insert(-1);
+
+    target.clone_from(&source);
+    assert_eq!(target.capacity(), source.slots_len());
+    for (i, key) in keys.iter().enumerate() {
+        assert_eq!(target[*key], i as i32);
+    }
+}
+
+#[test]
+fn clone_from_keeps_an_allocation_that_is_large_enough() {
+    let mut source = Map::new();
+    let key = source.insert(1);
+    let mut target = Map::with_capacity(64);
+    let capacity = target.capacity();
+
+    target.clone_from(&source);
+    assert_eq!(target.capacity(), capacity);
+    assert_eq!(target[key], 1);
+}
+
+#[test]
 fn clone_from_is_drop_balanced() {
     let tracker = DropTracker::new();
     let mut source = GenMap::new();
@@ -215,6 +242,6 @@ fn clone_from_leaves_an_empty_map_if_a_value_panics_while_cloning() {
     assert_eq!(target.slots_len(), 0);
     assert_eq!(target.iter().count(), 0);
     let k = target.insert(PanicsOnClone(7));
-    assert_eq!(k.idx, 0);
-    assert_eq!(k.generation.get(), 1);
+    assert_eq!(k.idx(), 0);
+    assert_eq!(k.generation(), 1);
 }

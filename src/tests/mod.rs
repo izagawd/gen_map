@@ -1,27 +1,47 @@
+#[cfg(feature = "arrayvec")]
+mod arrayvec_storage;
 mod basic;
+mod capped_storage;
 mod clone;
+mod detach;
+mod disjoint;
 mod drain;
+mod get_at;
 mod iter;
 mod key;
+mod key_at;
+mod key_piece;
+mod model;
 mod overflow;
+mod packed;
 mod reset;
 mod retain;
+mod retire;
+#[cfg(feature = "smallvec")]
+mod smallvec_storage;
+mod storage_contract;
+mod try_insert;
 mod unchecked;
+mod vacant_entry;
+mod zero_sized;
 
-use crate::{Config, KeyPiece};
+use crate::{Config, KeyPiece, Split};
 use core::marker::PhantomData;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::vec::Vec;
 
-/// A config made of the two integer types it is given. It is only ever
-/// named as a type, never built.
+/// A config made of the two integer types it is given. It is only used as a
+/// type parameter, never created as a value.
 #[allow(dead_code)]
 pub(crate) struct Cfg<Idx, Gen>(PhantomData<(Idx, Gen)>);
 
 impl<Idx: KeyPiece, Gen: KeyPiece> Config for Cfg<Idx, Gen> {
     type Idx = Idx;
     type Gen = Gen;
+    type Layout = Split;
+    type Storage<S> = Vec<S>;
 }
 
 /// Hands out numbered items and records how many times each one has been
@@ -114,5 +134,32 @@ impl Drop for DropItem {
         let count = state.drops.entry(self.id).or_insert(0);
         *count += 1;
         assert!(*count <= 1, "item {} was dropped {} times", self.id, *count);
+    }
+}
+
+/// A value whose drop panics when it is armed. It holds a [`DropItem`], and
+/// the item is still dropped while the panic unwinds, so a [`DropTracker`]
+/// sees every bomb dropped exactly once, whether its drop panicked or not.
+/// An armed bomb does not panic while the thread is already panicking, since
+/// a second panic would abort the tests.
+pub(crate) struct Bomb {
+    armed: bool,
+    _item: DropItem,
+}
+
+impl Bomb {
+    pub(crate) fn new(tracker: &DropTracker, armed: bool) -> Self {
+        Self {
+            armed,
+            _item: tracker.make_item(),
+        }
+    }
+}
+
+impl Drop for Bomb {
+    fn drop(&mut self) {
+        if self.armed && !std::thread::panicking() {
+            panic!("boom");
+        }
     }
 }
