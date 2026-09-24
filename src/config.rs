@@ -1,3 +1,4 @@
+use crate::key_layout::{KeyLayout, Split};
 use crate::key_piece::KeyPiece;
 use crate::storage::SlotStorage;
 use alloc::vec::Vec;
@@ -6,7 +7,7 @@ use alloc::vec::Vec;
 /// # Examples
 ///
 /// ```
-/// use gen_map::{Config, GenMap};
+/// use gen_map::{Config, GenMap, Split};
 ///
 /// /// Four byte keys, and slots get reused forever.
 /// struct Small;
@@ -16,6 +17,8 @@ use alloc::vec::Vec;
 ///     type Idx = u16;
 ///     // generation type
 ///     type Gen = u16;
+///     // how a key stores the two
+///     type Layout = Split;
 ///     // where the slots live
 ///     type Storage<S> = Vec<S>;
 ///     const WRAP_ON_OVERFLOW: bool = true;
@@ -33,6 +36,11 @@ pub trait Config {
     /// The integer type that represents the generation of a slot.
     type Gen: KeyPiece;
 
+    /// How a key stores its index and generation. [`Split`] keeps them as
+    /// two fields and [`Packed`](crate::Packed) puts them in the bits of one
+    /// integer.
+    type Layout: KeyLayout<Self::Idx, Self::Gen>;
+
     /// The collection the map keeps its slots in. `S` is the map's
     /// [`Slot`](crate::Slot) type.
     type Storage<S>: SlotStorage<S>;
@@ -49,13 +57,14 @@ pub trait Config {
 
 /// The config a [`GenMap`](crate::GenMap) uses when none is named.
 ///
-/// Keys are `u32` index plus `u32` generation, slots live in
-/// a `Vec`, and slots retire when their generation overflows.
+/// Keys are a `u32` index and a `u32` generation stored as two fields,
+/// slots live in a `Vec`, and slots retire when their generation overflows.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct DefaultConfig;
 
 impl Config for DefaultConfig {
     type Idx = u32;
     type Gen = u32;
+    type Layout = Split;
     type Storage<S> = Vec<S>;
 }

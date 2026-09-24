@@ -10,13 +10,14 @@ mod key;
 mod key_at;
 mod key_piece;
 mod overflow;
+mod packed;
 mod reset;
 mod retain;
 mod try_insert;
 mod unchecked;
 mod vacant_entry;
 
-use crate::{Config, KeyPiece};
+use crate::{Config, KeyPiece, Split};
 use core::marker::PhantomData;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -31,6 +32,7 @@ pub(crate) struct Cfg<Idx, Gen>(PhantomData<(Idx, Gen)>);
 impl<Idx: KeyPiece, Gen: KeyPiece> Config for Cfg<Idx, Gen> {
     type Idx = Idx;
     type Gen = Gen;
+    type Layout = Split;
     type Storage<S> = Vec<S>;
 }
 

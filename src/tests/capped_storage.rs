@@ -1,7 +1,9 @@
 //! A storage with a fixed capacity and no `ReserveStorage`, to check that the
 //! map works on one and reports the storage's own error.
 
-use crate::{Config, FullError, GenMap, InsertError, InsertWithError, SlotStorage, StorageError};
+use crate::{
+    Config, FullError, GenMap, InsertError, InsertWithError, SlotStorage, Split, StorageError,
+};
 use std::vec::Vec;
 
 const CAP: usize = 4;
@@ -71,6 +73,7 @@ struct Four;
 impl Config for Four {
     type Idx = u8;
     type Gen = u8;
+    type Layout = Split;
     type Storage<S> = Capped<S>;
 }
 
@@ -123,7 +126,7 @@ fn a_freed_slot_is_reused_without_asking_the_storage() {
     let key = map.iter().next().map(|(k, _)| k).unwrap();
     assert_eq!(map.remove(key), Some(0));
     let again = map.try_insert(10).unwrap();
-    assert_eq!(again.idx, key.idx);
+    assert_eq!(again.idx(), key.idx());
     assert_ne!(again, key);
     assert_eq!(map[again], 10);
     assert_eq!(map.slots_len(), CAP);
