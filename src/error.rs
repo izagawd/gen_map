@@ -1,12 +1,6 @@
 use core::fmt;
 
-/// Why a [`GenMap`](crate::GenMap) has no room for another value. This is
-/// what [`GenMap::vacant_entry`](crate::GenMap::vacant_entry) returns, and
-/// what the other insert errors wrap. `E` is the map's
-/// [`StorageError`](crate::StorageError).
-///
-/// When the keys' index and the storage both run out, the error is
-/// [`IndexExhausted`](Self::IndexExhausted).
+/// Why a [`GenMap`](crate::GenMap) has no room for another value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FullError<E> {
     /// The map has a slot at every index its keys can hold and none of
