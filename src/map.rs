@@ -261,7 +261,8 @@ impl<T> GenMap<T> {
     /// Creates an empty map with the [`DefaultConfig`].
     ///
     /// Use [`new_with_config`](Self::new_with_config) for any other config,
-    /// since the default type parameter does not take part in inference.
+    /// since Rust does not use a default type parameter when it infers
+    /// types.
     #[inline]
     pub const fn new() -> Self {
         Self::new_with_config()
@@ -282,8 +283,8 @@ impl<T> GenMap<T> {
     }
 }
 
-/// These methods need a storage that can grow on request, so a map on a
-/// fixed capacity storage does not have them.
+/// These methods need a storage that can grow on request, so a map whose
+/// storage has a fixed capacity does not have them.
 impl<T, C: Config> GenMap<T, C>
 where
     Slots<T, C>: ReserveStorage<Slot<T, C>>,
@@ -458,8 +459,8 @@ impl<T, C: Config> GenMap<T, C> {
     /// generation, and any lookup with such a key, checked or not, is
     /// undefined behavior, because the checked lookups rely on every key
     /// being odd. A retired slot has a generation of zero, and building a
-    /// key from that is undefined behavior on its own, because every key
-    /// relies on the generation being odd.
+    /// key from it is undefined behavior on its own, because the key needs
+    /// the generation as a `NonZero`.
     #[inline]
     pub unsafe fn key_at_unchecked(&self, idx: C::Idx) -> Key<C> {
         debug_assert!(self.key_at(idx).is_some());
@@ -847,8 +848,8 @@ impl<T, C: Config> GenMap<T, C> {
     /// Returns [`FullError::IndexExhausted`] if none of the slots are free
     /// and the map's keys have no index left for a new one, and
     /// [`FullError::StorageFull`] if none of them are free and the storage
-    /// can not make room for another one. A `Vec` that can not allocate
-    /// reports the second instead of aborting the program.
+    /// can not make room for another one. When a `Vec` can not allocate,
+    /// this returns `StorageFull` instead of panicking.
     #[inline]
     pub fn vacant_entry(&mut self) -> Result<VacantEntry<'_, T, C>, FullError<StorageError<T, C>>> {
         let target = self.next_target()?;
@@ -860,8 +861,8 @@ impl<T, C: Config> GenMap<T, C> {
     /// the push in [`fill`](Self::fill) can not fail. The generation in the
     /// result is odd.
     ///
-    /// When both the key's index and the storage are exhausted, the index is
-    /// the one reported.
+    /// When the keys' index and the storage both run out, the error is
+    /// `IndexExhausted`.
     #[inline]
     fn next_target(&mut self) -> Result<Target<C>, FullError<StorageError<T, C>>> {
         let (idx, position, generation, from_free_list) = match self.next_free {
@@ -947,8 +948,9 @@ impl<T, C: Config> GenMap<T, C> {
         Some(unsafe { self.take(key.idx(), position) })
     }
 
-    /// Moves the value out of the slot at `position` and frees it, or retires
-    /// it if its generation overflowed and the config says so.
+    /// Moves the value out of the slot at `position`. The slot then goes on
+    /// the free list, unless its generation has run out and the config
+    /// retires such slots.
     ///
     /// # Safety
     ///
@@ -977,7 +979,8 @@ impl<T, C: Config> GenMap<T, C> {
                     slot.data.vacant = self.next_free;
                     self.next_free = Some(idx);
                 } else {
-                    // Retired. The slot stays off the free list for good.
+                    // The slot is retired, so it stays off the free list for
+                    // good.
                     slot.data.vacant = None;
                 }
             }
@@ -1051,8 +1054,9 @@ impl<T, C: Config> GenMap<T, C> {
             .into_usize()
             .and_then(|position| self.slots.as_mut_slice().get_mut(position))
             .filter(|slot| {
-                // Detaching added one to the generation, so a slot that is
-                // still detached under this key is one past it.
+                // Detaching added one to the generation, so a slot still
+                // detached under this key has a generation one above the
+                // key's.
                 next_generation::<C>(generation) == Some(slot.generation)
                     && slot.is_detached(key.idx())
             })
@@ -1086,7 +1090,7 @@ impl<T, C: Config> GenMap<T, C> {
         // Reset the bookkeeping first. If a value's `drop` panics inside
         // `clear`, the storage is already empty, and a free list or `len`
         // that still described the old slots would let the next insert read
-        // past it.
+        // past the end of the storage.
         self.next_free = None;
         self.len = 0;
         self.slots.clear();
@@ -1196,8 +1200,9 @@ impl<T: fmt::Debug, C: Config> fmt::Debug for GenMap<T, C> {
 }
 
 /// Pushes `slot` onto a storage that is being filled with clones of another
-/// storage of the same type. That storage already holds at least this many
-/// slots, so a refusal breaks the [`SlotStorage`] contract, and this panics.
+/// storage of the same type. The storage being cloned already holds every
+/// slot pushed here, so a refusal breaks the [`SlotStorage`] contract, and
+/// this panics.
 /// The slot is dropped with its value in that case.
 fn push_cloned<T, C: Config>(slots: &mut Slots<T, C>, slot: Slot<T, C>) {
     if slots.try_push(slot).is_err() {

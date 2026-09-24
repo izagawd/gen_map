@@ -5,8 +5,8 @@ use core::fmt;
 /// what the other insert errors wrap. `E` is the map's
 /// [`StorageError`](crate::StorageError).
 ///
-/// When the keys' index and the storage are both exhausted,
-/// [`IndexExhausted`](Self::IndexExhausted) is the one reported.
+/// When the keys' index and the storage both run out, the error is
+/// [`IndexExhausted`](Self::IndexExhausted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FullError<E> {
     /// The map has a slot at every index its keys can hold and none of
@@ -46,8 +46,8 @@ impl<E: fmt::Display> fmt::Display for FullError<E> {
 /// Each variant hands the value back so that the caller can keep it. `E` is
 /// the map's [`StorageError`](crate::StorageError).
 ///
-/// When the keys' index and the storage are both exhausted,
-/// [`IndexExhausted`](Self::IndexExhausted) is the one reported.
+/// When the keys' index and the storage both run out, the error is
+/// [`IndexExhausted`](Self::IndexExhausted).
 pub enum InsertError<T, E> {
     /// The map has a slot at every index its keys can hold and none of
     /// them are free.
@@ -86,7 +86,7 @@ impl<T, E> InsertError<T, E> {
     }
 }
 
-// Written by hand so that it does not demand `Debug` from `T`.
+// Written by hand so that it does not require `T: Debug`.
 impl<T, E: fmt::Debug> fmt::Debug for InsertError<T, E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

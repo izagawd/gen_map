@@ -1,7 +1,8 @@
 use crate::{Config, GenMap, Split};
 use std::vec::Vec;
 
-/// Tiny key so a slot's generation overflows after 127 reuses.
+/// A `u8` index and a `u8` generation, so a slot retires after holding 128
+/// values.
 struct Retire;
 
 impl Config for Retire {
@@ -11,7 +12,8 @@ impl Config for Retire {
     type Storage<S> = Vec<S>;
 }
 
-/// Same key size, but slots are put back into circulation on overflow.
+/// The same keys as [`Retire`], but a slot whose generation runs out wraps
+/// and is used again.
 struct Wrap;
 
 impl Config for Wrap {

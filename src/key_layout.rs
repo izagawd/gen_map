@@ -18,7 +18,7 @@ use core::marker::PhantomData;
 /// `Repr` whose fields are private, like [`SplitRepr`] and [`PackedRepr`],
 /// meets this rule, because only `pack_unchecked` can make one.
 pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
-    /// What the key holds.
+    /// The type a key stores its index and generation in.
     type Repr: Copy + Eq + Hash + Send + Sync + 'static;
 
     /// The largest index a key can hold.
@@ -47,7 +47,8 @@ pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Split;
 
-/// What a key with the [`Split`] layout holds.
+/// The type a key with the [`Split`] layout stores its index and generation
+/// in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SplitRepr<Idx: KeyPiece, Gen: KeyPiece> {
     idx: Idx,
@@ -99,8 +100,8 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 /// are left for the index. A config that breaks one of these does not
 /// compile.
 ///
-/// The largest index is `2 ^ (R::BITS - GEN_BITS) - 1` and the largest
-/// generation is `2 ^ GEN_BITS - 1`, no matter how wide `Idx` and `Gen`
+/// The largest index is `(1 << (R::BITS - GEN_BITS)) - 1` and the largest
+/// generation is `(1 << GEN_BITS) - 1`, no matter how wide `Idx` and `Gen`
 /// are. A slot whose generation reaches the largest one retires or wraps, as
 /// [`WRAP_ON_OVERFLOW`](crate::Config::WRAP_ON_OVERFLOW) says.
 ///
@@ -128,7 +129,8 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Packed<R, const GEN_BITS: u32>(PhantomData<R>);
 
-/// What a key with the [`Packed`] layout holds. Only
+/// The type a key with the [`Packed`] layout stores its index and
+/// generation in. Only
 /// [`pack_unchecked`](KeyLayout::pack_unchecked) can make one, so its
 /// generation field is never zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -152,7 +154,8 @@ fn check_packed<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32>(
     }
 }
 
-/// A `u128` with the low `bits` bits set. `bits` is below 128.
+/// Returns a `u128` with its lowest `bits` bits set. `bits` must be below
+/// 128.
 #[inline]
 fn low_bits(bits: u32) -> u128 {
     debug_assert!(bits < 128);

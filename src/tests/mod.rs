@@ -31,8 +31,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::vec::Vec;
 
-/// A config made of the two integer types it is given. It is only ever
-/// named as a type, never built.
+/// A config made of the two integer types it is given. It is only used as a
+/// type parameter, never created as a value.
 #[allow(dead_code)]
 pub(crate) struct Cfg<Idx, Gen>(PhantomData<(Idx, Gen)>);
 

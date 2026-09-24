@@ -105,7 +105,8 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
 
     let mut map = GenMap::<i32, Wide>::new_with_config();
     let k = map.insert(1);
-    // Same low bits as `k`, so a truncating conversion would land on its slot.
+    // `too_wide` has the same low 64 bits as `k`'s index, so a conversion to
+    // `usize` that truncated it would land on `k`'s slot.
     let too_wide = (1u128 << 64) | k.idx();
     // SAFETY: the generation is the one of a live key, and both parts fit
     // the `Split` layout of `Wide`.

@@ -4,8 +4,8 @@ use core::mem::size_of;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::vec::Vec;
 
-/// Four byte keys with 24 bits of index and 8 bits of generation. Both
-/// `Idx` and `Gen` are exactly as wide as they have to be or wider.
+/// Four byte keys with 24 bits of index and 8 bits of generation. `Gen` is
+/// exactly as wide as its field, and `Idx` is wider than its field.
 struct Compact;
 
 impl Config for Compact {

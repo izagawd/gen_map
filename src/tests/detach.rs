@@ -88,8 +88,10 @@ fn reattach_panics_for_a_removed_key() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     map.remove(key);
-    // The removed slot sits at the end of the free list, where its
-    // generation is the key's plus one just like a detached slot's.
+    // Like a detached slot, the removed slot now has a generation one above
+    // the key's. It is the only slot on the free list, so its link to the
+    // next free slot is `None`. A detached slot links to itself instead,
+    // which is how `reattach` tells the two apart.
     map.reattach(key, 2);
 }
 

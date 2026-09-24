@@ -10,12 +10,12 @@ use core::hash::{Hash, Hasher};
 /// The layout of `C`'s keys.
 type Layout<C> = <C as Config>::Layout;
 
-/// What a key of `C` holds.
+/// The type a key of `C` stores its index and generation in.
 type Repr<C> = <Layout<C> as KeyLayout<<C as Config>::Idx, <C as Config>::Gen>>::Repr;
 
 /// A key to a value in a [`GenMap`](crate::GenMap), returned by `insert`.
-/// The config's [`Layout`](Config::Layout) says how it stores its index and
-/// generation.
+/// The config's [`Layout`](Config::Layout) says how the key stores its index
+/// and generation.
 pub struct Key<
     #[cfg(feature = "alloc")] C: Config = DefaultConfig,
     #[cfg(not(feature = "alloc"))] C: Config,
@@ -38,8 +38,8 @@ impl<C: Config> Key<C> {
     }
 
     /// Returns the same generation as [`generation`](Self::generation), but
-    /// as a `NonZero`.
-    /// A key's generation is
+    /// as a `NonZero`, which is the type
+    /// [`from_raw_parts`](Self::from_raw_parts) takes. A key's generation is
     /// always odd, so it is never zero.
     #[inline]
     pub fn generation_non_zero(&self) -> <C::Gen as KeyPiece>::NonZero {
@@ -51,8 +51,9 @@ impl<C: Config> Key<C> {
     /// # Safety
     ///
     /// `generation` must be odd. The map only hands out odd generations, and
-    /// an even one is what a vacant or detached slot holds. A key that
-    /// carries an even generation can match such a slot, which is undefined behavior.
+    /// an even one is what a vacant or detached slot holds. A key with an
+    /// even generation could match such a slot, and a lookup would then read
+    /// a value that is not there, which is undefined behavior.
     /// Both parts must also fit the layout, meaning `idx` is at most
     /// [`KeyLayout::max_idx`] and `generation` at most
     /// [`KeyLayout::max_generation`].
@@ -68,8 +69,8 @@ impl<C: Config> Key<C> {
     }
 }
 
-// The traits below are written by hand because a derive would also demand
-// them from `C`, and a config is only a marker type.
+// The traits below are written by hand because a derive would also require
+// `C` to implement them, and a config is only a marker type.
 
 impl<C: Config> Clone for Key<C> {
     #[inline]

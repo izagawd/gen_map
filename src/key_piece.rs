@@ -10,11 +10,12 @@ use core::num::NonZero;
 ///
 /// The map reads a union field based on what [`is_odd`](Self::is_odd) says
 /// about a slot's generation, so every method must behave exactly like it does
-/// for the standard unsigned integers. In particular
+/// for the standard unsigned integers. In particular,
 /// [`into_non_zero`](Self::into_non_zero) must return `Some` for every value
-/// except [`ZERO`](Self::ZERO), and [`from_usize`](Self::from_usize) and
+/// except [`ZERO`](Self::ZERO). [`from_usize`](Self::from_usize) and
 /// [`into_usize`](Self::into_usize) must return `None` for a value that does
-/// not fit and round-trip otherwise, and the largest value must be odd.
+/// not fit, and converting a value that fits there and back must give the
+/// same value. The largest value must be odd.
 pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static {
     /// The `NonZero` form of this integer. A key stores its generation in
     /// this form, which makes `Option<Key>` the same size as `Key`.
@@ -126,9 +127,9 @@ macro_rules! impl_key_piece {
                     usize::try_from(self).ok()
                 }
 
-                /// A cast is exact for a value that fits, and the caller
-                /// promises the value fits, so the truncation a cast would
-                /// do to a wider type never happens.
+                /// An `as` cast only truncates a value that does not fit,
+                /// and the caller promises the value fits, so the cast is
+                /// exact.
                 #[inline]
                 unsafe fn into_usize_unchecked(self) -> usize {
                     debug_assert!(usize::try_from(self).is_ok());
@@ -140,7 +141,7 @@ macro_rules! impl_key_piece {
                     <$t>::try_from(v).ok()
                 }
 
-                /// The same cast the other way round.
+                /// The same kind of cast, from a `usize` to this type.
                 #[inline]
                 unsafe fn from_usize_unchecked(v: usize) -> Self {
                     debug_assert!(<$t>::try_from(v).is_ok());

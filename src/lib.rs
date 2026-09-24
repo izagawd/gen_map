@@ -101,7 +101,7 @@
 //!
 //! [`Split`] stores the index and the generation as two fields, so a key is
 //! as large as the two together, plus any padding their alignment needs.
-//! Every value of both types can be used.
+//! The index and the generation can each use every value of their type.
 //!
 //! [`Packed`] stores them in the bits of one integer instead. `Packed<R,
 //! GEN_BITS>` gives the low `GEN_BITS` bits of an `R` to the generation and
@@ -135,9 +135,10 @@
 //!
 //! A slot's generation can only go up to the largest one its key can hold,
 //! which is `Gen::MAX` for [`Split`] and the largest value of the generation
-//! part for [`Packed`]. Each value uses up two generations, so a `u32`
-//! generation lets a slot hold over two billion values, while a 4 bit
-//! generation lets it hold eight. What happens to a slot after that is up to
+//! part for [`Packed`]. Each value a slot holds uses up two generations, one
+//! when it is inserted and one when it is removed, so a `u32` generation lets
+//! a slot hold over two billion values, while a 4 bit generation lets it hold
+//! eight. What happens to a slot after that is up to
 //! [`WRAP_ON_OVERFLOW`](Config::WRAP_ON_OVERFLOW).
 //!
 //! By default, the slot retires. It stays in the storage but is never used

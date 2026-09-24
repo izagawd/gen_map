@@ -120,7 +120,8 @@ fn get_disjoint_mut_borrows_nothing_on_error() {
     let b = map.insert(2);
     let error = map.get_disjoint_mut([a, b, a]).unwrap_err();
     assert_eq!(error, GetDisjointMutError::OverlappingKeys);
-    // The map is usable right away.
+    // Nothing stays borrowed after the error, so the map can be used right
+    // away.
     assert_eq!(map.get(a), Some(&1));
     assert_eq!(map.get(b), Some(&2));
 }
