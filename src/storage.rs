@@ -191,8 +191,8 @@ unsafe impl<S, const CAP: usize> SlotStorage<S> for arrayvec::ArrayVec<S, CAP> {
 
     const EMPTY: Self = arrayvec::ArrayVec::new_const();
 
-    /// An `ArrayVec` always has room for `CAP` items, so `capacity` is
-    /// ignored.
+    /// An `ArrayVec` always has room for exactly `CAP` items, so the
+    /// `capacity` argument is ignored.
     #[inline]
     fn with_capacity(_capacity: usize) -> Self {
         arrayvec::ArrayVec::new_const()
@@ -256,10 +256,10 @@ unsafe impl<S, const CAP: usize> SlotStorage<S> for arrayvec::ArrayVec<S, CAP> {
 /// assert_eq!(map[keys[19]], 19);
 /// ```
 #[cfg(feature = "smallvec")]
-// SAFETY: a `SmallVec` behaves like a `Vec` wherever it keeps its items.
-// `SmallVec::push` panics or aborts when it can not grow, so both
-// `ensure_room` and `try_push` go through `try_reserve`, which reports that
-// as an error.
+// SAFETY: a `SmallVec` behaves like a `Vec` whether its items are inline or
+// on the heap. `SmallVec::push` panics or aborts when it can not grow, so
+// both `ensure_room` and `try_push` go through `try_reserve`, which returns
+// an error instead.
 unsafe impl<S, const N: usize> SlotStorage<S> for smallvec::SmallVec<S, N> {
     type Error = smallvec::CollectionAllocErr;
 

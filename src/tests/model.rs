@@ -42,8 +42,8 @@ impl Config for SmallWrap {
     const WRAP_ON_OVERFLOW: bool = true;
 }
 
-/// The keys of [`Small`] in an `ArrayVec` of twelve, so the storage runs out
-/// before the index does.
+/// The same keys as [`Small`], but with the slots in an `ArrayVec` of
+/// twelve, so the storage runs out before the index does.
 #[cfg(feature = "arrayvec")]
 struct InlineRetiring;
 
@@ -55,8 +55,8 @@ impl Config for InlineRetiring {
     type Storage<S> = arrayvec::ArrayVec<S, 12>;
 }
 
-/// The keys of [`SmallWrap`] in an `ArrayVec` of sixteen, so the storage and
-/// the index run out together.
+/// The same keys as [`SmallWrap`], but with the slots in an `ArrayVec` of
+/// sixteen, so the storage and the index run out together.
 #[cfg(feature = "arrayvec")]
 struct InlineWrap;
 
@@ -69,8 +69,9 @@ impl Config for InlineWrap {
     const WRAP_ON_OVERFLOW: bool = true;
 }
 
-/// The keys of [`Retiring`] in a `SmallVec` that holds four slots inline, so
-/// the storage moves to the heap and back as the map grows and empties.
+/// The same keys as [`Retiring`], but with the slots in a `SmallVec` that
+/// holds four of them inline, so the storage moves to the heap once the map
+/// grows past four slots.
 #[cfg(feature = "smallvec")]
 struct Spilling;
 
@@ -161,7 +162,8 @@ struct Model<C: Config> {
     detached: Vec<Key<C>>,
     /// Keys whose value was removed. None of them may match anything, and a
     /// config that retires slots never hands one out again. A config that
-    /// wraps can, and the key then moves back to `live`.
+    /// wraps can hand one out again, and that key then moves back to
+    /// `live`.
     dead: Vec<Key<C>>,
     /// The value the next insert uses. Every value is different, so a value
     /// that shows up under the wrong key is caught.
@@ -292,9 +294,9 @@ fn insert<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut R
         Err(InsertError::StorageFull(back, _)) => {
             assert_eq!(back, value);
             assert!(promised.is_none());
-            // The storage holds every slot it can, and the keys could still
-            // address another one, because the index is the error reported
-            // when both run out.
+            // The storage holds as many slots as it can. The index has not
+            // run out as well, because when both run out, the map reports
+            // the index.
             assert_eq!(map.slots_len(), map.capacity());
             assert!(slot_count_limit::<C>().map_or(true, |limit| map.slots_len() < limit));
             assert_no_slot_is_free(map, model);
@@ -372,8 +374,8 @@ fn detach<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut R
             model.detached.push(key);
         }
         None => {
-            // Only a slot at the largest generation refuses, and the value
-            // stays in the map then.
+            // `detach` only refuses a slot whose generation is already the
+            // largest one, and the value then stays in the map.
             assert_eq!(key.generation(), largest_generation::<C>());
             assert_eq!(map.get(key), Some(&value));
             model.live.push((key, value));
@@ -488,8 +490,8 @@ fn compare_clones<C: Config>(map: &GenMap<u32, C>) {
     }
 }
 
-/// Takes a random number of values out of a drain and drops it, which
-/// removes the rest.
+/// Takes a random number of values out of a drain, then drops the drain,
+/// which removes the rest.
 fn drain<C: Config>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     let mut expected = model.live.clone();
     expected.sort();
@@ -510,7 +512,7 @@ fn check<C: Config>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut Rng) {
     assert_eq!(map.is_empty(), model.live.is_empty());
 
     // Iteration is in slot order, and a slot holds at most one valid key, so
-    // it is also the order of the keys.
+    // slot order is also key order.
     let mut expected = model.live.clone();
     expected.sort();
     let actual: Vec<_> = map.iter().map(|(key, value)| (key, *value)).collect();

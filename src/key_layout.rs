@@ -15,8 +15,8 @@ use core::marker::PhantomData;
 ///
 /// `generation` is safe to call and returns a `NonZero`, so safe code must
 /// not be able to make a `Repr` that `pack_unchecked` did not return. A
-/// `Repr` with private fields, like [`SplitRepr`] and [`PackedRepr`], does
-/// that.
+/// `Repr` whose fields are private, like [`SplitRepr`] and [`PackedRepr`],
+/// meets this rule, because only `pack_unchecked` can make one.
 pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
     /// What the key holds.
     type Repr: Copy + Eq + Hash + Send + Sync + 'static;

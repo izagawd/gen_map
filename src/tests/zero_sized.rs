@@ -1,5 +1,5 @@
-//! Maps whose values are zero-sized. The slots still hold a generation, so
-//! the values take no room but everything else works as usual.
+//! Maps whose values are zero-sized. The values take no room, but each slot
+//! still holds a generation, so the map works as usual.
 
 use crate::GenMap;
 use std::sync::atomic::{AtomicUsize, Ordering};

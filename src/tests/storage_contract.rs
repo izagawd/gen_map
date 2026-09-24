@@ -92,7 +92,7 @@ fn a_full_array_vec_hands_the_item_back() {
 #[cfg(feature = "smallvec")]
 #[test]
 fn a_small_vec_keeps_the_storage_contract() {
-    // Three items fit inline and six move it to the heap.
+    // Three items fit inline, and six move the storage to the heap.
     check_storage::<smallvec::SmallVec<DropItem, 4>>(3);
     check_storage::<smallvec::SmallVec<DropItem, 4>>(6);
     check_reserve::<smallvec::SmallVec<u32, 4>>();

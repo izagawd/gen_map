@@ -37,8 +37,9 @@ impl<C: Config> Key<C> {
         C::Gen::from_non_zero(generation)
     }
 
-    /// [`generation`](Self::generation) as the `NonZero` that
-    /// [`from_raw_parts`](Self::from_raw_parts) takes. A key's generation is
+    /// Returns the same generation as [`generation`](Self::generation), but
+    /// as a `NonZero`.
+    /// A key's generation is
     /// always odd, so it is never zero.
     #[inline]
     pub fn generation_non_zero(&self) -> <C::Gen as KeyPiece>::NonZero {

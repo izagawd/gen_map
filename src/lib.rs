@@ -7,8 +7,9 @@
 //! anything else that refers to values by handle.
 //!
 //! Inserting, removing and looking up a value are all O(1). The crate is
-//! `no_std`, and it only needs an allocator for its `Vec` storage, which can
-//! be turned off. See [Cargo features](#cargo-features).
+//! `no_std`. Only its `Vec` storage needs an allocator, and that storage comes
+//! from the `alloc` feature, which is on by default and can be turned off.
+//! See [Cargo features](#cargo-features).
 //!
 //! # Examples
 //!
@@ -23,7 +24,7 @@
 //! assert_eq!(map.remove(a), Some("a"));
 //! assert!(map.get(a).is_none());
 //!
-//! // `c` takes the slot `a` had, but `a` still does not match it.
+//! // `c` takes the slot `a` had, but `a` still does not match the new value.
 //! let c = map.insert("c");
 //! assert_eq!(c.idx(), a.idx());
 //! assert!(map.get(a).is_none());
@@ -68,13 +69,14 @@
 //! keys are a `u32` index and a `u32` generation stored as two fields, its
 //! slots live in a `Vec`, and a slot retires when its generation runs out.
 //!
-//! A config is a type that is only ever named and never built, so a unit
-//! struct is enough.
+//! A config is only used as a type parameter and never created as a value,
+//! so an empty struct is enough.
 //!
 //! ```
 //! use gen_map::{Config, GenMap, Split};
 //!
-//! /// Two byte keys, so the map holds at most 256 slots.
+//! /// A `u8` index and a `u8` generation, so keys are two bytes and the map
+//! /// holds at most 256 slots.
 //! struct Tiny;
 //!
 //! impl Config for Tiny {
@@ -90,8 +92,9 @@
 //! assert_eq!(map[key], 7);
 //! ```
 //!
-//! [`GenMap::new`] can only create a map with the default config, because a
-//! default type parameter takes no part in type inference. Any other config
+//! [`GenMap::new`] only exists for the default config. Rust does not use a
+//! default type parameter when it infers types, so a `new` that took any
+//! config would need the config written out on every call. Any other config
 //! goes through [`GenMap::new_with_config`].
 //!
 //! ## Key layouts
@@ -102,10 +105,10 @@
 //!
 //! [`Packed`] stores them in the bits of one integer instead. `Packed<R,
 //! GEN_BITS>` gives the low `GEN_BITS` bits of an `R` to the generation and
-//! the bits above them to the index, so a key is as large as `R` and the two
-//! parts can have any bit counts that add up to it. The config's `Idx` and
-//! `Gen` only have to be wide enough for their parts, and a config whose bit
-//! counts do not add up fails to compile.
+//! the bits above them to the index, so a key is as large as `R`, and the two
+//! parts can have any bit counts that add up to the bits of `R`. The config's
+//! `Idx` and `Gen` only have to be wide enough for their parts, and a config
+//! whose bit counts do not add up fails to compile.
 //!
 //! ```
 //! use gen_map::{Config, GenMap, Key, Packed};
@@ -181,8 +184,8 @@
 //!   may fail, and returns an [`InsertWithError`] if the map is full or the
 //!   closure fails.
 //!
-//! These methods also report a `Vec` that can not allocate as
-//! [`FullError::StorageFull`] instead of panicking.
+//! When a `Vec` can not allocate, these methods also return a
+//! [`StorageFull`](FullError::StorageFull) error instead of panicking.
 //!
 //! ```
 //! use gen_map::{Config, GenMap, InsertError, Split};
@@ -232,8 +235,8 @@
 //! [`detach`](GenMap::detach) moves a value out of the map but keeps its slot
 //! reserved for its key, and [`reattach`](GenMap::reattach) puts a value back
 //! under that same key. In between, the key is invalid and no insert can
-//! take the slot. This lets code change a value while it has the rest of the
-//! map to work with.
+//! take the slot. This lets code take a value out, change it while borrowing
+//! the rest of the map, and put it back under the same key.
 //!
 //! ```
 //! use gen_map::GenMap;
@@ -287,8 +290,8 @@
 //! [`clear`](GenMap::clear) remove values but keep every slot and its
 //! generation, so old keys stay invalid. [`reset`](GenMap::reset) removes
 //! the slots too while keeping the allocation. The generations start over
-//! after a reset, so a key from before it can match a value inserted after
-//! it.
+//! after a reset, so a key from before the reset can match a value inserted
+//! after it.
 //!
 //! # Unchecked access
 //!
@@ -299,7 +302,7 @@
 //!
 //! [`Key::from_raw_parts`] builds a key from an index and a generation. It
 //! is unsafe because the generation must be odd and both parts must fit the
-//! layout, and a key that breaks either rule makes later lookups undefined
+//! layout, and looking up a key that breaks either rule is undefined
 //! behavior.
 //!
 //! # Cargo features
@@ -309,9 +312,9 @@
 //!   [`GenMap`] and [`Key`] use when none is named. Without it the crate
 //!   needs no allocator, and every map needs a config whose storage does not
 //!   allocate, such as an `ArrayVec`.
-//! - `arrayvec` lets an `arrayvec::ArrayVec` hold the slots.
-//! - `smallvec` lets a `smallvec::SmallVec` hold the slots. It uses the 2.0
-//!   beta of `smallvec`, which needs an allocator and Rust 1.86.
+//! - `arrayvec` lets a config use `arrayvec::ArrayVec` as its storage.
+//! - `smallvec` lets a config use `smallvec::SmallVec` as its storage. It
+//!   uses the 2.0 beta of `smallvec`, which needs an allocator and Rust 1.86.
 //!
 //! To use the map without any allocator, turn `alloc` off and `arrayvec` on.
 //!
