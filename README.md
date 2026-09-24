@@ -91,8 +91,16 @@ assert_eq!((key.idx(), key.generation()), (0, 1));
 
 ### Choosing the storage
 
-The slots can live in any collection that implements `SlotStorage`, even those with a fixed capacity. 
-`reserve` and `try_reserve` are only there when the storage also implements `ReserveStorage`, which `Vec` does.
+The slots can live in any collection that implements `SlotStorage`, even
+those with a fixed capacity. Besides `Vec`, the `ArrayVec` from `arrayvec`
+and the `SmallVec` from `smallvec` work out of the box when the crate's
+`arrayvec` or `smallvec` feature is turned on. An `ArrayVec` has a fixed
+capacity and never allocates, and a `SmallVec` keeps a few slots inline
+before it allocates.
+
+`reserve`, `try_reserve` and the `with_capacity` constructors are only there
+when the storage also implements `ReserveStorage`, which `Vec` and
+`SmallVec` do.
 
 ## Handling a full map
 
