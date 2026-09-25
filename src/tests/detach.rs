@@ -134,7 +134,7 @@ fn reattach_panics_with_the_wrong_generation_for_a_detached_slot() {
     map.remove(old);
     let new = map.insert(2);
     map.detach(new).unwrap();
-    // `old` refers to the same slot with an older generation.
+    // `old` names the same slot with an older generation.
     map.reattach(old, 3);
 }
 

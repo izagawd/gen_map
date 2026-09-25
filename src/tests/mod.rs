@@ -27,7 +27,7 @@ mod unchecked;
 mod vacant_entry;
 mod zero_sized;
 
-use crate::{KeyConfig, KeyPiece, MapConfig, Split};
+use crate::{Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, Odd, Split};
 use core::marker::PhantomData;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -48,6 +48,13 @@ impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Cfg<Idx, Gen> {
 impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for Cfg<Idx, Gen> {
     type KeyConfig = Self;
     type Storage<S> = Vec<S>;
+}
+
+/// The key of `K` with index `idx` and generation `generation`. Panics if
+/// the generation is even or either part does not fit the layout.
+pub(crate) fn key_from_parts<K: KeyConfig>(idx: K::Idx, generation: K::Gen) -> Key<K> {
+    let generation = Odd::new(generation).unwrap();
+    Key::from_repr(<K::Layout as KeyLayout<K::Idx, K::Gen>>::pack(idx, generation).unwrap())
 }
 
 /// Hands out numbered items and records how many times each one has been

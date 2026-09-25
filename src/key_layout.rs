@@ -13,8 +13,9 @@ use core::marker::PhantomData;
 /// [`pack_unchecked`](Self::pack_unchecked) was given, and two `Repr`
 /// values must be equal only if they were packed from the same parts.
 ///
-/// `generation` is safe to call and returns an [`Odd`], so safe code must
-/// not be able to make a `Repr` that `pack_unchecked` did not return. A
+/// `generation` is safe to call and returns an [`Odd`], and
+/// [`Key::from_repr`](crate::Key::from_repr) accepts any `Repr`, so safe code
+/// must not be able to make a `Repr` that `pack_unchecked` did not return. A
 /// `Repr` whose fields are private, like [`SplitRepr`] and [`PackedRepr`],
 /// meets this rule, because only `pack_unchecked` can make one.
 pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
@@ -34,6 +35,18 @@ pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
     /// `idx` must be at most [`max_idx`](Self::max_idx), and `generation` at
     /// most [`max_generation`](Self::max_generation).
     unsafe fn pack_unchecked(idx: Idx, generation: Odd<Gen>) -> Self::Repr;
+
+    /// Packs an index and a generation, or returns `None` if either is larger
+    /// than the layout can hold.
+    #[inline]
+    fn pack(idx: Idx, generation: Odd<Gen>) -> Option<Self::Repr> {
+        if idx <= Self::max_idx() && generation <= Self::max_generation() {
+            // SAFETY: both parts were just checked to fit.
+            Some(unsafe { Self::pack_unchecked(idx, generation) })
+        } else {
+            None
+        }
+    }
 
     /// The index that was packed.
     fn idx(repr: Self::Repr) -> Idx;

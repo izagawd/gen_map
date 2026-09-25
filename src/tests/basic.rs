@@ -1,5 +1,5 @@
-use super::{Bomb, DropTracker};
-use crate::{GenMap, InsertWithError, Key, Odd};
+use super::{key_from_parts, Bomb, DropTracker};
+use crate::{GenMap, InsertWithError, Key};
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::{String, ToString};
@@ -122,15 +122,12 @@ fn remove_then_mass_insert_keeps_old_key_invalid() {
 fn remove_with_bogus_key_returns_none() {
     let mut map = Map::new();
 
-    // SAFETY: 41 is odd and both parts fit a `u32`.
-    let bogus: Key = unsafe { Key::from_raw_parts(999_999, Odd::new(41).unwrap()) };
+    let bogus: Key = key_from_parts(999_999, 41);
     assert!(map.remove(bogus).is_none());
     assert!(map.get(bogus).is_none());
 
     let k = map.insert(1);
-    // SAFETY: two past an odd generation is odd, and it fits a `u32`.
-    let wrong_generation =
-        unsafe { Key::from_raw_parts(k.idx(), Odd::new(k.generation().get().get() + 2).unwrap()) };
+    let wrong_generation = key_from_parts(k.idx(), k.generation().get().get() + 2);
     assert!(map.remove(wrong_generation).is_none());
     assert_eq!(map.len(), 1);
     assert_eq!(map[k], 1);
@@ -152,10 +149,7 @@ fn len_tracks_insert_remove_and_clear() {
     assert!(map.remove(k1).is_none());
     assert_eq!(map.len(), 1);
 
-    // SAFETY: two past an odd generation is odd, and it fits a `u32`.
-    let stale = unsafe {
-        Key::from_raw_parts(k2.idx(), Odd::new(k2.generation().get().get() + 2).unwrap())
-    };
+    let stale = key_from_parts(k2.idx(), k2.generation().get().get() + 2);
     assert!(map.remove(stale).is_none());
     assert_eq!(map.len(), 1);
 

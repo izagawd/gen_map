@@ -34,28 +34,35 @@ println!("{key:?} = {value}");
 
 ## Configuring the map
 
-A `Config` picks the index and generation integers, how a key stores the
-two, where the slots live and what happens when a slot's generation
-overflows. The default uses a `u32` index and a `u32` generation stored as
-two fields, keeps the slots in a `Vec`, and retires a slot whose generation
-overflows, so no stale key can ever match a new value.
+A `KeyConfig` picks the index and generation integers and how a key stores
+the two. A `MapConfig` picks the key config, where the slots live and what
+happens when a slot's generation overflows. Maps whose configs pick the same
+key config can work with the same key. The default uses a `u32` index and a `u32`
+generation stored as two fields, keeps the slots in a `Vec`, and retires a
+slot whose generation overflows, so no stale key can ever match a new value.
 
 ```rust
-use gen_map::{Config, GenMap, Split};
+use gen_map::{GenMap, KeyConfig, MapConfig, Split};
 
-struct Tiny;
+struct TinyKey;
 
-impl Config for Tiny {
+impl KeyConfig for TinyKey {
     type Idx = u8;
     type Gen = u8;
     type Layout = Split;
+}
+
+struct TinyMap;
+
+impl MapConfig for TinyMap {
+    type KeyConfig = TinyKey;
     type Storage<S> = Vec<S>;
     // A slot whose generation overflows is reused instead of retired. The
     // default is to retire it.
     const WRAP_ON_OVERFLOW: bool = true;
 }
 
-let mut map = GenMap::<u64, Tiny>::new_with_config();
+let mut map = GenMap::<u64, TinyMap>::new_with_config();
 let key = map.insert(7);
 assert_eq!(core::mem::size_of_val(&key), 2);
 ```
@@ -67,26 +74,33 @@ assert_eq!(core::mem::size_of_val(&key), 2);
 `Split` stores the index and the generation as two fields. `Packed` puts
 them in the bits of one integer instead, so the two parts can have any bit
 counts that add up to that integer. The low `GEN_BITS` bits hold the
-generation and the bits above them hold the index. A config whose bit counts
-do not add up fails to compile.
+generation and the bits above them hold the index. A key config whose bit
+counts do not add up fails to compile.
 
 ```rust
-use gen_map::{Config, GenMap, Packed};
+use gen_map::{GenMap, KeyConfig, MapConfig, Packed};
 
 /// Four byte keys with 24 bits of index and 8 bits of generation.
-struct Compact;
+struct CompactKey;
 
-impl Config for Compact {
+impl KeyConfig for CompactKey {
     type Idx = u32;
     type Gen = u8;
     type Layout = Packed<u32, 8>;
+}
+
+struct CompactMap;
+
+impl MapConfig for CompactMap {
+    type KeyConfig = CompactKey;
     type Storage<S> = Vec<S>;
 }
 
-let mut map = GenMap::<&str, Compact>::new_with_config();
+let mut map = GenMap::<&str, CompactMap>::new_with_config();
 let key = map.insert("a");
 assert_eq!(core::mem::size_of_val(&key), 4);
-assert_eq!((key.idx(), key.generation()), (0, 1));
+assert_eq!(key.idx(), 0);
+assert_eq!(key.generation().get().get(), 1);
 ```
 
 ### Choosing the storage
@@ -113,18 +127,24 @@ index left for a new slot or the storage can not make room for one.
 `try_insert` lets you handle the failure.
 
 ```rust
-use gen_map::{Config, GenMap, InsertError, Split};
+use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, Split};
 
-struct Tiny;
+struct TinyKey;
 
-impl Config for Tiny {
+impl KeyConfig for TinyKey {
     type Idx = u8;
     type Gen = u8;
     type Layout = Split;
+}
+
+struct TinyMap;
+
+impl MapConfig for TinyMap {
+    type KeyConfig = TinyKey;
     type Storage<S> = Vec<S>;
 }
 
-let mut map = GenMap::<u32, Tiny>::new_with_config();
+let mut map = GenMap::<u32, TinyMap>::new_with_config();
 for i in 0..256 {
 map.insert(i);
 }

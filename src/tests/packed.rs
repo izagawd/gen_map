@@ -95,9 +95,16 @@ impl MapConfig for Native {
 }
 
 fn key<K: KeyConfig>(idx: K::Idx, generation: K::Gen) -> Key<K> {
-    // SAFETY: every test passes an odd generation and parts that fit its
-    // layout.
-    unsafe { Key::from_raw_parts(idx, Odd::new(generation).unwrap()) }
+    super::key_from_parts(idx, generation)
+}
+
+#[test]
+fn pack_refuses_parts_that_do_not_fit() {
+    let odd = |n: u8| Odd::new(n).unwrap();
+    assert!(<Packed<u16, 4> as KeyLayout<u16, u8>>::pack(4095, odd(15)).is_some());
+    assert!(<Packed<u16, 4> as KeyLayout<u16, u8>>::pack(4096, odd(15)).is_none());
+    assert!(<Packed<u16, 4> as KeyLayout<u16, u8>>::pack(0, odd(17)).is_none());
+    assert!(<Split as KeyLayout<u8, u8>>::pack(u8::MAX, odd(u8::MAX)).is_some());
 }
 
 #[test]

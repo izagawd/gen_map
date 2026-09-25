@@ -40,19 +40,17 @@ impl<K: KeyConfig> Key<K> {
         self.generation() == <Layout<K> as KeyLayout<K::Idx, K::Gen>>::max_generation()
     }
 
-    /// Builds a key from an index and a generation.
-    ///
-    /// # Safety
-    ///
-    /// Both parts must fit the layout, meaning `idx` is at most
-    /// [`KeyLayout::max_idx`] and `generation` at most
-    /// [`KeyLayout::max_generation`].
+    /// Builds a key from its `Repr`, which [`KeyLayout::pack`] makes from an
+    /// index and a generation.
     #[inline]
-    pub unsafe fn from_raw_parts(idx: K::Idx, generation: Odd<K::Gen>) -> Self {
-        // SAFETY: the caller promises that both parts fit the layout.
-        let repr =
-            unsafe { <Layout<K> as KeyLayout<K::Idx, K::Gen>>::pack_unchecked(idx, generation) };
+    pub fn from_repr(repr: <K::Layout as KeyLayout<K::Idx, K::Gen>>::Repr) -> Self {
         Self { repr }
+    }
+
+    /// The `Repr` this key stores its index and generation in.
+    #[inline]
+    pub fn repr(&self) -> <K::Layout as KeyLayout<K::Idx, K::Gen>>::Repr {
+        self.repr
     }
 }
 
