@@ -1,6 +1,6 @@
-use crate::config::Config;
 #[cfg(feature = "alloc")]
-use crate::config::DefaultConfig;
+use crate::config::DefaultMapConfig;
+use crate::config::{KeyConfig, MapConfig};
 use crate::error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
 };
@@ -12,6 +12,15 @@ use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::mem::ManuallyDrop;
 use core::ops::{Index, IndexMut};
+
+/// The index type of the keys a map with config `C` hands out.
+pub(crate) type Idx<C> = <<C as MapConfig>::KeyConfig as KeyConfig>::Idx;
+
+/// The generation type of the keys a map with config `C` hands out.
+pub(crate) type Gen<C> = <<C as MapConfig>::KeyConfig as KeyConfig>::Gen;
+
+/// The layout of the keys a map with config `C` hands out.
+pub(crate) type Layout<C> = <<C as MapConfig>::KeyConfig as KeyConfig>::Layout;
 
 /// The payload of a slot. `occupied` is live while the slot holds a value, and
 /// `vacant` is live the rest of the time. For a slot on the free list,
@@ -28,12 +37,12 @@ union SlotData<T, Idx: Copy> {
 /// An odd generation means the slot holds a value, and an even one means it
 /// does not. Insert and remove each increment the generation, so every key
 /// carries an odd generation.
-pub struct Slot<T, C: Config> {
-    generation: C::Gen,
-    data: SlotData<T, C::Idx>,
+pub struct Slot<T, C: MapConfig> {
+    generation: Gen<C>,
+    data: SlotData<T, Idx<C>>,
 }
 
-impl<T, C: Config> Slot<T, C> {
+impl<T, C: MapConfig> Slot<T, C> {
     #[inline]
     fn is_occupied(&self) -> bool {
         self.generation.is_odd()
@@ -44,11 +53,13 @@ impl<T, C: Config> Slot<T, C> {
     /// The slot must be occupied and `idx` must be its position in the
     /// storage.
     #[inline]
-    unsafe fn key(&self, idx: C::Idx) -> Key<C> {
+    unsafe fn key(&self, idx: Idx<C>) -> Key<C::KeyConfig> {
         // SAFETY: an occupied slot has an odd generation, so it is not zero,
         // and the map never lets a generation or a position grow past what
         // the layout holds.
-        unsafe { Key::<C>::from_raw_parts(idx, self.generation.into_non_zero_unchecked()) }
+        unsafe {
+            Key::<C::KeyConfig>::from_raw_parts(idx, self.generation.into_non_zero_unchecked())
+        }
     }
 
     /// # Safety
@@ -70,7 +81,7 @@ impl<T, C: Config> Slot<T, C> {
     /// Returns `true` if the slot was detached with [`GenMap::detach`] and
     /// not reattached since. `idx` must be the slot's position.
     #[inline]
-    fn is_detached(&self, idx: C::Idx) -> bool {
+    fn is_detached(&self, idx: Idx<C>) -> bool {
         // SAFETY: an even generation means `vacant` is the live field.
         !self.is_occupied() && unsafe { self.data.vacant } == Some(idx)
     }
@@ -99,7 +110,7 @@ impl<T, C: Config> Slot<T, C> {
     }
 }
 
-impl<T, C: Config> Drop for Slot<T, C> {
+impl<T, C: MapConfig> Drop for Slot<T, C> {
     #[inline]
     fn drop(&mut self) {
         if self.is_occupied() {
@@ -109,7 +120,7 @@ impl<T, C: Config> Drop for Slot<T, C> {
     }
 }
 
-/// Converts a position in the backing storage to `C::Idx`.
+/// Converts a position in the backing storage to `Idx<C>`.
 ///
 /// # Safety
 ///
@@ -117,12 +128,12 @@ impl<T, C: Config> Drop for Slot<T, C> {
 /// position fits, because the map refuses to push a slot whose position does
 /// not.
 #[inline]
-unsafe fn index_of<C: Config>(position: usize) -> C::Idx {
+unsafe fn index_of<C: MapConfig>(position: usize) -> Idx<C> {
     debug_assert!(
-        C::Idx::from_usize(position).is_some(),
+        Idx::<C>::from_usize(position).is_some(),
         "every slot position fits in the configured index type"
     );
-    unsafe { C::Idx::from_usize_unchecked(position) }
+    unsafe { Idx::<C>::from_usize_unchecked(position) }
 }
 
 /// Converts the index of a slot back to its position in the backing storage.
@@ -133,7 +144,7 @@ unsafe fn index_of<C: Config>(position: usize) -> C::Idx {
 /// carried by a valid key. Every such index was a slot's position, so it
 /// fits in `usize`.
 #[inline]
-unsafe fn position_of<C: Config>(idx: C::Idx) -> usize {
+unsafe fn position_of<C: MapConfig>(idx: Idx<C>) -> usize {
     debug_assert!(
         idx.into_usize().is_some(),
         "every index of a slot fits in usize"
@@ -142,24 +153,24 @@ unsafe fn position_of<C: Config>(idx: C::Idx) -> usize {
 }
 
 /// The storage a config gives the map for its slots.
-type Slots<T, C> = <C as Config>::Storage<Slot<T, C>>;
+type Slots<T, C> = <C as MapConfig>::Storage<Slot<T, C>>;
 
 /// The largest index a key of `C` can hold.
 #[inline]
-fn max_idx<C: Config>() -> C::Idx {
-    <C::Layout as KeyLayout<C::Idx, C::Gen>>::max_idx()
+fn max_idx<C: MapConfig>() -> Idx<C> {
+    <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_idx()
 }
 
 /// The generation after `generation`, or `None` if a key of `C` could not
 /// hold it, which is when a slot retires or wraps.
 #[inline]
-fn next_generation<C: Config>(generation: C::Gen) -> Option<C::Gen> {
-    if generation == <C::Layout as KeyLayout<C::Idx, C::Gen>>::max_generation() {
+fn next_generation<C: MapConfig>(generation: Gen<C>) -> Option<Gen<C>> {
+    if generation == <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_generation() {
         None
     } else {
         // The largest generation is odd, so an even one is below it and
         // adding one never wraps.
-        Some(generation.wrapping_add(C::Gen::ONE))
+        Some(generation.wrapping_add(Gen::<C>::ONE))
     }
 }
 
@@ -167,28 +178,30 @@ fn next_generation<C: Config>(generation: C::Gen) -> Option<C::Gen> {
 /// for another slot. It is `TryReserveError` for a `Vec`, `CapacityError` for
 /// an `ArrayVec` and `CollectionAllocErr` for a `SmallVec`.
 pub type StorageError<T, C> =
-    <<C as Config>::Storage<Slot<T, C>> as SlotStorage<Slot<T, C>>>::Error;
+    <<C as MapConfig>::Storage<Slot<T, C>> as SlotStorage<Slot<T, C>>>::Error;
 
 /// Where the next inserted value will go, worked out before anything is
 /// written.
-struct Target<C: Config> {
-    idx: C::Idx,
+struct Target<C: MapConfig> {
+    idx: Idx<C>,
     position: usize,
     /// The odd generation the new key gets.
-    generation: C::Gen,
+    generation: Gen<C>,
     /// `true` if the slot came off the free list, and `false` if it has to be
     /// pushed onto the storage.
     from_free_list: bool,
 }
 
-impl<C: Config> Target<C> {
+impl<C: MapConfig> Target<C> {
     /// The key that a value put at this target gets.
     #[inline]
-    fn key(&self) -> Key<C> {
+    fn key(&self) -> Key<C::KeyConfig> {
         // SAFETY: a `Target` only ever comes from `next_target`, which makes
         // the generation odd, so not zero, and checks that both parts fit
         // the layout.
-        unsafe { Key::<C>::from_raw_parts(self.idx, self.generation.into_non_zero_unchecked()) }
+        unsafe {
+            Key::<C::KeyConfig>::from_raw_parts(self.idx, self.generation.into_non_zero_unchecked())
+        }
     }
 }
 
@@ -196,7 +209,7 @@ impl<C: Config> Target<C> {
 /// line so that the insert paths stay small.
 #[cold]
 #[inline(never)]
-fn panic_full<T, C: Config>(full: FullError<StorageError<T, C>>, slots_len: usize) -> ! {
+fn panic_full<T, C: MapConfig>(full: FullError<StorageError<T, C>>, slots_len: usize) -> ! {
     match full {
         FullError::IndexExhausted => panic!(
             "GenMap is full, its keys can not address more than {} slots",
@@ -213,30 +226,30 @@ fn panic_full<T, C: Config>(full: FullError<StorageError<T, C>>, slots_len: usiz
 /// [`GenMap::vacant_entry`](GenMap::vacant_entry). Nothing is written until
 /// [`insert`](Self::insert) is called, so dropping the entry leaves the map
 /// as it was.
-pub struct VacantEntry<'a, T, C: Config> {
+pub struct VacantEntry<'a, T, C: MapConfig> {
     map: &'a mut GenMap<T, C>,
     target: Target<C>,
 }
 
-impl<'a, T, C: Config> VacantEntry<'a, T, C> {
+impl<'a, T, C: MapConfig> VacantEntry<'a, T, C> {
     /// The key the value will get. It is invalid until
     /// [`insert`](Self::insert) is called.
     #[inline]
-    pub fn key(&self) -> Key<C> {
+    pub fn key(&self) -> Key<C::KeyConfig> {
         self.target.key()
     }
 
     /// Puts `value` in the slot and returns its key, which is the one
     /// [`key`](Self::key) gave.
     #[inline]
-    pub fn insert(self, value: T) -> Key<C> {
+    pub fn insert(self, value: T) -> Key<C::KeyConfig> {
         // SAFETY: `target` came from `next_target`, and this entry has held
         // `&mut` on the map since, so nothing has touched it.
         unsafe { self.map.fill(self.target, value) }
     }
 }
 
-impl<T, C: Config> fmt::Debug for VacantEntry<'_, T, C> {
+impl<T, C: MapConfig> fmt::Debug for VacantEntry<'_, T, C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VacantEntry")
             .field("key", &self.key())
@@ -244,22 +257,22 @@ impl<T, C: Config> fmt::Debug for VacantEntry<'_, T, C> {
     }
 }
 
-/// A generational map whose key is configured by `C`.
+/// A generational map with a configuration of `C`.
 ///
 /// See the [crate documentation](crate) for examples.
 pub struct GenMap<
     T,
-    #[cfg(feature = "alloc")] C: Config = DefaultConfig,
-    #[cfg(not(feature = "alloc"))] C: Config,
+    #[cfg(feature = "alloc")] C: MapConfig = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: MapConfig,
 > {
     slots: Slots<T, C>,
-    next_free: Option<C::Idx>,
+    next_free: Option<Idx<C>>,
     len: usize,
 }
 
 #[cfg(feature = "alloc")]
 impl<T> GenMap<T> {
-    /// Creates an empty map with the [`DefaultConfig`].
+    /// Creates an empty map with the [`DefaultMapConfig`].
     ///
     /// Use [`new_with_config`](Self::new_with_config) for any other config,
     /// since Rust does not use a default type parameter when it infers
@@ -269,15 +282,15 @@ impl<T> GenMap<T> {
         Self::new_with_config()
     }
 
-    /// Creates an empty map with the [`DefaultConfig`] and room for `capacity`
-    /// slots.
+    /// Creates an empty map with the [`DefaultMapConfig`] and room for
+    /// `capacity` slots.
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self
     where
-        Slots<T, DefaultConfig>: ReserveStorage<Slot<T, DefaultConfig>>,
+        Slots<T, DefaultMapConfig>: ReserveStorage<Slot<T, DefaultMapConfig>>,
     {
         Self {
-            slots: Slots::<T, DefaultConfig>::with_capacity(capacity),
+            slots: Slots::<T, DefaultMapConfig>::with_capacity(capacity),
             next_free: None,
             len: 0,
         }
@@ -286,7 +299,7 @@ impl<T> GenMap<T> {
 
 /// These methods need a storage that can grow on request, so a map whose
 /// storage has a fixed capacity does not have them.
-impl<T, C: Config> GenMap<T, C>
+impl<T, C: MapConfig> GenMap<T, C>
 where
     Slots<T, C>: ReserveStorage<Slot<T, C>>,
 {
@@ -324,18 +337,22 @@ where
     }
 }
 
-impl<T, C: Config> GenMap<T, C> {
+impl<T, C: MapConfig> GenMap<T, C> {
     /// Creates an empty map with config `C`.
     ///
     /// ```
-    /// use gen_map::{Config, GenMap, Split};
+    /// use gen_map::{GenMap, KeyConfig, MapConfig, Split};
     ///
     /// struct Wide;
     ///
-    /// impl Config for Wide {
+    /// impl KeyConfig for Wide {
     ///     type Idx = u64;
     ///     type Gen = u64;
     ///     type Layout = Split;
+    /// }
+    ///
+    /// impl MapConfig for Wide {
+    ///     type KeyConfig = Self;
     ///     type Storage<S> = Vec<S>;
     /// }
     ///
@@ -379,13 +396,13 @@ impl<T, C: Config> GenMap<T, C> {
 
     /// Returns `true` if `key` is valid.
     #[inline]
-    pub fn contains_key(&self, key: Key<C>) -> bool {
+    pub fn contains_key(&self, key: Key<C::KeyConfig>) -> bool {
         self.get(key).is_some()
     }
 
     /// Returns a reference to the value corresponding to `key`.
     #[inline]
-    pub fn get(&self, key: Key<C>) -> Option<&T> {
+    pub fn get(&self, key: Key<C::KeyConfig>) -> Option<&T> {
         let slot = self.slots.as_slice().get(key.idx().into_usize()?)?;
         if slot.generation != key.generation() {
             return None;
@@ -397,7 +414,7 @@ impl<T, C: Config> GenMap<T, C> {
 
     /// Returns a mutable reference to the value corresponding to `key`.
     #[inline]
-    pub fn get_mut(&mut self, key: Key<C>) -> Option<&mut T> {
+    pub fn get_mut(&mut self, key: Key<C::KeyConfig>) -> Option<&mut T> {
         let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
         if slot.generation != key.generation() {
             return None;
@@ -414,7 +431,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// `key` must be valid, meaning [`contains_key`](Self::contains_key)
     /// returns `true` for it.
     #[inline]
-    pub unsafe fn get_unchecked(&self, key: Key<C>) -> &T {
+    pub unsafe fn get_unchecked(&self, key: Key<C::KeyConfig>) -> &T {
         debug_assert!(self.contains_key(key));
         self.slots
             .as_slice()
@@ -429,7 +446,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// `key` must be valid, meaning [`contains_key`](Self::contains_key)
     /// returns `true` for it.
     #[inline]
-    pub unsafe fn get_unchecked_mut(&mut self, key: Key<C>) -> &mut T {
+    pub unsafe fn get_unchecked_mut(&mut self, key: Key<C::KeyConfig>) -> &mut T {
         debug_assert!(self.contains_key(key));
         self.slots
             .as_mut_slice()
@@ -441,7 +458,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// is no slot at `idx` or the slot holds no value. A slot holds no value
     /// while it is vacant, detached or retired.
     #[inline]
-    pub fn key_at(&self, idx: C::Idx) -> Option<Key<C>> {
+    pub fn key_at(&self, idx: <C::KeyConfig as KeyConfig>::Idx) -> Option<Key<C::KeyConfig>> {
         let slot = self.slots.as_slice().get(idx.into_usize()?)?;
         if !slot.is_occupied() {
             return None;
@@ -463,7 +480,10 @@ impl<T, C: Config> GenMap<T, C> {
     /// key from it is undefined behavior on its own, because the key needs
     /// the generation as a `NonZero`.
     #[inline]
-    pub unsafe fn key_at_unchecked(&self, idx: C::Idx) -> Key<C> {
+    pub unsafe fn key_at_unchecked(
+        &self,
+        idx: <C::KeyConfig as KeyConfig>::Idx,
+    ) -> Key<C::KeyConfig> {
         debug_assert!(self.key_at(idx).is_some());
         self.slots
             .as_slice()
@@ -475,7 +495,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// `None` if there is no slot at `idx` or the slot holds no value. A slot
     /// holds no value while it is vacant, detached or retired.
     #[inline]
-    pub fn get_at(&self, idx: C::Idx) -> Option<(Key<C>, &T)> {
+    pub fn get_at(&self, idx: <C::KeyConfig as KeyConfig>::Idx) -> Option<(Key<C::KeyConfig>, &T)> {
         let slot = self.slots.as_slice().get(idx.into_usize()?)?;
         if !slot.is_occupied() {
             return None;
@@ -488,7 +508,10 @@ impl<T, C: Config> GenMap<T, C> {
     /// `idx`, or `None` if there is no slot at `idx` or the slot holds no
     /// value. See [`get_at`](Self::get_at).
     #[inline]
-    pub fn get_at_mut(&mut self, idx: C::Idx) -> Option<(Key<C>, &mut T)> {
+    pub fn get_at_mut(
+        &mut self,
+        idx: <C::KeyConfig as KeyConfig>::Idx,
+    ) -> Option<(Key<C::KeyConfig>, &mut T)> {
         let slot = self.slots.as_mut_slice().get_mut(idx.into_usize()?)?;
         if !slot.is_occupied() {
             return None;
@@ -510,7 +533,10 @@ impl<T, C: Config> GenMap<T, C> {
     /// lookup is undefined behavior as well, as described on
     /// [`key_at_unchecked`](Self::key_at_unchecked).
     #[inline]
-    pub unsafe fn get_at_unchecked(&self, idx: C::Idx) -> (Key<C>, &T) {
+    pub unsafe fn get_at_unchecked(
+        &self,
+        idx: <C::KeyConfig as KeyConfig>::Idx,
+    ) -> (Key<C::KeyConfig>, &T) {
         debug_assert!(self.key_at(idx).is_some());
         let slot = self.slots.as_slice().get_unchecked(position_of::<C>(idx));
         (slot.key(idx), slot.value())
@@ -523,7 +549,10 @@ impl<T, C: Config> GenMap<T, C> {
     ///
     /// The same as for [`get_at_unchecked`](Self::get_at_unchecked).
     #[inline]
-    pub unsafe fn get_at_unchecked_mut(&mut self, idx: C::Idx) -> (Key<C>, &mut T) {
+    pub unsafe fn get_at_unchecked_mut(
+        &mut self,
+        idx: <C::KeyConfig as KeyConfig>::Idx,
+    ) -> (Key<C::KeyConfig>, &mut T) {
         debug_assert!(self.key_at(idx).is_some());
         let slot = self
             .slots
@@ -540,7 +569,10 @@ impl<T, C: Config> GenMap<T, C> {
     /// works for vacant, detached and retired slots too. The generation is
     /// odd while the slot holds a value and even otherwise.
     #[inline]
-    pub fn generation_at(&self, idx: C::Idx) -> Option<C::Gen> {
+    pub fn generation_at(
+        &self,
+        idx: <C::KeyConfig as KeyConfig>::Idx,
+    ) -> Option<<C::KeyConfig as KeyConfig>::Gen> {
         Some(self.slots.as_slice().get(idx.into_usize()?)?.generation)
     }
 
@@ -552,7 +584,10 @@ impl<T, C: Config> GenMap<T, C> {
     /// [`generation_at`](Self::generation_at) returns `Some` for it. The
     /// slot does not have to hold a value.
     #[inline]
-    pub unsafe fn generation_at_unchecked(&self, idx: C::Idx) -> C::Gen {
+    pub unsafe fn generation_at_unchecked(
+        &self,
+        idx: <C::KeyConfig as KeyConfig>::Idx,
+    ) -> <C::KeyConfig as KeyConfig>::Gen {
         debug_assert!(self.generation_at(idx).is_some());
         self.slots
             .as_slice()
@@ -598,10 +633,11 @@ impl<T, C: Config> GenMap<T, C> {
     /// );
     /// ```
     #[inline]
+    #[allow(clippy::type_complexity)]
     pub fn get_disjoint_mut_at<const N: usize>(
         &mut self,
-        idxs: [C::Idx; N],
-    ) -> Result<[(Key<C>, &mut T); N], GetDisjointMutAtError> {
+        idxs: [<C::KeyConfig as KeyConfig>::Idx; N],
+    ) -> Result<[(Key<C::KeyConfig>, &mut T); N], GetDisjointMutAtError> {
         for (i, idx) in idxs.iter().enumerate() {
             if self.key_at(*idx).is_none() {
                 return Err(GetDisjointMutAtError::NoValue);
@@ -626,8 +662,8 @@ impl<T, C: Config> GenMap<T, C> {
     #[inline]
     pub unsafe fn get_disjoint_mut_at_unchecked<const N: usize>(
         &mut self,
-        idxs: [C::Idx; N],
-    ) -> [(Key<C>, &mut T); N] {
+        idxs: [<C::KeyConfig as KeyConfig>::Idx; N],
+    ) -> [(Key<C::KeyConfig>, &mut T); N] {
         debug_assert!(idxs.iter().all(|idx| self.key_at(*idx).is_some()));
         debug_assert!(idxs
             .iter()
@@ -643,8 +679,10 @@ impl<T, C: Config> GenMap<T, C> {
             // slot exists beside the one handed out.
             unsafe {
                 let slot = slots.add(position_of::<C>(idx));
-                let key =
-                    Key::<C>::from_raw_parts(idx, (*slot).generation.into_non_zero_unchecked());
+                let key = Key::<C::KeyConfig>::from_raw_parts(
+                    idx,
+                    (*slot).generation.into_non_zero_unchecked(),
+                );
                 (key, &mut *(*slot).data.occupied)
             }
         })
@@ -684,7 +722,7 @@ impl<T, C: Config> GenMap<T, C> {
     #[inline]
     pub fn get_disjoint_mut<const N: usize>(
         &mut self,
-        keys: [Key<C>; N],
+        keys: [Key<C::KeyConfig>; N],
     ) -> Result<[&mut T; N], GetDisjointMutError> {
         for (i, key) in keys.iter().enumerate() {
             if !self.contains_key(*key) {
@@ -713,7 +751,7 @@ impl<T, C: Config> GenMap<T, C> {
     #[inline]
     pub unsafe fn get_disjoint_mut_unchecked<const N: usize>(
         &mut self,
-        keys: [Key<C>; N],
+        keys: [Key<C::KeyConfig>; N],
     ) -> [&mut T; N] {
         debug_assert!(keys.iter().all(|key| self.contains_key(*key)));
         debug_assert!(keys
@@ -724,7 +762,7 @@ impl<T, C: Config> GenMap<T, C> {
         keys.map(|key| {
             // SAFETY: the caller promises the key is valid, so its position
             // is in bounds and `occupied` is the live field, and that no
-            // other key names the same slot, so the references do not alias.
+            // other key refers to the same slot, so the references do not alias.
             unsafe { &mut *(*slots.add(position_of::<C>(key.idx()))).data.occupied }
         })
     }
@@ -738,7 +776,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// not make room for one. Use [`try_insert`](Self::try_insert) to get
     /// the value back instead.
     #[inline]
-    pub fn insert(&mut self, value: T) -> Key<C> {
+    pub fn insert(&mut self, value: T) -> Key<C::KeyConfig> {
         self.insert_with_key(|_| value)
     }
 
@@ -755,14 +793,18 @@ impl<T, C: Config> GenMap<T, C> {
     /// # Examples
     ///
     /// ```
-    /// use gen_map::{Config, GenMap, InsertError, Split};
+    /// use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, Split};
     ///
     /// struct Tiny;
     ///
-    /// impl Config for Tiny {
+    /// impl KeyConfig for Tiny {
     ///     type Idx = u8;
     ///     type Gen = u8;
     ///     type Layout = Split;
+    /// }
+    ///
+    /// impl MapConfig for Tiny {
+    ///     type KeyConfig = Self;
     ///     type Storage<S> = Vec<S>;
     /// }
     ///
@@ -773,7 +815,11 @@ impl<T, C: Config> GenMap<T, C> {
     /// assert!(matches!(map.try_insert(256), Err(InsertError::IndexExhausted(256))));
     /// ```
     #[inline]
-    pub fn try_insert(&mut self, value: T) -> Result<Key<C>, InsertError<T, StorageError<T, C>>> {
+    #[allow(clippy::type_complexity)]
+    pub fn try_insert(
+        &mut self,
+        value: T,
+    ) -> Result<Key<C::KeyConfig>, InsertError<T, StorageError<T, C>>> {
         match self.vacant_entry() {
             Ok(entry) => Ok(entry.insert(value)),
             Err(FullError::IndexExhausted) => Err(InsertError::IndexExhausted(value)),
@@ -791,9 +837,9 @@ impl<T, C: Config> GenMap<T, C> {
     /// Use [`try_insert_with_key`](Self::try_insert_with_key) or
     /// [`vacant_entry`](Self::vacant_entry) to get an error instead.
     #[inline]
-    pub fn insert_with_key<F>(&mut self, f: F) -> Key<C>
+    pub fn insert_with_key<F>(&mut self, f: F) -> Key<C::KeyConfig>
     where
-        F: FnOnce(Key<C>) -> T,
+        F: FnOnce(Key<C::KeyConfig>) -> T,
     {
         // Nothing is written until `f` has returned, so a panicking `f`
         // leaves the map untouched.
@@ -829,12 +875,13 @@ impl<T, C: Config> GenMap<T, C> {
     /// assert_eq!(result, Err(InsertWithError::Rejected("no thanks")));
     /// assert_eq!(map.len(), 1);
     /// ```
+    #[allow(clippy::type_complexity)]
     pub fn try_insert_with_key<F, E>(
         &mut self,
         f: F,
-    ) -> Result<Key<C>, InsertWithError<E, StorageError<T, C>>>
+    ) -> Result<Key<C::KeyConfig>, InsertWithError<E, StorageError<T, C>>>
     where
-        F: FnOnce(Key<C>) -> Result<T, E>,
+        F: FnOnce(Key<C::KeyConfig>) -> Result<T, E>,
     {
         let entry = self.vacant_entry()?;
         let value = f(entry.key()).map_err(InsertWithError::Rejected)?;
@@ -879,11 +926,11 @@ impl<T, C: Config> GenMap<T, C> {
             }
             None => {
                 let position = self.slots.len();
-                let idx = C::Idx::from_usize(position)
+                let idx = Idx::<C>::from_usize(position)
                     .filter(|idx| *idx <= max_idx::<C>())
                     .ok_or(FullError::IndexExhausted)?;
                 self.slots.ensure_room().map_err(FullError::StorageFull)?;
-                (idx, position, C::Gen::ZERO, false)
+                (idx, position, Gen::<C>::ZERO, false)
             }
         };
 
@@ -891,7 +938,7 @@ impl<T, C: Config> GenMap<T, C> {
         // key can hold is odd, so the next one fits and the wrapping add
         // never wraps.
         debug_assert!(!generation.is_odd());
-        let generation = generation.wrapping_add(C::Gen::ONE);
+        let generation = generation.wrapping_add(Gen::<C>::ONE);
 
         Ok(Target {
             idx,
@@ -908,7 +955,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// `target` must have come from [`next_target`](Self::next_target) with
     /// nothing having touched the map since.
     #[inline]
-    unsafe fn fill(&mut self, target: Target<C>, value: T) -> Key<C> {
+    unsafe fn fill(&mut self, target: Target<C>, value: T) -> Key<C::KeyConfig> {
         let key = target.key();
         if target.from_free_list {
             // SAFETY: `position` was in bounds when `next_target` looked, and
@@ -940,7 +987,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// Removes and returns the value corresponding to `key`, or `None` if the
     /// key is invalid.
     #[inline]
-    pub fn remove(&mut self, key: Key<C>) -> Option<T> {
+    pub fn remove(&mut self, key: Key<C::KeyConfig>) -> Option<T> {
         let position = key.idx().into_usize()?;
         let slot = self.slots.as_slice().get(position)?;
         if slot.generation != key.generation() {
@@ -962,15 +1009,19 @@ impl<T, C: Config> GenMap<T, C> {
     /// # Examples
     ///
     /// ```
-    /// use gen_map::{Config, GenMap, Packed};
+    /// use gen_map::{GenMap, KeyConfig, MapConfig, Packed};
     ///
     /// /// Sixteen slots whose generations wrap after eight values.
     /// struct Wrapping;
     ///
-    /// impl Config for Wrapping {
+    /// impl KeyConfig for Wrapping {
     ///     type Idx = u8;
     ///     type Gen = u8;
     ///     type Layout = Packed<u8, 4>;
+    /// }
+    ///
+    /// impl MapConfig for Wrapping {
+    ///     type KeyConfig = Self;
     ///     type Storage<S> = Vec<S>;
     ///     const WRAP_ON_OVERFLOW: bool = true;
     /// }
@@ -986,7 +1037,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// assert_ne!(other.idx(), key.idx());
     /// ```
     #[inline]
-    pub fn retire(&mut self, key: Key<C>) -> Option<T> {
+    pub fn retire(&mut self, key: Key<C::KeyConfig>) -> Option<T> {
         let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
         if slot.generation != key.generation() {
             return None;
@@ -996,7 +1047,7 @@ impl<T, C: Config> GenMap<T, C> {
         let value = unsafe { ManuallyDrop::take(&mut slot.data.occupied) };
         // A generation of zero and no link to a free slot is what a retired
         // slot looks like, and nothing puts it back on the free list.
-        slot.generation = C::Gen::ZERO;
+        slot.generation = Gen::<C>::ZERO;
         slot.data.vacant = None;
         self.len -= 1;
         Some(value)
@@ -1009,8 +1060,8 @@ impl<T, C: Config> GenMap<T, C> {
     /// # Safety
     ///
     /// The slot at `position` must be occupied, and `idx` must be `position`
-    /// as a `C::Idx`.
-    unsafe fn take(&mut self, idx: C::Idx, position: usize) -> T {
+    /// as an `Idx<C>`.
+    unsafe fn take(&mut self, idx: Idx<C>, position: usize) -> T {
         // SAFETY: the caller promises an occupied slot at `position`, so it
         // is in bounds and `occupied` is the live field.
         let (slot, value) = unsafe {
@@ -1028,7 +1079,7 @@ impl<T, C: Config> GenMap<T, C> {
                 self.next_free = Some(idx);
             }
             None => {
-                slot.generation = C::Gen::ZERO;
+                slot.generation = Gen::<C>::ZERO;
                 if C::WRAP_ON_OVERFLOW {
                     slot.data.vacant = self.next_free;
                     self.next_free = Some(idx);
@@ -1079,7 +1130,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// assert_eq!(map[key], 11);
     /// ```
     #[inline]
-    pub fn detach(&mut self, key: Key<C>) -> Option<T> {
+    pub fn detach(&mut self, key: Key<C::KeyConfig>) -> Option<T> {
         let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
         if slot.generation != key.generation() {
             return None;
@@ -1102,7 +1153,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// Panics if the key was not detached, or was detached and its slot has
     /// since been removed by [`reset`](Self::reset).
     #[inline]
-    pub fn reattach(&mut self, key: Key<C>, value: T) {
+    pub fn reattach(&mut self, key: Key<C::KeyConfig>, value: T) {
         let generation = key.generation();
         let slot = key
             .idx()
@@ -1155,7 +1206,7 @@ impl<T, C: Config> GenMap<T, C> {
     /// them.
     pub fn retain<F>(&mut self, mut f: F)
     where
-        F: FnMut(Key<C>, &mut T) -> bool,
+        F: FnMut(Key<C::KeyConfig>, &mut T) -> bool,
     {
         for position in 0..self.slots.len() {
             // SAFETY: `position` is below the slot count, which neither
@@ -1225,30 +1276,30 @@ impl<T, C: Config> GenMap<T, C> {
     }
 }
 
-impl<T, C: Config> Default for GenMap<T, C> {
+impl<T, C: MapConfig> Default for GenMap<T, C> {
     #[inline]
     fn default() -> Self {
         Self::new_with_config()
     }
 }
 
-impl<T, C: Config> Index<Key<C>> for GenMap<T, C> {
+impl<T, C: MapConfig> Index<Key<C::KeyConfig>> for GenMap<T, C> {
     type Output = T;
 
     #[inline]
-    fn index(&self, key: Key<C>) -> &T {
+    fn index(&self, key: Key<C::KeyConfig>) -> &T {
         self.get(key).expect("invalid GenMap key")
     }
 }
 
-impl<T, C: Config> IndexMut<Key<C>> for GenMap<T, C> {
+impl<T, C: MapConfig> IndexMut<Key<C::KeyConfig>> for GenMap<T, C> {
     #[inline]
-    fn index_mut(&mut self, key: Key<C>) -> &mut T {
+    fn index_mut(&mut self, key: Key<C::KeyConfig>) -> &mut T {
         self.get_mut(key).expect("invalid GenMap key")
     }
 }
 
-impl<T: fmt::Debug, C: Config> fmt::Debug for GenMap<T, C> {
+impl<T: fmt::Debug, C: MapConfig> fmt::Debug for GenMap<T, C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_map().entries(self.iter()).finish()
     }
@@ -1259,7 +1310,7 @@ impl<T: fmt::Debug, C: Config> fmt::Debug for GenMap<T, C> {
 /// slot pushed here, so a refusal breaks the [`SlotStorage`] contract, and
 /// this panics.
 /// The slot is dropped with its value in that case.
-fn push_cloned<T, C: Config>(slots: &mut Slots<T, C>, slot: Slot<T, C>) {
+fn push_cloned<T, C: MapConfig>(slots: &mut Slots<T, C>, slot: Slot<T, C>) {
     if slots.try_push(slot).is_err() {
         panic!("SlotStorage::try_push failed while cloning a storage of the same type");
     }
@@ -1268,15 +1319,15 @@ fn push_cloned<T, C: Config>(slots: &mut Slots<T, C>, slot: Slot<T, C>) {
 /// Empties the slot storage on drop. Only dropped while unwinding out of
 /// `clone_from`, where a half cloned storage would disagree with `len` and
 /// the free list.
-struct ClearOnUnwind<'a, T, C: Config>(&'a mut Slots<T, C>);
+struct ClearOnUnwind<'a, T, C: MapConfig>(&'a mut Slots<T, C>);
 
-impl<T, C: Config> Drop for ClearOnUnwind<'_, T, C> {
+impl<T, C: MapConfig> Drop for ClearOnUnwind<'_, T, C> {
     fn drop(&mut self) {
         SlotStorage::clear(self.0);
     }
 }
 
-impl<T: Clone, C: Config> Clone for GenMap<T, C> {
+impl<T: Clone, C: MapConfig> Clone for GenMap<T, C> {
     /// The clone has the same slots, free list and generations, so every key
     /// of the original works on it.
     fn clone(&self) -> Self {
@@ -1314,13 +1365,13 @@ impl<T: Clone, C: Config> Clone for GenMap<T, C> {
 }
 
 /// Iterator over `(key, &value)` pairs. Created by [`GenMap::iter`].
-pub struct Iter<'a, T, C: Config> {
+pub struct Iter<'a, T, C: MapConfig> {
     slots: Enumerate<core::slice::Iter<'a, Slot<T, C>>>,
     remaining: usize,
 }
 
-impl<'a, T, C: Config> Iterator for Iter<'a, T, C> {
-    type Item = (Key<C>, &'a T);
+impl<'a, T, C: MapConfig> Iterator for Iter<'a, T, C> {
+    type Item = (Key<C::KeyConfig>, &'a T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1341,7 +1392,7 @@ impl<'a, T, C: Config> Iterator for Iter<'a, T, C> {
     }
 }
 
-impl<T, C: Config> DoubleEndedIterator for Iter<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for Iter<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
@@ -1356,10 +1407,10 @@ impl<T, C: Config> DoubleEndedIterator for Iter<'_, T, C> {
     }
 }
 
-impl<T, C: Config> ExactSizeIterator for Iter<'_, T, C> {}
-impl<T, C: Config> FusedIterator for Iter<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for Iter<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for Iter<'_, T, C> {}
 
-impl<T, C: Config> Clone for Iter<'_, T, C> {
+impl<T, C: MapConfig> Clone for Iter<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             slots: self.slots.clone(),
@@ -1369,13 +1420,13 @@ impl<T, C: Config> Clone for Iter<'_, T, C> {
 }
 
 /// Iterator over `(key, &mut value)` pairs. Created by [`GenMap::iter_mut`].
-pub struct IterMut<'a, T, C: Config> {
+pub struct IterMut<'a, T, C: MapConfig> {
     slots: Enumerate<core::slice::IterMut<'a, Slot<T, C>>>,
     remaining: usize,
 }
 
-impl<'a, T, C: Config> Iterator for IterMut<'a, T, C> {
-    type Item = (Key<C>, &'a mut T);
+impl<'a, T, C: MapConfig> Iterator for IterMut<'a, T, C> {
+    type Item = (Key<C::KeyConfig>, &'a mut T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1396,7 +1447,7 @@ impl<'a, T, C: Config> Iterator for IterMut<'a, T, C> {
     }
 }
 
-impl<T, C: Config> DoubleEndedIterator for IterMut<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for IterMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
@@ -1411,16 +1462,16 @@ impl<T, C: Config> DoubleEndedIterator for IterMut<'_, T, C> {
     }
 }
 
-impl<T, C: Config> ExactSizeIterator for IterMut<'_, T, C> {}
-impl<T, C: Config> FusedIterator for IterMut<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for IterMut<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for IterMut<'_, T, C> {}
 
 /// Iterator over keys. Created by [`GenMap::keys`].
-pub struct Keys<'a, T, C: Config> {
+pub struct Keys<'a, T, C: MapConfig> {
     inner: Iter<'a, T, C>,
 }
 
-impl<T, C: Config> Iterator for Keys<'_, T, C> {
-    type Item = Key<C>;
+impl<T, C: MapConfig> Iterator for Keys<'_, T, C> {
+    type Item = Key<C::KeyConfig>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1433,17 +1484,17 @@ impl<T, C: Config> Iterator for Keys<'_, T, C> {
     }
 }
 
-impl<T, C: Config> DoubleEndedIterator for Keys<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for Keys<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(key, _)| key)
     }
 }
 
-impl<T, C: Config> ExactSizeIterator for Keys<'_, T, C> {}
-impl<T, C: Config> FusedIterator for Keys<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for Keys<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for Keys<'_, T, C> {}
 
-impl<T, C: Config> Clone for Keys<'_, T, C> {
+impl<T, C: MapConfig> Clone for Keys<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -1452,11 +1503,11 @@ impl<T, C: Config> Clone for Keys<'_, T, C> {
 }
 
 /// Iterator over shared references to values. Created by [`GenMap::values`].
-pub struct Values<'a, T, C: Config> {
+pub struct Values<'a, T, C: MapConfig> {
     inner: Iter<'a, T, C>,
 }
 
-impl<'a, T, C: Config> Iterator for Values<'a, T, C> {
+impl<'a, T, C: MapConfig> Iterator for Values<'a, T, C> {
     type Item = &'a T;
 
     #[inline]
@@ -1470,17 +1521,17 @@ impl<'a, T, C: Config> Iterator for Values<'a, T, C> {
     }
 }
 
-impl<T, C: Config> DoubleEndedIterator for Values<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for Values<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(_, value)| value)
     }
 }
 
-impl<T, C: Config> ExactSizeIterator for Values<'_, T, C> {}
-impl<T, C: Config> FusedIterator for Values<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for Values<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for Values<'_, T, C> {}
 
-impl<T, C: Config> Clone for Values<'_, T, C> {
+impl<T, C: MapConfig> Clone for Values<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -1490,11 +1541,11 @@ impl<T, C: Config> Clone for Values<'_, T, C> {
 
 /// Iterator over mutable references to values. Created by
 /// [`GenMap::values_mut`].
-pub struct ValuesMut<'a, T, C: Config> {
+pub struct ValuesMut<'a, T, C: MapConfig> {
     inner: IterMut<'a, T, C>,
 }
 
-impl<'a, T, C: Config> Iterator for ValuesMut<'a, T, C> {
+impl<'a, T, C: MapConfig> Iterator for ValuesMut<'a, T, C> {
     type Item = &'a mut T;
 
     #[inline]
@@ -1508,25 +1559,25 @@ impl<'a, T, C: Config> Iterator for ValuesMut<'a, T, C> {
     }
 }
 
-impl<T, C: Config> DoubleEndedIterator for ValuesMut<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for ValuesMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(_, value)| value)
     }
 }
 
-impl<T, C: Config> ExactSizeIterator for ValuesMut<'_, T, C> {}
-impl<T, C: Config> FusedIterator for ValuesMut<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for ValuesMut<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for ValuesMut<'_, T, C> {}
 
 /// Owning iterator over `(key, value)` pairs. Created by consuming a map with
 /// `into_iter`.
-pub struct IntoIter<T, C: Config> {
+pub struct IntoIter<T, C: MapConfig> {
     slots: Enumerate<<Slots<T, C> as IntoIterator>::IntoIter>,
     remaining: usize,
 }
 
-impl<T, C: Config> Iterator for IntoIter<T, C> {
-    type Item = (Key<C>, T);
+impl<T, C: MapConfig> Iterator for IntoIter<T, C> {
+    type Item = (Key<C::KeyConfig>, T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1539,7 +1590,7 @@ impl<T, C: Config> Iterator for IntoIter<T, C> {
                 unsafe {
                     let key = slot.key(index_of::<C>(position));
                     let value = ManuallyDrop::take(&mut slot.data.occupied);
-                    slot.generation = C::Gen::ZERO;
+                    slot.generation = Gen::<C>::ZERO;
                     return Some((key, value));
                 }
             }
@@ -1553,7 +1604,7 @@ impl<T, C: Config> Iterator for IntoIter<T, C> {
     }
 }
 
-impl<T, C: Config> DoubleEndedIterator for IntoIter<T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for IntoIter<T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, mut slot)) = self.slots.next_back() {
@@ -1563,7 +1614,7 @@ impl<T, C: Config> DoubleEndedIterator for IntoIter<T, C> {
                 unsafe {
                     let key = slot.key(index_of::<C>(position));
                     let value = ManuallyDrop::take(&mut slot.data.occupied);
-                    slot.generation = C::Gen::ZERO;
+                    slot.generation = Gen::<C>::ZERO;
                     return Some((key, value));
                 }
             }
@@ -1572,11 +1623,11 @@ impl<T, C: Config> DoubleEndedIterator for IntoIter<T, C> {
     }
 }
 
-impl<T, C: Config> ExactSizeIterator for IntoIter<T, C> {}
-impl<T, C: Config> FusedIterator for IntoIter<T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for IntoIter<T, C> {}
+impl<T, C: MapConfig> FusedIterator for IntoIter<T, C> {}
 
-impl<T, C: Config> IntoIterator for GenMap<T, C> {
-    type Item = (Key<C>, T);
+impl<T, C: MapConfig> IntoIterator for GenMap<T, C> {
+    type Item = (Key<C::KeyConfig>, T);
     type IntoIter = IntoIter<T, C>;
 
     #[inline]
@@ -1588,8 +1639,8 @@ impl<T, C: Config> IntoIterator for GenMap<T, C> {
     }
 }
 
-impl<'a, T, C: Config> IntoIterator for &'a GenMap<T, C> {
-    type Item = (Key<C>, &'a T);
+impl<'a, T, C: MapConfig> IntoIterator for &'a GenMap<T, C> {
+    type Item = (Key<C::KeyConfig>, &'a T);
     type IntoIter = Iter<'a, T, C>;
 
     #[inline]
@@ -1598,8 +1649,8 @@ impl<'a, T, C: Config> IntoIterator for &'a GenMap<T, C> {
     }
 }
 
-impl<'a, T, C: Config> IntoIterator for &'a mut GenMap<T, C> {
-    type Item = (Key<C>, &'a mut T);
+impl<'a, T, C: MapConfig> IntoIterator for &'a mut GenMap<T, C> {
+    type Item = (Key<C::KeyConfig>, &'a mut T);
     type IntoIter = IterMut<'a, T, C>;
 
     #[inline]
@@ -1610,13 +1661,13 @@ impl<'a, T, C: Config> IntoIterator for &'a mut GenMap<T, C> {
 
 /// Draining iterator over `(key, value)` pairs. Created by [`GenMap::drain`].
 /// Dropping it removes whatever has not been yielded yet.
-pub struct Drain<'a, T, C: Config> {
+pub struct Drain<'a, T, C: MapConfig> {
     map: &'a mut GenMap<T, C>,
     position: usize,
 }
 
-impl<T, C: Config> Iterator for Drain<'_, T, C> {
-    type Item = (Key<C>, T);
+impl<T, C: MapConfig> Iterator for Drain<'_, T, C> {
+    type Item = (Key<C::KeyConfig>, T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1644,10 +1695,10 @@ impl<T, C: Config> Iterator for Drain<'_, T, C> {
     }
 }
 
-impl<T, C: Config> ExactSizeIterator for Drain<'_, T, C> {}
-impl<T, C: Config> FusedIterator for Drain<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for Drain<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for Drain<'_, T, C> {}
 
-impl<T, C: Config> Drop for Drain<'_, T, C> {
+impl<T, C: MapConfig> Drop for Drain<'_, T, C> {
     fn drop(&mut self) {
         for _ in self.by_ref() {}
     }

@@ -1,5 +1,5 @@
 use super::Cfg;
-use crate::{Config, GenMap, Split};
+use crate::{GenMap, KeyConfig, MapConfig, Split};
 use std::vec::Vec;
 
 #[test]
@@ -67,10 +67,14 @@ fn key_at_is_none_for_a_detached_slot() {
 #[test]
 fn key_at_with_an_index_that_does_not_fit_in_usize_is_none() {
     struct Wide;
-    impl Config for Wide {
+    impl KeyConfig for Wide {
         type Idx = u128;
         type Gen = u32;
         type Layout = Split;
+    }
+
+    impl MapConfig for Wide {
+        type KeyConfig = Self;
         type Storage<S> = Vec<S>;
     }
 

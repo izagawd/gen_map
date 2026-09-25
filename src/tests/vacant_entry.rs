@@ -1,14 +1,18 @@
-use crate::{Config, FullError, GenMap, InsertError, InsertWithError, Split};
+use crate::{FullError, GenMap, InsertError, InsertWithError, KeyConfig, MapConfig, Split};
 use std::collections::TryReserveError;
 use std::string::{String, ToString};
 use std::vec::Vec;
 
 struct Byte;
 
-impl Config for Byte {
+impl KeyConfig for Byte {
     type Idx = u8;
     type Gen = u8;
     type Layout = Split;
+}
+
+impl MapConfig for Byte {
+    type KeyConfig = Self;
     type Storage<S> = Vec<S>;
 }
 

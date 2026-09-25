@@ -1,5 +1,5 @@
 use super::Cfg;
-use crate::{Config, DefaultConfig, GenMap, Key, Split};
+use crate::{DefaultKeyConfig, DefaultMapConfig, GenMap, Key, KeyConfig, MapConfig, Split};
 use core::mem::size_of;
 use core::num::NonZero;
 use std::vec::Vec;
@@ -8,8 +8,26 @@ use std::vec::Vec;
 fn default_key_matches_default_config() {
     let mut map = GenMap::new();
     let key: Key = map.insert(1);
-    let same: Key<DefaultConfig> = key;
+    let same: Key<DefaultKeyConfig> = key;
     assert_eq!(map[same], 1);
+}
+
+#[test]
+fn maps_whose_configs_share_a_key_config_share_a_key_type() {
+    struct Wrapping;
+
+    impl MapConfig for Wrapping {
+        type KeyConfig = DefaultKeyConfig;
+        type Storage<S> = Vec<S>;
+        const WRAP_ON_OVERFLOW: bool = true;
+    }
+
+    let mut retiring = GenMap::new();
+    let mut wrapping = GenMap::<i32, Wrapping>::new_with_config();
+    let a: Key = retiring.insert(1);
+    let b: Key = wrapping.insert(2);
+    assert_eq!(retiring[a], 1);
+    assert_eq!(wrapping[b], 2);
 }
 
 #[test]
@@ -35,9 +53,9 @@ fn keys_are_ordered_by_index_then_generation() {
     // SAFETY: every generation is odd and everything fits a `u32`.
     let (a, b, c) = unsafe {
         (
-            Key::<DefaultConfig>::from_raw_parts(1, NonZero::new(3).unwrap()),
-            Key::<DefaultConfig>::from_raw_parts(1, NonZero::new(5).unwrap()),
-            Key::<DefaultConfig>::from_raw_parts(2, NonZero::new(1).unwrap()),
+            Key::<DefaultKeyConfig>::from_raw_parts(1, NonZero::new(3).unwrap()),
+            Key::<DefaultKeyConfig>::from_raw_parts(1, NonZero::new(5).unwrap()),
+            Key::<DefaultKeyConfig>::from_raw_parts(2, NonZero::new(1).unwrap()),
         )
     };
     assert!(a < b);
@@ -50,7 +68,7 @@ fn keys_are_ordered_by_index_then_generation() {
 #[test]
 fn key_debug_prints_both_parts() {
     // SAFETY: 7 is odd and both parts fit a `u32`.
-    let k = unsafe { Key::<DefaultConfig>::from_raw_parts(4, NonZero::new(7).unwrap()) };
+    let k = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(4, NonZero::new(7).unwrap()) };
     let text = std::format!("{k:?}");
     assert!(text.contains("idx: 4"));
     assert!(text.contains("generation: 7"));
@@ -59,18 +77,26 @@ fn key_debug_prints_both_parts() {
 #[test]
 fn every_integer_type_works_as_a_config() {
     struct Mixed;
-    impl Config for Mixed {
+    impl KeyConfig for Mixed {
         type Idx = u64;
         type Gen = u8;
         type Layout = Split;
+    }
+
+    impl MapConfig for Mixed {
+        type KeyConfig = Self;
         type Storage<S> = Vec<S>;
     }
 
     struct Wide;
-    impl Config for Wide {
+    impl KeyConfig for Wide {
         type Idx = u128;
         type Gen = usize;
         type Layout = Split;
+    }
+
+    impl MapConfig for Wide {
+        type KeyConfig = Self;
         type Storage<S> = Vec<S>;
     }
 
@@ -90,16 +116,20 @@ fn map_is_send_and_sync_when_its_values_are() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<GenMap<i32>>();
     assert_send_sync::<Key>();
-    assert_send_sync::<crate::Iter<'static, i32, DefaultConfig>>();
+    assert_send_sync::<crate::Iter<'static, i32, DefaultMapConfig>>();
 }
 
 #[test]
 fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     struct Wide;
-    impl Config for Wide {
+    impl KeyConfig for Wide {
         type Idx = u128;
         type Gen = u32;
         type Layout = Split;
+    }
+
+    impl MapConfig for Wide {
+        type KeyConfig = Self;
         type Storage<S> = Vec<S>;
     }
 
@@ -164,7 +194,7 @@ fn from_raw_parts_rebuilds_a_key() {
     let key = map.insert(42);
     let (idx, generation) = (key.idx(), key.non_zero_generation());
 
-    let rebuilt = unsafe { Key::<DefaultConfig>::from_raw_parts(idx, generation) };
+    let rebuilt = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(idx, generation) };
     assert_eq!(rebuilt, key);
     assert_eq!(map.get(rebuilt), Some(&42));
 }
@@ -178,7 +208,7 @@ fn a_rebuilt_key_from_the_past_matches_nothing() {
     assert_eq!(new.idx(), old.idx());
 
     let rebuilt =
-        unsafe { Key::<DefaultConfig>::from_raw_parts(old.idx(), old.non_zero_generation()) };
+        unsafe { Key::<DefaultKeyConfig>::from_raw_parts(old.idx(), old.non_zero_generation()) };
     assert!(map.get(rebuilt).is_none());
     assert!(map.get_mut(rebuilt).is_none());
     assert!(map.remove(rebuilt).is_none());
@@ -190,7 +220,7 @@ fn a_rebuilt_key_from_the_past_matches_nothing() {
 fn a_rebuilt_key_for_a_missing_slot_matches_nothing() {
     let mut map = GenMap::new();
     map.insert(1);
-    let rebuilt = unsafe { Key::<DefaultConfig>::from_raw_parts(99, NonZero::new(1).unwrap()) };
+    let rebuilt = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(99, NonZero::new(1).unwrap()) };
     assert!(map.get(rebuilt).is_none());
 }
 

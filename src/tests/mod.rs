@@ -25,7 +25,7 @@ mod unchecked;
 mod vacant_entry;
 mod zero_sized;
 
-use crate::{Config, KeyPiece, Split};
+use crate::{KeyConfig, KeyPiece, MapConfig, Split};
 use core::marker::PhantomData;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -37,10 +37,14 @@ use std::vec::Vec;
 #[allow(dead_code)]
 pub(crate) struct Cfg<Idx, Gen>(PhantomData<(Idx, Gen)>);
 
-impl<Idx: KeyPiece, Gen: KeyPiece> Config for Cfg<Idx, Gen> {
+impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Cfg<Idx, Gen> {
     type Idx = Idx;
     type Gen = Gen;
     type Layout = Split;
+}
+
+impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for Cfg<Idx, Gen> {
+    type KeyConfig = Self;
     type Storage<S> = Vec<S>;
 }
 

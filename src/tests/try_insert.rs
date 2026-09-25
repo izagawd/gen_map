@@ -1,13 +1,17 @@
-use crate::{Config, GenMap, InsertError, Split};
+use crate::{GenMap, InsertError, KeyConfig, MapConfig, Split};
 use std::string::{String, ToString};
 use std::vec::Vec;
 
 struct Byte;
 
-impl Config for Byte {
+impl KeyConfig for Byte {
     type Idx = u8;
     type Gen = u8;
     type Layout = Split;
+}
+
+impl MapConfig for Byte {
+    type KeyConfig = Self;
     type Storage<S> = Vec<S>;
 }
 

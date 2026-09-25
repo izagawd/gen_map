@@ -3,7 +3,7 @@ use core::hash::Hash;
 use core::marker::PhantomData;
 
 /// How a [`Key`](crate::Key) stores its index and generation. A
-/// [`Config`](crate::Config) picks one through its `Layout` type.
+/// [`KeyConfig`](crate::KeyConfig) picks one through its `Layout` type.
 ///
 /// # Safety
 ///
@@ -98,26 +98,30 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 ///
 /// `GEN_BITS` must be at least one and less than the bits of `R`, `Gen` must
 /// have at least `GEN_BITS` bits, and `Idx` must have at least the bits that
-/// are left for the index. A config that breaks one of these does not
+/// are left for the index. A key config that breaks one of these does not
 /// compile.
 ///
 /// The largest index is `(1 << (R::BITS - GEN_BITS)) - 1` and the largest
 /// generation is `(1 << GEN_BITS) - 1`, no matter how wide `Idx` and `Gen`
 /// are. A slot whose generation reaches the largest one retires or wraps, as
-/// [`WRAP_ON_OVERFLOW`](crate::Config::WRAP_ON_OVERFLOW) says.
+/// [`WRAP_ON_OVERFLOW`](crate::MapConfig::WRAP_ON_OVERFLOW) says.
 ///
 /// # Examples
 ///
 /// ```
-/// use gen_map::{Config, GenMap, Key, Packed};
+/// use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed};
 ///
 /// /// Four byte keys with 24 bits of index and 8 bits of generation.
 /// struct Compact;
 ///
-/// impl Config for Compact {
+/// impl KeyConfig for Compact {
 ///     type Idx = u32;
 ///     type Gen = u8;
 ///     type Layout = Packed<u32, 8>;
+/// }
+///
+/// impl MapConfig for Compact {
+///     type KeyConfig = Self;
 ///     type Storage<S> = Vec<S>;
 /// }
 ///
@@ -146,11 +150,11 @@ fn check_packed<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32>(
         assert!(GEN_BITS < R::BITS, "Packed needs at least one index bit");
         assert!(
             Gen::BITS >= GEN_BITS,
-            "the Gen type of the config has fewer bits than GEN_BITS"
+            "the Gen type of the key config has fewer bits than GEN_BITS"
         );
         assert!(
             Idx::BITS >= R::BITS - GEN_BITS,
-            "the Idx type of the config has fewer bits than the index field"
+            "the Idx type of the key config has fewer bits than the index field"
         );
     }
 }

@@ -2,7 +2,7 @@
 //! never allocates. The randomized model test covers them too.
 
 use super::{Bomb, DropTracker};
-use crate::{Config, FullError, GenMap, InsertError, InsertWithError, Packed, Split};
+use crate::{FullError, GenMap, InsertError, InsertWithError, KeyConfig, MapConfig, Packed, Split};
 use arrayvec::ArrayVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -10,10 +10,14 @@ use std::vec::Vec;
 /// Room for four slots, with a `u8` index that could address many more.
 struct Four;
 
-impl Config for Four {
+impl KeyConfig for Four {
     type Idx = u8;
     type Gen = u8;
     type Layout = Split;
+}
+
+impl MapConfig for Four {
+    type KeyConfig = Self;
     type Storage<S> = ArrayVec<S, 4>;
 }
 
@@ -21,10 +25,14 @@ impl Config for Four {
 /// out at the same time.
 struct Sixteen;
 
-impl Config for Sixteen {
+impl KeyConfig for Sixteen {
     type Idx = u8;
     type Gen = u8;
     type Layout = Packed<u8, 4>;
+}
+
+impl MapConfig for Sixteen {
+    type KeyConfig = Self;
     type Storage<S> = ArrayVec<S, 16>;
 }
 
