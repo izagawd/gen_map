@@ -53,12 +53,19 @@ pub unsafe trait SlotStorage<S>:
     fn as_mut_slice(&mut self) -> &mut [S];
 
     /// Makes sure the next [`try_push`](Self::try_push) will succeed,
-    /// growing if the storage can and has to, or returns the reason the push
-    /// would fail.
+    /// growing if the storage can and has to.
+    ///
+    /// # Errors
+    ///
+    /// Returns the reason the push would fail if the storage cannot make
+    /// room.
     fn ensure_room(&mut self) -> Result<(), Self::Error>;
 
-    /// Appends `item`, or hands it back if the storage cannot make room for
-    /// it.
+    /// Appends `item`.
+    ///
+    /// # Errors
+    ///
+    /// Hands `item` back if the storage cannot make room for it.
     fn try_push(&mut self, item: S) -> Result<(), S>;
 
     /// Drops every item, which leaves the storage empty.
@@ -90,6 +97,10 @@ pub trait ReserveStorage<S>: SlotStorage<S> {
     fn reserve(&mut self, additional: usize);
 
     /// The fallible form of [`reserve`](Self::reserve).
+    ///
+    /// # Errors
+    ///
+    /// Returns the reason the storage cannot make the room.
     fn try_reserve(&mut self, additional: usize) -> Result<(), Self::Error>;
 }
 

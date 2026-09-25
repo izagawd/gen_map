@@ -33,10 +33,9 @@ impl<K: KeyConfig> Key<K> {
     }
 
     /// Returns `true` if the key's generation is the largest one its layout
-    /// can hold. If the map still has the key's value and the result of this method is true, 
-    /// removing the value wraps or
-    /// retires its slot, as the map's config says, and
-    /// [`detach`](crate::GenMap::detach) refuses it.
+    /// can hold. If the map still has the key's value and the result of this
+    /// method is true, removing the value wraps or retires its slot, as the
+    /// map's config says, and [`detach`](crate::GenMap::detach) refuses it.
     #[inline]
     pub fn is_max_generation(&self) -> bool {
         self.generation() == <Layout<K> as KeyLayout<K::Idx, K::Gen>>::max_generation()

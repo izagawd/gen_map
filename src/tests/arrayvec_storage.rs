@@ -95,7 +95,7 @@ fn a_full_array_vec_reports_storage_full() {
 }
 
 #[test]
-#[should_panic(expected = "its storage can not make room for more than 4 slots")]
+#[should_panic(expected = "its storage cannot make room for more than 4 slots")]
 fn insert_panics_when_the_array_vec_is_full() {
     let mut map = full_map();
     map.insert(4);

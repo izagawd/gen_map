@@ -9,7 +9,7 @@ use std::vec::Vec;
 
 const CAP: usize = 4;
 
-/// Holds at most `CAP` items and can not grow on request.
+/// Holds at most `CAP` items and cannot grow on request.
 struct Capped<S>(Vec<S>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,7 +148,7 @@ fn clone_works_on_a_fixed_storage() {
 }
 
 #[test]
-#[should_panic(expected = "can not make room for more than 4 slots: CapReached")]
+#[should_panic(expected = "cannot make room for more than 4 slots: CapReached")]
 fn insert_panics_with_the_storages_reason() {
     let mut map = full_map();
     map.insert(99);

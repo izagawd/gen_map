@@ -100,7 +100,7 @@ fn reset_stays_consistent_when_a_drop_panics() {
 
     assert!(catch_unwind(AssertUnwindSafe(|| map.reset())).is_err());
 
-    // The map must look empty, not half reset, so the free list can not
+    // The map must look empty, not half reset, so the free list cannot
     // point at slots that no longer exist.
     assert!(map.is_empty());
     assert_eq!(map.slots_len(), 0);

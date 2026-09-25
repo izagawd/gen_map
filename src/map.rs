@@ -15,17 +15,21 @@ use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
 
 /// The index type of the keys a map with config `C` hands out.
-pub(crate) type Idx<C> = <<C as MapConfig>::KeyConfig as KeyConfig>::Idx;
+pub type MapIdx<C> = <<C as MapConfig>::KeyConfig as KeyConfig>::Idx;
 
 /// The generation type of the keys a map with config `C` hands out.
-pub(crate) type Gen<C> = <<C as MapConfig>::KeyConfig as KeyConfig>::Gen;
+pub type MapGen<C> = <<C as MapConfig>::KeyConfig as KeyConfig>::Gen;
+
+/// Short names for [`MapIdx`] and [`MapGen`] inside the crate.
+pub(crate) type Idx<C> = MapIdx<C>;
+pub(crate) type Gen<C> = MapGen<C>;
 
 /// The layout of the keys a map with config `C` hands out.
 pub(crate) type Layout<C> = <<C as MapConfig>::KeyConfig as KeyConfig>::Layout;
 
 /// The [`Slot`] a [`GenMap<T, C>`](GenMap) keeps each value in. While a
 /// slot is on the free list, its `U` names the next free slot.
-pub type MapSlot<T, C> = Slot<Gen<C>, T, Option<Idx<C>>>;
+pub type MapSlot<T, C> = Slot<MapGen<C>, T, Option<MapIdx<C>>>;
 
 /// The key of the value in the slot at `idx` whose generation is
 /// `generation`.
@@ -132,11 +136,11 @@ impl<C: MapConfig> Target<C> {
 fn panic_full<T, C: MapConfig>(full: FullError<StorageError<T, C>>, slots_len: usize) -> ! {
     match full {
         FullError::IndexExhausted => panic!(
-            "GenMap is full, its keys can not address more than {} slots",
+            "GenMap is full, its keys cannot address more than {} slots",
             slots_len
         ),
         FullError::StorageFull(error) => panic!(
-            "GenMap is full, its storage can not make room for more than {} slots: {:?}",
+            "GenMap is full, its storage cannot make room for more than {} slots: {:?}",
             slots_len, error
         ),
     }
@@ -198,6 +202,7 @@ impl<T> GenMap<T> {
     /// since Rust does not use a default type parameter when it infers
     /// types.
     #[inline]
+    #[must_use]
     pub const fn new() -> Self {
         Self::new_with_config()
     }
@@ -205,6 +210,7 @@ impl<T> GenMap<T> {
     /// Creates an empty map with the [`DefaultMapConfig`] and room for
     /// `capacity` slots.
     #[inline]
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> Self
     where
         Slots<T, DefaultMapConfig>: ReserveStorage<MapSlot<T, DefaultMapConfig>>,
@@ -225,6 +231,7 @@ where
 {
     /// Creates an empty map with config `C` and room for `capacity` slots.
     #[inline]
+    #[must_use]
     pub fn with_capacity_and_config(capacity: usize) -> Self {
         Self {
             slots: Slots::<T, C>::with_capacity(capacity),
@@ -281,6 +288,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// assert_eq!(core::mem::size_of_val(&key), 16);
     /// ```
     #[inline]
+    #[must_use]
     pub const fn new_with_config() -> Self {
         Self {
             slots: Slots::<T, C>::EMPTY,
@@ -372,7 +380,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// is no slot at `idx` or the slot holds no value. A slot holds no value
     /// while it is vacant, detached or retired.
     #[inline]
-    pub fn key_at(&self, idx: <C::KeyConfig as KeyConfig>::Idx) -> Option<Key<C::KeyConfig>> {
+    pub fn key_at(&self, idx: MapIdx<C>) -> Option<Key<C::KeyConfig>> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
             // SAFETY: `idx` is the slot's position.
             Parity::Odd(generation, _) => Some(unsafe { slot_key::<C>(idx, generation) }),
@@ -389,10 +397,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// value has an even generation, and a key's generation is an
     /// [`Odd`](crate::Odd), so building the key is undefined behavior.
     #[inline]
-    pub unsafe fn key_at_unchecked(
-        &self,
-        idx: <C::KeyConfig as KeyConfig>::Idx,
-    ) -> Key<C::KeyConfig> {
+    pub unsafe fn key_at_unchecked(&self, idx: MapIdx<C>) -> Key<C::KeyConfig> {
         debug_assert!(self.key_at(idx).is_some());
         let slot = self.slots.as_slice().get_unchecked(position_of::<C>(idx));
         slot_key::<C>(idx, Odd::new_unchecked(slot.generation()))
@@ -402,7 +407,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// `None` if there is no slot at `idx` or the slot holds no value. A slot
     /// holds no value while it is vacant, detached or retired.
     #[inline]
-    pub fn get_at(&self, idx: <C::KeyConfig as KeyConfig>::Idx) -> Option<(Key<C::KeyConfig>, &T)> {
+    pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<C::KeyConfig>, &T)> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
             // SAFETY: `idx` is the slot's position.
             Parity::Odd(generation, value) => {
@@ -416,10 +421,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// `idx`, or `None` if there is no slot at `idx` or the slot holds no
     /// value. See [`get_at`](Self::get_at).
     #[inline]
-    pub fn get_at_mut(
-        &mut self,
-        idx: <C::KeyConfig as KeyConfig>::Idx,
-    ) -> Option<(Key<C::KeyConfig>, &mut T)> {
+    pub fn get_at_mut(&mut self, idx: MapIdx<C>) -> Option<(Key<C::KeyConfig>, &mut T)> {
         match self
             .slots
             .as_mut_slice()
@@ -443,10 +445,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// read as if it held a value and the key gets built using an even
     /// generation, both of which are undefined behavior.
     #[inline]
-    pub unsafe fn get_at_unchecked(
-        &self,
-        idx: <C::KeyConfig as KeyConfig>::Idx,
-    ) -> (Key<C::KeyConfig>, &T) {
+    pub unsafe fn get_at_unchecked(&self, idx: MapIdx<C>) -> (Key<C::KeyConfig>, &T) {
         debug_assert!(self.key_at(idx).is_some());
         let slot = self.slots.as_slice().get_unchecked(position_of::<C>(idx));
         (
@@ -462,10 +461,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     ///
     /// The same as for [`get_at_unchecked`](Self::get_at_unchecked).
     #[inline]
-    pub unsafe fn get_at_unchecked_mut(
-        &mut self,
-        idx: <C::KeyConfig as KeyConfig>::Idx,
-    ) -> (Key<C::KeyConfig>, &mut T) {
+    pub unsafe fn get_at_unchecked_mut(&mut self, idx: MapIdx<C>) -> (Key<C::KeyConfig>, &mut T) {
         debug_assert!(self.key_at(idx).is_some());
         let slot = self
             .slots
@@ -482,10 +478,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// works for vacant, detached and retired slots too. The generation is
     /// odd while the slot holds a value and even otherwise.
     #[inline]
-    pub fn generation_at(
-        &self,
-        idx: <C::KeyConfig as KeyConfig>::Idx,
-    ) -> Option<<C::KeyConfig as KeyConfig>::Gen> {
+    pub fn generation_at(&self, idx: MapIdx<C>) -> Option<MapGen<C>> {
         Some(self.slots.as_slice().get(idx.into_usize()?)?.generation())
     }
 
@@ -497,10 +490,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// [`generation_at`](Self::generation_at) returns `Some` for it. The
     /// slot does not have to hold a value.
     #[inline]
-    pub unsafe fn generation_at_unchecked(
-        &self,
-        idx: <C::KeyConfig as KeyConfig>::Idx,
-    ) -> <C::KeyConfig as KeyConfig>::Gen {
+    pub unsafe fn generation_at_unchecked(&self, idx: MapIdx<C>) -> MapGen<C> {
         debug_assert!(self.generation_at(idx).is_some());
         self.slots
             .as_slice()
@@ -549,7 +539,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     #[allow(clippy::type_complexity)]
     pub fn get_disjoint_mut_at<const N: usize>(
         &mut self,
-        idxs: [<C::KeyConfig as KeyConfig>::Idx; N],
+        idxs: [MapIdx<C>; N],
     ) -> Result<[(Key<C::KeyConfig>, &mut T); N], GetDisjointMutAtError> {
         for (i, idx) in idxs.iter().enumerate() {
             if self.key_at(*idx).is_none() {
@@ -575,7 +565,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     #[inline]
     pub unsafe fn get_disjoint_mut_at_unchecked<const N: usize>(
         &mut self,
-        idxs: [<C::KeyConfig as KeyConfig>::Idx; N],
+        idxs: [MapIdx<C>; N],
     ) -> [(Key<C::KeyConfig>, &mut T); N] {
         debug_assert!(idxs.iter().all(|idx| self.key_at(*idx).is_some()));
         debug_assert!(idxs

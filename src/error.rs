@@ -2,7 +2,7 @@ use core::fmt;
 
 /// Why a [`GenMap`](crate::GenMap) has no room for another value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FullError<E> {
+pub enum FullError<S> {
     /// The map has a slot at every index its keys can hold and none of
     /// them are free.
     IndexExhausted,
@@ -10,14 +10,14 @@ pub enum FullError<E> {
     /// None of the slots are free and the storage could not make room for
     /// another one. The field says why, which for a `Vec` is its
     /// `TryReserveError`.
-    StorageFull(E),
+    StorageFull(S),
 }
 
-impl<E> FullError<E> {
+impl<S> FullError<S> {
     /// Returns the same error with the storage's reason borrowed instead of
     /// owned.
     #[inline]
-    pub fn as_ref(&self) -> FullError<&E> {
+    pub fn as_ref(&self) -> FullError<&S> {
         match self {
             Self::IndexExhausted => FullError::IndexExhausted,
             Self::StorageFull(error) => FullError::StorageFull(error),
@@ -25,34 +25,34 @@ impl<E> FullError<E> {
     }
 }
 
-impl<E: fmt::Display> fmt::Display for FullError<E> {
+impl<S: fmt::Display> fmt::Display for FullError<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::IndexExhausted => f.write_str("the keys can not address another slot"),
+            Self::IndexExhausted => f.write_str("the keys cannot address another slot"),
             Self::StorageFull(error) => {
-                write!(f, "the storage can not make room for another slot: {error}")
+                write!(f, "the storage cannot make room for another slot: {error}")
             }
         }
     }
 }
 
 /// Why [`GenMap::try_insert`](crate::GenMap::try_insert) could not insert.
-/// Each variant hands the value back so that the caller can keep it. `E` is
+/// Each variant hands the value back so that the caller can keep it. `S` is
 /// the map's [`StorageError`](crate::StorageError).
 ///
 /// When the keys' index and the storage both run out, the error is
 /// [`IndexExhausted`](Self::IndexExhausted).
-pub enum InsertError<T, E> {
+pub enum InsertError<T, S> {
     /// The map has a slot at every index its keys can hold and none of
     /// them are free.
     IndexExhausted(T),
 
     /// None of the slots are free and the storage could not make room for
     /// another one. The second field says why.
-    StorageFull(T, E),
+    StorageFull(T, S),
 }
 
-impl<T, E> InsertError<T, E> {
+impl<T, S> InsertError<T, S> {
     /// Takes the value back out of the error.
     #[inline]
     pub fn into_inner(self) -> T {
@@ -63,7 +63,7 @@ impl<T, E> InsertError<T, E> {
 
     /// The reason the insert failed, without the value.
     #[inline]
-    pub fn kind(&self) -> FullError<&E> {
+    pub fn kind(&self) -> FullError<&S> {
         match self {
             Self::IndexExhausted(_) => FullError::IndexExhausted,
             Self::StorageFull(_, error) => FullError::StorageFull(error),
@@ -72,7 +72,7 @@ impl<T, E> InsertError<T, E> {
 
     /// Splits the error into its reason and the value.
     #[inline]
-    pub fn into_parts(self) -> (FullError<E>, T) {
+    pub fn into_parts(self) -> (FullError<S>, T) {
         match self {
             Self::IndexExhausted(value) => (FullError::IndexExhausted, value),
             Self::StorageFull(value, error) => (FullError::StorageFull(error), value),
@@ -81,7 +81,7 @@ impl<T, E> InsertError<T, E> {
 }
 
 // Written by hand so that it does not require `T: Debug`.
-impl<T, E: fmt::Debug> fmt::Debug for InsertError<T, E> {
+impl<T, S: fmt::Debug> fmt::Debug for InsertError<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::IndexExhausted(_) => f.write_str("IndexExhausted(..)"),
@@ -90,7 +90,7 @@ impl<T, E: fmt::Debug> fmt::Debug for InsertError<T, E> {
     }
 }
 
-impl<T, E: fmt::Display> fmt::Display for InsertError<T, E> {
+impl<T, S: fmt::Display> fmt::Display for InsertError<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.kind(), f)
     }

@@ -190,7 +190,8 @@
 //! [`retire`](GenMap::retire) removes a value and retires its slot, no
 //! matter how the map is configured. Code built on a map that wraps can use
 //! it to keep the slots it chooses from wrapping, and
-//! [`Key::is_max_generation`] can be used to determine when a slot has reached that point.
+//! [`Key::is_max_generation`] can be used to determine when a slot has
+//! reached that point.
 //!
 //! ## Storage
 //!
@@ -408,8 +409,8 @@ pub use key::Key;
 pub use key_layout::{KeyLayout, Packed, PackedRepr, Split, SplitRepr};
 pub use key_piece::KeyPiece;
 pub use map::{
-    Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapSlot, StorageError, VacantEntry, Values,
-    ValuesMut,
+    Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapSlot, StorageError,
+    VacantEntry, Values, ValuesMut,
 };
 pub use parity::{Even, Odd};
 pub use slot::{Parity, Slot};

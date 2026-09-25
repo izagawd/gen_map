@@ -401,7 +401,7 @@ fn the_index_field_limits_the_slot_count() {
 }
 
 #[test]
-#[should_panic(expected = "can not address more than 16 slots")]
+#[should_panic(expected = "cannot address more than 16 slots")]
 fn insert_panics_when_the_index_field_is_full() {
     let mut map = GenMap::<u8, Byte>::new_with_config();
     for i in 0..=16u8 {
