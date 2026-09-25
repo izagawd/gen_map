@@ -33,12 +33,14 @@ pub type MapSlot<T, C> = Slot<Gen<C>, T, Option<Idx<C>>>;
 /// # Safety
 ///
 /// `idx` must be the position of a slot in the storage, and `generation`
-/// should refer to that slot's generatiom.
+/// should refer to that slot's generation.
 #[inline]
 unsafe fn slot_key<C: MapConfig>(idx: Idx<C>, generation: Odd<Gen<C>>) -> Key<C::KeyConfig> {
     // SAFETY: the map never lets a slot's position or generation grow past
     // what the layout holds.
-    unsafe { Key::from_raw_parts(idx, generation) }
+    Key::from_repr(unsafe {
+        <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::pack_unchecked(idx, generation)
+    })
 }
 
 /// Converts a position in the backing storage to `Idx<C>`.
@@ -117,7 +119,9 @@ impl<C: MapConfig> Target<C> {
     fn key(&self) -> Key<C::KeyConfig> {
         // SAFETY: a `Target` only ever comes from `next_target`, which checks
         // that both parts fit the layout.
-        unsafe { Key::from_raw_parts(self.idx, self.generation) }
+        Key::from_repr(unsafe {
+            <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::pack_unchecked(self.idx, self.generation)
+        })
     }
 }
 
@@ -381,7 +385,9 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// # Safety
     ///
     /// There must be a slot at `idx` and it must hold a value, meaning
-    /// [`key_at`](Self::key_at) returns `Some` for it.
+    /// [`key_at`](Self::key_at) returns `Some` for it. A slot that holds no
+    /// value has an even generation, and a key's generation is an
+    /// [`Odd`](crate::Odd), so building the key is undefined behavior.
     #[inline]
     pub unsafe fn key_at_unchecked(
         &self,

@@ -1,5 +1,7 @@
-use super::Cfg;
-use crate::{DefaultKeyConfig, DefaultMapConfig, GenMap, Key, KeyConfig, MapConfig, Odd, Split};
+use super::{key_from_parts, Cfg};
+use crate::{
+    DefaultKeyConfig, DefaultMapConfig, GenMap, Key, KeyConfig, KeyLayout, MapConfig, Split,
+};
 use core::mem::size_of;
 use std::vec::Vec;
 
@@ -49,14 +51,9 @@ fn option_of_key_costs_nothing_extra() {
 
 #[test]
 fn keys_are_ordered_by_index_then_generation() {
-    // SAFETY: every generation is odd and everything fits a `u32`.
-    let (a, b, c) = unsafe {
-        (
-            Key::<DefaultKeyConfig>::from_raw_parts(1, Odd::new(3).unwrap()),
-            Key::<DefaultKeyConfig>::from_raw_parts(1, Odd::new(5).unwrap()),
-            Key::<DefaultKeyConfig>::from_raw_parts(2, Odd::new(1).unwrap()),
-        )
-    };
+    let a = key_from_parts::<DefaultKeyConfig>(1, 3);
+    let b = key_from_parts::<DefaultKeyConfig>(1, 5);
+    let c = key_from_parts::<DefaultKeyConfig>(2, 1);
     assert!(a < b);
     assert!(b < c);
     let mut sorted = [c, b, a];
@@ -66,8 +63,7 @@ fn keys_are_ordered_by_index_then_generation() {
 
 #[test]
 fn key_debug_prints_both_parts() {
-    // SAFETY: 7 is odd and both parts fit a `u32`.
-    let k = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(4, Odd::new(7).unwrap()) };
+    let k = key_from_parts::<DefaultKeyConfig>(4, 7);
     let text = std::format!("{k:?}");
     assert!(text.contains("idx: 4"));
     assert!(text.contains("generation: 7"));
@@ -137,9 +133,7 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     // `too_wide` has the same low 64 bits as `k`'s index, so a conversion to
     // `usize` that truncated it would land on `k`'s slot.
     let too_wide = (1u128 << 64) | k.idx();
-    // SAFETY: the generation is the one of a live key, and both parts fit
-    // the `Split` layout of `Wide`.
-    let bogus = unsafe { Key::<Wide>::from_raw_parts(too_wide, k.generation()) };
+    let bogus = key_from_parts::<Wide>(too_wide, k.generation().get().get());
 
     assert!(map.get(bogus).is_none());
     assert!(map.get_mut(bogus).is_none());
@@ -177,14 +171,16 @@ fn a_generation_is_always_odd() {
 }
 
 #[test]
-fn from_raw_parts_rebuilds_a_key() {
+fn from_repr_rebuilds_a_key() {
     let mut map = GenMap::new();
     let key = map.insert(42);
-    let (idx, generation) = (key.idx(), key.generation());
 
-    let rebuilt = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(idx, generation) };
+    let rebuilt = Key::<DefaultKeyConfig>::from_repr(key.repr());
     assert_eq!(rebuilt, key);
     assert_eq!(map.get(rebuilt), Some(&42));
+
+    let packed = Split::pack(key.idx(), key.generation()).unwrap();
+    assert_eq!(Key::<DefaultKeyConfig>::from_repr(packed), key);
 }
 
 #[test]
@@ -195,7 +191,7 @@ fn a_rebuilt_key_from_the_past_matches_nothing() {
     let new = map.insert(2);
     assert_eq!(new.idx(), old.idx());
 
-    let rebuilt = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(old.idx(), old.generation()) };
+    let rebuilt = key_from_parts::<DefaultKeyConfig>(old.idx(), old.generation().get().get());
     assert!(map.get(rebuilt).is_none());
     assert!(map.get_mut(rebuilt).is_none());
     assert!(map.remove(rebuilt).is_none());
@@ -207,7 +203,7 @@ fn a_rebuilt_key_from_the_past_matches_nothing() {
 fn a_rebuilt_key_for_a_missing_slot_matches_nothing() {
     let mut map = GenMap::new();
     map.insert(1);
-    let rebuilt = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(99, Odd::new(1).unwrap()) };
+    let rebuilt = key_from_parts::<DefaultKeyConfig>(99, 1);
     assert!(map.get(rebuilt).is_none());
 }
 

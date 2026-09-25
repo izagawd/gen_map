@@ -160,6 +160,11 @@
 //!
 //! With either layout, `Option<Key>` is the same size as `Key`.
 //!
+//! A key can also be built by hand. [`KeyLayout::pack`] packs an index and
+//! an [`Odd`] generation into the layout's `Repr`, or returns `None` if
+//! either does not fit, and [`Key::from_repr`] turns the `Repr` into a key.
+//! [`Key::repr`] hands it back.
+//!
 //! ## When a generation runs out
 //!
 //! A slot's generation can only go up to the largest one its key can hold,
@@ -338,10 +343,6 @@
 //! [`get_unchecked`](GenMap::get_unchecked), that skips the checks the
 //! normal form makes, for code that already knows its key or index is valid.
 //! Calling one with an invalid key or index is undefined behavior.
-//!
-//! [`Key::from_raw_parts`] builds a key from an index and an [`Odd`] generation. It
-//! is unsafe because both parts must fit the key's layout. If it doesn't and the method is used,
-//! it may return the wrong generation and/or index.
 //!
 //! # Cargo features
 //!
