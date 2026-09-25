@@ -25,15 +25,17 @@ impl<K: KeyConfig> Key<K> {
         <Layout<K> as KeyLayout<K::Idx, K::Gen>>::idx(self.repr)
     }
 
-    /// The generation of the slot this key has.
+    /// The generation the key's slot had when the key was handed out. The
+    /// key matches the slot only while the slot still has this generation.
     #[inline]
     pub fn generation(&self) -> Odd<K::Gen> {
         <Layout<K> as KeyLayout<K::Idx, K::Gen>>::generation(self.repr)
     }
 
     /// Returns `true` if the key's generation is the largest one its layout
-    /// can hold. While the key is valid, removing its value wraps or retires
-    /// the slot, as the map's config says, and
+    /// can hold. If the map still has the key's value and the result of this method is true, 
+    /// removing the value wraps or
+    /// retires its slot, as the map's config says, and
     /// [`detach`](crate::GenMap::detach) refuses it.
     #[inline]
     pub fn is_max_generation(&self) -> bool {

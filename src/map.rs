@@ -64,8 +64,8 @@ unsafe fn index_of<C: MapConfig>(position: usize) -> Idx<C> {
 /// # Safety
 ///
 /// `idx` must be the index of a slot, such as one on the free list or one
-/// carried by a valid key. Every such index was a slot's position, so it
-/// fits in `usize`.
+/// carried by a key that has a value. Every such index was a slot's
+/// position, so it fits in `usize`.
 #[inline]
 unsafe fn position_of<C: MapConfig>(idx: Idx<C>) -> usize {
     debug_assert!(
@@ -95,7 +95,7 @@ fn next_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Option<Even<Gen<C>>
     }
 }
 
-/// The error the storage of a `GenMap<T, C>` gives when it can not make room
+/// The error the storage of a `GenMap<T, C>` gives when it cannot make room
 /// for another slot. It is `TryReserveError` for a `Vec`, `CapacityError` for
 /// an `ArrayVec` and `CollectionAllocErr` for a `SmallVec`.
 pub type StorageError<T, C> =
@@ -143,24 +143,24 @@ fn panic_full<T, C: MapConfig>(full: FullError<StorageError<T, C>>, slots_len: u
 }
 
 /// The slot the next insert would use, handed out by
-/// [`GenMap::vacant_entry`](GenMap::vacant_entry). Nothing is written until
-/// [`insert`](Self::insert) is called, so dropping the entry leaves the map
-/// as it was.
+/// [`GenMap::vacant_entry`](GenMap::vacant_entry). No slot is written until
+/// [`insert`](Self::insert) is called, so dropping the entry inserts
+/// nothing.
 pub struct VacantEntry<'a, T, C: MapConfig> {
     map: &'a mut GenMap<T, C>,
     target: Target<C>,
 }
 
 impl<'a, T, C: MapConfig> VacantEntry<'a, T, C> {
-    /// The key the value will get. It is invalid until
+    /// The key the value will get. It matches nothing until
     /// [`insert`](Self::insert) is called.
     #[inline]
     pub fn key(&self) -> Key<C::KeyConfig> {
         self.target.key()
     }
 
-    /// Puts `value` in the slot and returns its key, which is the one
-    /// [`key`](Self::key) gave.
+    /// Puts `value` in the slot and returns its key, the same one
+    /// [`key`](Self::key) returns.
     #[inline]
     pub fn insert(self, value: T) -> Key<C::KeyConfig> {
         // SAFETY: `target` came from `next_target`, and this entry has held
@@ -177,7 +177,7 @@ impl<T, C: MapConfig> fmt::Debug for VacantEntry<'_, T, C> {
     }
 }
 
-/// A generational map with a configuration of `C`.
+/// A generational map configured by `C`.
 ///
 /// See the [crate documentation](crate) for examples.
 pub struct GenMap<
@@ -237,7 +237,7 @@ where
     ///
     /// # Panics
     ///
-    /// Panics or aborts if the storage can not make the room, as
+    /// Panics or aborts if the storage cannot make the room, as
     /// `Vec::reserve` does. Use [`try_reserve`](Self::try_reserve) to get an
     /// error instead.
     #[inline]
@@ -246,11 +246,11 @@ where
     }
 
     /// The fallible form of [`reserve`](Self::reserve). After `Ok`, the next
-    /// `additional` inserts can not fail for lack of storage.
+    /// `additional` inserts cannot fail for lack of storage.
     ///
     /// # Errors
     ///
-    /// Returns what the storage says when it can not make the room.
+    /// Returns what the storage says when it cannot make the room.
     #[inline]
     pub fn try_reserve(&mut self, additional: usize) -> Result<(), StorageError<T, C>> {
         self.slots.try_reserve(additional)
@@ -290,7 +290,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     }
 
     /// How many slots the storage can hold before it has to grow, or in total
-    /// if it can not grow.
+    /// if it cannot grow.
     #[inline]
     pub fn capacity(&self) -> usize {
         self.slots.capacity()
@@ -314,7 +314,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
         self.slots.len()
     }
 
-    /// Returns `true` if `key` is valid.
+    /// Returns `true` if the map has a value for `key`.
     #[inline]
     pub fn contains_key(&self, key: Key<C::KeyConfig>) -> bool {
         self.get(key).is_some()
@@ -342,8 +342,8 @@ impl<T, C: MapConfig> GenMap<T, C> {
     ///
     /// # Safety
     ///
-    /// `key` must be valid, meaning [`contains_key`](Self::contains_key)
-    /// returns `true` for it.
+    /// The map must have a value for `key`, meaning
+    /// [`contains_key`](Self::contains_key) returns `true` for it.
     #[inline]
     pub unsafe fn get_unchecked(&self, key: Key<C::KeyConfig>) -> &T {
         debug_assert!(self.contains_key(key));
@@ -357,8 +357,8 @@ impl<T, C: MapConfig> GenMap<T, C> {
     ///
     /// # Safety
     ///
-    /// `key` must be valid, meaning [`contains_key`](Self::contains_key)
-    /// returns `true` for it.
+    /// The map must have a value for `key`, meaning
+    /// [`contains_key`](Self::contains_key) returns `true` for it.
     #[inline]
     pub unsafe fn get_unchecked_mut(&mut self, key: Key<C::KeyConfig>) -> &mut T {
         debug_assert!(self.contains_key(key));
@@ -515,14 +515,14 @@ impl<T, C: MapConfig> GenMap<T, C> {
     ///
     /// Every index gets the same checks as [`get_at_mut`](Self::get_at_mut),
     /// and every pair of indices is checked to be different, so the
-    /// references can not alias.
+    /// references cannot alias. Checking every pair takes O(N²) time.
     ///
     /// # Errors
     ///
     /// Returns [`GetDisjointMutAtError::NoValue`] if there is no slot at one
     /// of the indices or the slot holds no value, and
     /// [`GetDisjointMutAtError::OverlappingIndices`] if two indices are the
-    /// same. Nothing is borrowed on error.
+    /// same. The error does not borrow the map.
     ///
     /// [`get_disjoint_mut`]: Self::get_disjoint_mut
     ///
@@ -571,7 +571,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     ///
     /// There must be a slot at every index and each must hold a value,
     /// meaning [`key_at`](Self::key_at) returns `Some` for every one of them,
-    /// and no two indices of the keys provided may be the same.
+    /// and no two of the indices may be the same.
     #[inline]
     pub unsafe fn get_disjoint_mut_at_unchecked<const N: usize>(
         &mut self,
@@ -598,15 +598,15 @@ impl<T, C: MapConfig> GenMap<T, C> {
 
     /// Returns a mutable reference to the value of each key, all at once.
     ///
-    /// Every key gets the same checks as it would had you put it in [`get_mut`](Self::get_mut), and
-    /// every pair of keys is checked to point at different slots, so the
-    /// references can not alias.
+    /// Every key is checked the same way [`get_mut`](Self::get_mut) checks
+    /// it, and every pair of keys is checked to point at different slots, so
+    /// the references cannot alias. Checking every pair takes O(N²) time.
     ///
     /// # Errors
     ///
-    /// Returns [`GetDisjointMutError::InvalidKey`] if a key is invalid and
-    /// [`GetDisjointMutError::OverlappingKeys`] if two keys point at the same
-    /// slot. Nothing is borrowed on error.
+    /// Returns [`GetDisjointMutError::InvalidKey`] if the map has no value
+    /// for one of the keys, and [`GetDisjointMutError::OverlappingKeys`] if
+    /// two keys point at the same slot. The error does not borrow the map.
     ///
     /// # Examples
     ///
@@ -636,13 +636,14 @@ impl<T, C: MapConfig> GenMap<T, C> {
             if !self.contains_key(*key) {
                 return Err(GetDisjointMutError::InvalidKey);
             }
-            // Two valid keys for one slot carry the slot's generation, so the
-            // index alone says whether they overlap.
+            // Two keys that both have a value in one slot carry the slot's
+            // generation, so the index alone says whether they overlap.
             if keys[..i].iter().any(|earlier| earlier.idx() == key.idx()) {
                 return Err(GetDisjointMutError::OverlappingKeys);
             }
         }
-        // SAFETY: every key was just found valid and every index distinct.
+        // SAFETY: every key was just found to have a value, and every index
+        // is distinct.
         Ok(unsafe { self.get_disjoint_mut_unchecked(keys) })
     }
 
@@ -651,8 +652,9 @@ impl<T, C: MapConfig> GenMap<T, C> {
     ///
     /// # Safety
     ///
-    /// Every key must be valid, meaning [`contains_key`](Self::contains_key)
-    /// returns `true` for it, and no two keys may point at the same slot.
+    /// The map must have a value for every key, meaning
+    /// [`contains_key`](Self::contains_key) returns `true` for each of them,
+    /// and no two keys may point at the same slot.
     /// Otherwise a slot is read as if it held a value, or two of the
     /// references point at the same value, either of which is undefined
     /// behavior.
@@ -668,9 +670,10 @@ impl<T, C: MapConfig> GenMap<T, C> {
             .all(|(i, key)| keys[..i].iter().all(|earlier| earlier.idx() != key.idx())));
         let slots = self.slots.as_mut_slice().as_mut_ptr();
         keys.map(|key| {
-            // SAFETY: the caller promises the key is valid, so its position
+            // SAFETY: the caller promises the key has a value, so its position
             // is in bounds and its slot's generation is odd, and that no
-            // other key refers the same slot, so the references do not alias.
+            // other key refers to the same slot, so the references do not
+            // alias.
             unsafe { (*slots.add(position_of::<C>(key.idx()))).get_odd_unchecked_mut() }
         })
     }
@@ -680,8 +683,8 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// # Panics
     ///
     /// Panics if the map is full, meaning none of the slots are free and
-    /// either its keys have no index left for a new slot or the storage can
-    /// not make room for one. Use [`try_insert`](Self::try_insert) to get
+    /// either its keys have no index left for a new slot or the storage cannot
+    /// make room for one. Use [`try_insert`](Self::try_insert) to get
     /// the value back instead.
     #[inline]
     pub fn insert(&mut self, value: T) -> Key<C::KeyConfig> {
@@ -696,7 +699,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// Returns [`InsertError::IndexExhausted`] if none of the slots are free
     /// and the map's keys have no index left for a new one, and
     /// [`InsertError::StorageFull`] if none of them are free and the storage
-    /// can not make room for another one.
+    /// cannot make room for another one.
     ///
     /// # Examples
     ///
@@ -735,14 +738,15 @@ impl<T, C: MapConfig> GenMap<T, C> {
         }
     }
 
-    /// Inserts the value returned by `f`, which is given the value's key.
+    /// Inserts the value returned by `f`, which is given the value's key. If
+    /// `f` panics, nothing is inserted.
     ///
     /// # Panics
     ///
     /// Panics if the map is full, meaning none of the slots are free and
-    /// either its keys have no index left for a new slot or the storage can
-    /// not make room for one.
-    /// Use [`try_insert_with_key`](Self::try_insert_with_key) or
+    /// either its keys have no index left for a new slot or the storage
+    /// cannot make room for one. Use
+    /// [`try_insert_with_key`](Self::try_insert_with_key) or
     /// [`vacant_entry`](Self::vacant_entry) to get an error instead.
     #[inline]
     pub fn insert_with_key<F>(&mut self, f: F) -> Key<C::KeyConfig>
@@ -761,7 +765,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
 
     /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail and
     /// a full map is an error rather than a panic. On either error nothing
-    /// is inserted, and the key `f` was given stays invalid until a later
+    /// is inserted, and the key `f` was given matches nothing until a later
     /// insert hands it out again.
     ///
     /// # Errors
@@ -798,15 +802,15 @@ impl<T, C: MapConfig> GenMap<T, C> {
 
     /// Hands out the slot the next insert would use, without writing to it.
     /// [`VacantEntry::key`] is the key the value will get and
-    /// [`VacantEntry::insert`] puts it there. Dropping the entry leaves the
-    /// map as it was.
+    /// [`VacantEntry::insert`] puts it there. Dropping the entry inserts
+    /// nothing.
     ///
     /// # Errors
     ///
     /// Returns [`FullError::IndexExhausted`] if none of the slots are free
     /// and the map's keys have no index left for a new one, and
     /// [`FullError::StorageFull`] if none of them are free and the storage
-    /// can not make room for another one. When a `Vec` can not allocate,
+    /// cannot make room for another one. When a `Vec` cannot allocate,
     /// this returns `StorageFull` instead of panicking.
     #[inline]
     pub fn vacant_entry(&mut self) -> Result<VacantEntry<'_, T, C>, FullError<StorageError<T, C>>> {
@@ -816,7 +820,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
 
     /// Works out where the next value goes without writing any slot. When a
     /// slot has to be pushed, this makes sure there is room for it, so that
-    /// the push in [`fill`](Self::fill) can not fail.
+    /// the push in [`fill`](Self::fill) cannot fail.
     ///
     /// When the keys' index and the storage both run out, the error is
     /// `IndexExhausted`.
@@ -885,8 +889,8 @@ impl<T, C: MapConfig> GenMap<T, C> {
         key
     }
 
-    /// Removes and returns the value corresponding to `key`, or `None` if the
-    /// key is invalid.
+    /// Removes and returns the value corresponding to `key`, or `None` if
+    /// there is none.
     #[inline]
     pub fn remove(&mut self, key: Key<C::KeyConfig>) -> Option<T> {
         let position = key.idx().into_usize()?;
@@ -901,11 +905,12 @@ impl<T, C: MapConfig> GenMap<T, C> {
 
     /// Removes and returns the value corresponding to `key` like
     /// [`remove`](Self::remove), but retires its slot instead of freeing it.
-    /// Returns `None` if the key is invalid.
+    /// Returns `None` if there is no value for `key`.
     ///
     /// A retired slot is never used again until [`reset`](Self::reset), no
-    /// matter how the map is configured, so no key to it can ever match a new value.
-    /// This is useful when a map's config wraps on exceeding the max generation, but you want to retire slots under certain conditions.
+    /// matter how the map is configured, so no key to it can ever match a
+    /// new value. This is how a map that wraps generations can still retire
+    /// the slots it chooses.
     ///
     /// # Examples
     ///
@@ -982,16 +987,14 @@ impl<T, C: MapConfig> GenMap<T, C> {
     /// `key`, so that [`reattach`](Self::reattach) can put a value back under
     /// the same key.
     ///
-    /// Until then the key is invalid, meaning
-    /// [`contains_key`](Self::contains_key) returns `false` and the value is
-    /// not counted by [`len`](Self::len), but the slot is not on the free
-    /// list, so no insert call uses it.
+    /// Until then [`contains_key`](Self::contains_key) returns `false` for
+    /// the key and [`len`](Self::len) does not count the value, but the slot
+    /// is not on the free list, so no insert uses it.
     ///
-    /// Returns `None` if the key is invalid, and also if the slot's
-    /// generation is already the largest one its key can hold, because a
-    /// slot that is about to retire or wrap can not promise to give the same
-    /// key back. The value
-    /// stays in the map in that case.
+    /// Returns `None` if there is no value for `key`. It also returns `None`,
+    /// and leaves the value in the map, if the slot's generation is already
+    /// the largest one its key can hold, because a slot that is about to
+    /// retire or wrap cannot promise to give the same key back.
     ///
     /// [`clear`](Self::clear) and [`retain`](Self::retain) leave a detached
     /// slot as it is, since it holds no value. [`reset`](Self::reset) removes
@@ -1025,7 +1028,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
     }
 
     /// Puts a value back under a key whose value [`detach`](Self::detach)
-    /// took out. The key is valid again afterwards.
+    /// took out. Afterwards, the map has a value for the key again.
     ///
     /// # Panics
     ///
@@ -1052,7 +1055,8 @@ impl<T, C: MapConfig> GenMap<T, C> {
         self.len += 1;
     }
 
-    /// Removes every value. Slots are kept and every old key stays invalid.
+    /// Removes every value. The slots stay, and old keys stop matching just
+    /// as they do after [`remove`](Self::remove).
     pub fn clear(&mut self) {
         for position in 0..self.slots.len() {
             // SAFETY: `position` is below the slot count, which `take` does
@@ -1083,7 +1087,8 @@ impl<T, C: MapConfig> GenMap<T, C> {
     }
 
     /// Keeps only the values for which `f` returns `true`. `f` may mutate
-    /// them.
+    /// them. If `f` panics, the values it already rejected stay removed and
+    /// the rest stay in the map.
     pub fn retain<F>(&mut self, mut f: F)
     where
         F: FnMut(Key<C::KeyConfig>, &mut T) -> bool,
@@ -1166,6 +1171,12 @@ impl<T, C: MapConfig> Default for GenMap<T, C> {
 impl<T, C: MapConfig> Index<Key<C::KeyConfig>> for GenMap<T, C> {
     type Output = T;
 
+    /// Returns a reference to the value corresponding to `key`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the map has no value for `key`. Use [`get`](Self::get) to
+    /// get `None` instead.
     #[inline]
     fn index(&self, key: Key<C::KeyConfig>) -> &T {
         self.get(key).expect("invalid GenMap key")
@@ -1173,6 +1184,12 @@ impl<T, C: MapConfig> Index<Key<C::KeyConfig>> for GenMap<T, C> {
 }
 
 impl<T, C: MapConfig> IndexMut<Key<C::KeyConfig>> for GenMap<T, C> {
+    /// Returns a mutable reference to the value corresponding to `key`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the map has no value for `key`. Use
+    /// [`get_mut`](Self::get_mut) to get `None` instead.
     #[inline]
     fn index_mut(&mut self, key: Key<C::KeyConfig>) -> &mut T {
         self.get_mut(key).expect("invalid GenMap key")

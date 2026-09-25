@@ -83,7 +83,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
         }
     }
 
-    /// The generation.
+    /// Returns the slot's generation.
     #[inline]
     pub fn generation(&self) -> G {
         self.generation

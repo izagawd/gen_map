@@ -189,7 +189,7 @@ impl<E: fmt::Display, S: fmt::Display> fmt::Display for InsertWithError<E, S> {
 /// not hand out its references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutError {
-    /// One of the keys is invalid, meaning
+    /// The map has no value for one of the keys, meaning
     /// [`contains_key`](crate::GenMap::contains_key) returns `false` for it.
     InvalidKey,
 
