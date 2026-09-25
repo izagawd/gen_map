@@ -762,7 +762,7 @@ impl<T, C: MapConfig> GenMap<T, C> {
         keys.map(|key| {
             // SAFETY: the caller promises the key is valid, so its position
             // is in bounds and `occupied` is the live field, and that no
-            // other key names the same slot, so the references do not alias.
+            // other key refers to the same slot, so the references do not alias.
             unsafe { &mut *(*slots.add(position_of::<C>(key.idx()))).data.occupied }
         })
     }

@@ -68,7 +68,7 @@ pub trait KeyConfig {
 /// assert_eq!(map[key], "hello");
 /// ```
 pub trait MapConfig {
-    /// The config of the keys the map hands out. Maps whose configs name the
+    /// The config of the keys the map hands out. Maps whose configs have the
     /// same key config share a key type.
     type KeyConfig: KeyConfig;
 
