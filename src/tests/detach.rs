@@ -142,7 +142,7 @@ fn reattach_panics_with_the_wrong_generation_for_a_detached_slot() {
 fn detach_refuses_when_the_generation_would_overflow() {
     let mut map = GenMap::<i32, Cfg<u8, u8>>::new_with_config();
     let mut key = map.insert(0);
-    while key.generation() != u8::MAX {
+    while key.generation().get().get() != u8::MAX {
         map.remove(key);
         key = map.insert(0);
     }

@@ -52,6 +52,14 @@
 //! Freed slots go on a free list and are reused before the map adds new
 //! ones, so the map only grows when no slot is free.
 //!
+//! ## Slots
+//!
+//! Each slot is a [`Slot`], which pairs a generation with a `T` while the
+//! generation is odd, or with a `U` while it is even. The gen map keeps a value in
+//! the `T` and a link to the next free slot in the `U`. [`Even`] and [`Odd`]
+//! hold numbers known to be even or odd, and [`Parity`] is a slot's
+//! generation together with its value.
+//!
 //! # Configuring the map
 //!
 //! A map is configured by a [`MapConfig`], and its keys by a [`KeyConfig`].
@@ -72,7 +80,7 @@
 //!   type.
 //! - [`Storage`](MapConfig::Storage) is the collection the slots live in,
 //!   such as a `Vec`.
-//! - [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW) determies what happens to
+//! - [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW) determines what happens to
 //!   a slot whose generation runs out.
 //!
 //! [`DefaultMapConfig`] is the config a [`GenMap`] uses when none is named.
@@ -331,10 +339,9 @@
 //! normal form makes, for code that already knows its key or index is valid.
 //! Calling one with an invalid key or index is undefined behavior.
 //!
-//! [`Key::from_raw_parts`] builds a key from an index and a generation. It
-//! is unsafe because the generation must be odd and both parts must fit the
-//! layout, and looking up a key that breaks either rule is undefined
-//! behavior.
+//! [`Key::from_raw_parts`] builds a key from an index and an [`Odd`] generation. It
+//! is unsafe because both parts must fit the key's layout. If it doesn't and the method is used,
+//! it may return the wrong generation and/or index.
 //!
 //! # Cargo features
 //!
@@ -376,6 +383,8 @@ mod key;
 mod key_layout;
 mod key_piece;
 mod map;
+mod parity;
+mod slot;
 mod storage;
 
 #[cfg(feature = "alloc")]
@@ -388,9 +397,11 @@ pub use key::Key;
 pub use key_layout::{KeyLayout, Packed, PackedRepr, Split, SplitRepr};
 pub use key_piece::KeyPiece;
 pub use map::{
-    Drain, GenMap, IntoIter, Iter, IterMut, Keys, Slot, StorageError, VacantEntry, Values,
+    Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapSlot, StorageError, VacantEntry, Values,
     ValuesMut,
 };
+pub use parity::{Even, Odd};
+pub use slot::{Parity, Slot};
 pub use storage::{ReserveStorage, SlotStorage};
 
 // The tests use `Vec` storage and the default config, so they need `alloc`.

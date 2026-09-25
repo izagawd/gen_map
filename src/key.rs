@@ -1,6 +1,6 @@
 use crate::config::{DefaultKeyConfig, KeyConfig};
 use crate::key_layout::KeyLayout;
-use crate::key_piece::KeyPiece;
+use crate::parity::Odd;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{Hash, Hasher};
@@ -25,19 +25,9 @@ impl<K: KeyConfig> Key<K> {
         <Layout<K> as KeyLayout<K::Idx, K::Gen>>::idx(self.repr)
     }
 
-    /// The generation of the slot this key refers to at the time this key was handed out.
+    /// The generation of the slot this key has.
     #[inline]
-    pub fn generation(&self) -> K::Gen {
-        let generation = <Layout<K> as KeyLayout<K::Idx, K::Gen>>::generation(self.repr);
-        K::Gen::from_non_zero(generation)
-    }
-
-    /// Returns the same generation as [`generation`](Self::generation), but
-    /// as a `NonZero`, which is the type
-    /// [`from_raw_parts`](Self::from_raw_parts) takes. A key's generation is
-    /// always odd, so it is never zero.
-    #[inline]
-    pub fn non_zero_generation(&self) -> <K::Gen as KeyPiece>::NonZero {
+    pub fn generation(&self) -> Odd<K::Gen> {
         <Layout<K> as KeyLayout<K::Idx, K::Gen>>::generation(self.repr)
     }
 
@@ -54,19 +44,12 @@ impl<K: KeyConfig> Key<K> {
     ///
     /// # Safety
     ///
-    /// `generation` must be odd. The map only hands out odd generations, and
-    /// an even one is what a vacant or detached slot holds. A key with an
-    /// even generation could match such a slot, and a lookup would then read
-    /// a value that is not there, which is undefined behavior.
-    /// Both parts must also fit the layout, meaning `idx` is at most
+    /// Both parts must fit the layout, meaning `idx` is at most
     /// [`KeyLayout::max_idx`] and `generation` at most
     /// [`KeyLayout::max_generation`].
     #[inline]
-    pub unsafe fn from_raw_parts(idx: K::Idx, generation: <K::Gen as KeyPiece>::NonZero) -> Self {
-        let generation = K::Gen::from_non_zero(generation);
-        debug_assert!(generation.is_odd());
-        // SAFETY: the caller promises an odd generation that fits the
-        // layout, and an index that fits it.
+    pub unsafe fn from_raw_parts(idx: K::Idx, generation: Odd<K::Gen>) -> Self {
+        // SAFETY: the caller promises that both parts fit the layout.
         let repr =
             unsafe { <Layout<K> as KeyLayout<K::Idx, K::Gen>>::pack_unchecked(idx, generation) };
         Self { repr }
@@ -122,7 +105,7 @@ impl<K: KeyConfig> fmt::Debug for Key<K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Key")
             .field("idx", &self.idx())
-            .field("generation", &self.generation())
+            .field("generation", &self.generation().get())
             .finish()
     }
 }

@@ -64,7 +64,7 @@ fn retain_frees_slots_for_reuse_with_bumped_generation() {
 
     let k2 = map.insert(99);
     assert_eq!(k2.idx(), k1.idx());
-    assert_ne!(k2.generation(), k1.generation());
+    assert_ne!(k2.generation().get().get(), k1.generation().get().get());
     assert_eq!(map[k2], 99);
 }
 

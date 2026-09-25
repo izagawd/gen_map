@@ -1,6 +1,5 @@
 use super::{Bomb, DropTracker};
-use crate::{GenMap, InsertWithError, Key};
-use core::num::NonZero;
+use crate::{GenMap, InsertWithError, Key, Odd};
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::{String, ToString};
@@ -44,7 +43,7 @@ fn first_key_is_slot_zero_generation_one() {
     let mut map = Map::new();
     let k = map.insert(());
     assert_eq!(k.idx(), 0);
-    assert_eq!(k.generation(), 1);
+    assert_eq!(k.generation().get().get(), 1);
 }
 
 #[test]
@@ -81,8 +80,8 @@ fn remove_reuses_slot_with_bumped_generation() {
     assert_eq!(map.slots_len(), 1);
 
     assert_eq!(k1.idx(), k2.idx());
-    assert_ne!(k1.generation(), k2.generation());
-    assert_eq!(k2.generation(), k1.generation() + 2);
+    assert_ne!(k1.generation().get().get(), k2.generation().get().get());
+    assert_eq!(k2.generation().get().get(), k1.generation().get().get() + 2);
     assert!(map.get(k1).is_none());
 }
 
@@ -124,14 +123,14 @@ fn remove_with_bogus_key_returns_none() {
     let mut map = Map::new();
 
     // SAFETY: 41 is odd and both parts fit a `u32`.
-    let bogus: Key = unsafe { Key::from_raw_parts(999_999, NonZero::new(41).unwrap()) };
+    let bogus: Key = unsafe { Key::from_raw_parts(999_999, Odd::new(41).unwrap()) };
     assert!(map.remove(bogus).is_none());
     assert!(map.get(bogus).is_none());
 
     let k = map.insert(1);
     // SAFETY: two past an odd generation is odd, and it fits a `u32`.
     let wrong_generation =
-        unsafe { Key::from_raw_parts(k.idx(), NonZero::new(k.generation() + 2).unwrap()) };
+        unsafe { Key::from_raw_parts(k.idx(), Odd::new(k.generation().get().get() + 2).unwrap()) };
     assert!(map.remove(wrong_generation).is_none());
     assert_eq!(map.len(), 1);
     assert_eq!(map[k], 1);
@@ -154,8 +153,9 @@ fn len_tracks_insert_remove_and_clear() {
     assert_eq!(map.len(), 1);
 
     // SAFETY: two past an odd generation is odd, and it fits a `u32`.
-    let stale =
-        unsafe { Key::from_raw_parts(k2.idx(), NonZero::new(k2.generation() + 2).unwrap()) };
+    let stale = unsafe {
+        Key::from_raw_parts(k2.idx(), Odd::new(k2.generation().get().get() + 2).unwrap())
+    };
     assert!(map.remove(stale).is_none());
     assert_eq!(map.len(), 1);
 
@@ -176,6 +176,18 @@ fn clear_keeps_slots_and_invalidates_every_key() {
     for &k in &keys {
         assert!(map.get(k).is_none());
     }
+}
+
+#[test]
+fn clear_frees_the_slots_so_the_last_one_is_reused_first() {
+    let mut map = GenMap::new();
+    for i in 0..3 {
+        map.insert(i);
+    }
+    map.clear();
+    let reused: std::vec::Vec<u32> = (0..3).map(|i| map.insert(i).idx()).collect();
+    assert_eq!(reused, [2, 1, 0]);
+    assert_eq!(map.slots_len(), 3);
 }
 
 #[test]
@@ -250,7 +262,7 @@ fn try_insert_with_key_err_leaves_map_untouched_on_fresh_slot() {
 
     let k = map.insert(123);
     assert_eq!(k.idx(), 0);
-    assert_eq!(k.generation(), 1);
+    assert_eq!(k.generation().get().get(), 1);
     assert_eq!(map[k], 123);
 }
 
@@ -267,7 +279,7 @@ fn try_insert_with_key_err_leaves_map_untouched_on_reused_slot() {
 
     let k2 = map.try_insert_with_key(|_| Ok::<_, ()>(99)).unwrap();
     assert_eq!(k2.idx(), k1.idx());
-    assert_ne!(k2.generation(), k1.generation());
+    assert_ne!(k2.generation().get().get(), k1.generation().get().get());
     assert_eq!(map[k2], 99);
     assert!(map.get(k1).is_none());
 }

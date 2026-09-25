@@ -13,6 +13,17 @@ fn wrapping_add_adds_and_wraps_like_the_integers() {
 }
 
 #[test]
+fn wrapping_sub_subtracts_and_wraps_like_the_integers() {
+    assert_eq!(KeyPiece::wrapping_sub(3u8, 2), 1);
+    assert_eq!(KeyPiece::wrapping_sub(0u8, 1), u8::MAX);
+    assert_eq!(KeyPiece::wrapping_sub(1u16, 2), u16::MAX);
+    assert_eq!(KeyPiece::wrapping_sub(u32::MAX, 1), u32::MAX - 1);
+    assert_eq!(KeyPiece::wrapping_sub(0u64, 1), u64::MAX);
+    assert_eq!(KeyPiece::wrapping_sub(0u128, 1), u128::MAX);
+    assert_eq!(KeyPiece::wrapping_sub(0usize, 1), usize::MAX);
+}
+
+#[test]
 fn the_largest_value_is_odd_so_an_even_value_plus_one_fits() {
     fn check<P: KeyPiece>(even: P) {
         assert!(!even.is_odd());

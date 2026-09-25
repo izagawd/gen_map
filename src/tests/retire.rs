@@ -81,7 +81,7 @@ fn retire_keeps_a_chosen_slot_from_wrapping() {
         key = map.insert(0);
         assert_eq!(key.idx(), 0);
     }
-    assert_eq!(key.generation(), 15);
+    assert_eq!(key.generation().get().get(), 15);
     map.remove(key);
     assert_eq!(map.insert(0), first);
 

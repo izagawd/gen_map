@@ -167,14 +167,14 @@ fn generation_at_follows_the_life_of_a_slot() {
 
     let key = map.insert(1);
     assert_eq!(map.generation_at(0), Some(1));
-    assert_eq!(map.generation_at(0), Some(key.generation()));
+    assert_eq!(map.generation_at(0), Some(key.generation().get().get()));
 
     map.remove(key);
     assert_eq!(map.generation_at(0), Some(2));
 
     let key = map.insert(2);
     assert_eq!(map.generation_at(0), Some(3));
-    assert_eq!(key.generation(), 3);
+    assert_eq!(key.generation().get().get(), 3);
 
     let value = map.detach(key).unwrap();
     assert_eq!(map.generation_at(0), Some(4));
