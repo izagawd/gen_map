@@ -43,6 +43,10 @@ pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'stati
     /// not have to be checked twice.
     fn wrapping_add(self, rhs: Self) -> Self;
 
+    /// Returns `self - rhs`, wrapping around below zero to the largest value
+    /// of this type.
+    fn wrapping_sub(self, rhs: Self) -> Self;
+
     /// Returns `true` if the lowest bit is set.
     fn is_odd(self) -> bool;
 
@@ -116,6 +120,11 @@ macro_rules! impl_key_piece {
                 #[inline]
                 fn wrapping_add(self, rhs: Self) -> Self {
                     <$t>::wrapping_add(self, rhs)
+                }
+
+                #[inline]
+                fn wrapping_sub(self, rhs: Self) -> Self {
+                    <$t>::wrapping_sub(self, rhs)
                 }
 
                 #[inline]

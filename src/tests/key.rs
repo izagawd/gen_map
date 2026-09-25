@@ -1,7 +1,6 @@
 use super::Cfg;
-use crate::{DefaultKeyConfig, DefaultMapConfig, GenMap, Key, KeyConfig, MapConfig, Split};
+use crate::{DefaultKeyConfig, DefaultMapConfig, GenMap, Key, KeyConfig, MapConfig, Odd, Split};
 use core::mem::size_of;
-use core::num::NonZero;
 use std::vec::Vec;
 
 #[test]
@@ -53,9 +52,9 @@ fn keys_are_ordered_by_index_then_generation() {
     // SAFETY: every generation is odd and everything fits a `u32`.
     let (a, b, c) = unsafe {
         (
-            Key::<DefaultKeyConfig>::from_raw_parts(1, NonZero::new(3).unwrap()),
-            Key::<DefaultKeyConfig>::from_raw_parts(1, NonZero::new(5).unwrap()),
-            Key::<DefaultKeyConfig>::from_raw_parts(2, NonZero::new(1).unwrap()),
+            Key::<DefaultKeyConfig>::from_raw_parts(1, Odd::new(3).unwrap()),
+            Key::<DefaultKeyConfig>::from_raw_parts(1, Odd::new(5).unwrap()),
+            Key::<DefaultKeyConfig>::from_raw_parts(2, Odd::new(1).unwrap()),
         )
     };
     assert!(a < b);
@@ -68,7 +67,7 @@ fn keys_are_ordered_by_index_then_generation() {
 #[test]
 fn key_debug_prints_both_parts() {
     // SAFETY: 7 is odd and both parts fit a `u32`.
-    let k = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(4, NonZero::new(7).unwrap()) };
+    let k = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(4, Odd::new(7).unwrap()) };
     let text = std::format!("{k:?}");
     assert!(text.contains("idx: 4"));
     assert!(text.contains("generation: 7"));
@@ -108,7 +107,7 @@ fn every_integer_type_works_as_a_config() {
     let k = wide.insert(2);
     assert_eq!(wide[k], 2);
     assert_eq!(k.idx(), 0u128);
-    assert_eq!(k.generation(), 1usize);
+    assert_eq!(k.generation().get().get(), 1usize);
 }
 
 #[test]
@@ -140,7 +139,7 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     let too_wide = (1u128 << 64) | k.idx();
     // SAFETY: the generation is the one of a live key, and both parts fit
     // the `Split` layout of `Wide`.
-    let bogus = unsafe { Key::<Wide>::from_raw_parts(too_wide, k.non_zero_generation()) };
+    let bogus = unsafe { Key::<Wide>::from_raw_parts(too_wide, k.generation()) };
 
     assert!(map.get(bogus).is_none());
     assert!(map.get_mut(bogus).is_none());
@@ -157,13 +156,13 @@ fn idx_and_generation_read_the_parts_of_a_key() {
     let b = map.insert("b");
     assert_eq!(a.idx(), 0);
     assert_eq!(b.idx(), 1);
-    assert_eq!(a.generation(), 1);
-    assert_eq!(b.generation(), 1);
+    assert_eq!(a.generation().get().get(), 1);
+    assert_eq!(b.generation().get().get(), 1);
 
     map.remove(a);
     let c = map.insert("c");
     assert_eq!(c.idx(), 0);
-    assert_eq!(c.generation(), 3);
+    assert_eq!(c.generation().get().get(), 3);
 }
 
 #[test]
@@ -171,20 +170,9 @@ fn a_generation_is_always_odd() {
     let mut map = GenMap::<i32, Cfg<u8, u8>>::new_with_config();
     let mut key = map.insert(0);
     for _ in 0..100 {
-        assert!(key.generation() % 2 == 1);
+        assert!(key.generation().get().get() % 2 == 1);
         map.remove(key);
         key = map.insert(0);
-    }
-}
-
-#[test]
-fn non_zero_generation_is_the_generation() {
-    let mut map = GenMap::new();
-    let a = map.insert(1);
-    map.remove(a);
-    let b = map.insert(2);
-    for key in [a, b] {
-        assert_eq!(key.non_zero_generation().get(), key.generation());
     }
 }
 
@@ -192,7 +180,7 @@ fn non_zero_generation_is_the_generation() {
 fn from_raw_parts_rebuilds_a_key() {
     let mut map = GenMap::new();
     let key = map.insert(42);
-    let (idx, generation) = (key.idx(), key.non_zero_generation());
+    let (idx, generation) = (key.idx(), key.generation());
 
     let rebuilt = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(idx, generation) };
     assert_eq!(rebuilt, key);
@@ -207,8 +195,7 @@ fn a_rebuilt_key_from_the_past_matches_nothing() {
     let new = map.insert(2);
     assert_eq!(new.idx(), old.idx());
 
-    let rebuilt =
-        unsafe { Key::<DefaultKeyConfig>::from_raw_parts(old.idx(), old.non_zero_generation()) };
+    let rebuilt = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(old.idx(), old.generation()) };
     assert!(map.get(rebuilt).is_none());
     assert!(map.get_mut(rebuilt).is_none());
     assert!(map.remove(rebuilt).is_none());
@@ -220,7 +207,7 @@ fn a_rebuilt_key_from_the_past_matches_nothing() {
 fn a_rebuilt_key_for_a_missing_slot_matches_nothing() {
     let mut map = GenMap::new();
     map.insert(1);
-    let rebuilt = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(99, NonZero::new(1).unwrap()) };
+    let rebuilt = unsafe { Key::<DefaultKeyConfig>::from_raw_parts(99, Odd::new(1).unwrap()) };
     assert!(map.get(rebuilt).is_none());
 }
 
@@ -228,7 +215,7 @@ fn a_rebuilt_key_for_a_missing_slot_matches_nothing() {
 fn is_max_generation_is_true_only_at_the_last_generation() {
     let mut map = GenMap::<i32, Cfg<u8, u8>>::new_with_config();
     let mut key = map.insert(0);
-    while key.generation() != u8::MAX {
+    while key.generation().get().get() != u8::MAX {
         assert!(!key.is_max_generation());
         map.remove(key);
         key = map.insert(0);

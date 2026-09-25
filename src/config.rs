@@ -68,12 +68,12 @@ pub trait KeyConfig {
 /// assert_eq!(map[key], "hello");
 /// ```
 pub trait MapConfig {
-    /// The config of the keys the map hands out. Maps whose configs have the
+    /// The config of the keys the map hands out. Maps whose configs name the
     /// same key config share a key type.
     type KeyConfig: KeyConfig;
 
     /// The collection the map keeps its slots in. `S` is the map's
-    /// [`Slot`](crate::Slot) type.
+    /// [`MapSlot`](crate::MapSlot) type.
     type Storage<S>: SlotStorage<S>;
 
     /// What happens when a slot's generation overflows.

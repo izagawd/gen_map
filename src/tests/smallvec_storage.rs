@@ -71,7 +71,7 @@ fn reset_keeps_the_heap_storage_of_a_small_vec() {
     assert_eq!(map.slots_len(), 0);
     assert_eq!(map.capacity(), capacity);
     let key = map.insert(1);
-    assert_eq!((key.idx(), key.generation()), (0, 1));
+    assert_eq!((key.idx(), key.generation().get().get()), (0, 1));
 }
 
 /// Runs the same drops on a map that fits inline and on one that moved to

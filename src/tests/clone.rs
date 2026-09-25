@@ -77,7 +77,10 @@ fn clone_preserves_free_list_and_generations() {
     let from_clone = clone.insert(99);
     assert_eq!(from_map, from_clone);
     assert_eq!(from_map.idx(), k2.idx());
-    assert_ne!(from_map.generation(), k2.generation());
+    assert_ne!(
+        from_map.generation().get().get(),
+        k2.generation().get().get()
+    );
 
     assert_eq!(clone[k1], 10);
     assert_eq!(clone[k3], 30);
@@ -243,5 +246,5 @@ fn clone_from_leaves_an_empty_map_if_a_value_panics_while_cloning() {
     assert_eq!(target.iter().count(), 0);
     let k = target.insert(PanicsOnClone(7));
     assert_eq!(k.idx(), 0);
-    assert_eq!(k.generation(), 1);
+    assert_eq!(k.generation().get().get(), 1);
 }

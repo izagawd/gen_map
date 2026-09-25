@@ -14,9 +14,11 @@ mod key_piece;
 mod model;
 mod overflow;
 mod packed;
+mod parity;
 mod reset;
 mod retain;
 mod retire;
+mod slot;
 #[cfg(feature = "smallvec")]
 mod smallvec_storage;
 mod storage_contract;

@@ -6,7 +6,7 @@
 use crate::map::{Gen, Idx, Layout};
 use crate::{
     DefaultMapConfig, GenMap, GetDisjointMutAtError, GetDisjointMutError, InsertError,
-    InsertWithError, Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, Packed,
+    InsertWithError, Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, Odd, Packed,
 };
 use std::vec::Vec;
 
@@ -283,7 +283,7 @@ fn run<C: MapConfig>(seed: u64, steps: usize) {
     }
 }
 
-fn largest_generation<C: MapConfig>() -> Gen<C> {
+fn largest_generation<C: MapConfig>() -> Odd<Gen<C>> {
     <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_generation()
 }
 
@@ -518,7 +518,10 @@ fn look_up_by_index<C: MapConfig>(map: &GenMap<u32, C>, model: &Model<C>, rng: &
     assert_eq!(map.get_at(idx), expected.map(|(key, value)| (*key, value)));
     assert_eq!(map.generation_at(idx).is_some(), position < map.slots_len());
     if let Some((key, _)) = expected {
-        assert_eq!(map.generation_at(idx), Some(key.generation()));
+        assert_eq!(
+            map.generation_at(idx),
+            Some(Gen::<C>::from_non_zero(key.generation().get()))
+        );
     }
 }
 
