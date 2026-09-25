@@ -54,37 +54,52 @@
 //!
 //! # Configuring the map
 //!
-//! A [`Config`] decides four things.
+//! A map is configured by a [`MapConfig`], and its keys by a [`KeyConfig`].
 //!
-//! - [`Idx`](Config::Idx) and [`Gen`](Config::Gen) are the integer types of
-//!   the index and the generation. Any type that implements [`KeyPiece`]
-//!   works, which is every unsigned integer from `u8` to `u128`, and
-//!   `usize`.
-//! - [`Layout`](Config::Layout) is how a key stores the generation and index. [`Split`] keeps
+//! A [`KeyConfig`] decides:
+//!
+//! - [`Idx`](KeyConfig::Idx) and [`Gen`](KeyConfig::Gen) are the integer
+//!   types of the index and the generation. Any type that implements
+//!   [`KeyPiece`] works, which is every unsigned integer from `u8` to
+//!   `u128`, and `usize`.
+//! - [`Layout`](KeyConfig::Layout) is how a key stores the generation and index. [`Split`] keeps
 //!   them as two fields and [`Packed`] puts them in the bits of one integer.
-//! - [`Storage`](Config::Storage) is the collection the slots live in, such
-//!   as a `Vec`.
-//! - [`WRAP_ON_OVERFLOW`](Config::WRAP_ON_OVERFLOW) says what happens to a
-//!   slot whose generation runs out.
 //!
-//! [`DefaultConfig`] is the config a [`GenMap`] uses when none is named. Its
-//! keys are a `u32` index and a `u32` generation stored as two fields, its
-//! slots live in a `Vec`, and a slot retires when its generation runs out.
+//! A [`MapConfig`] decides three things.
+//!
+//! - [`KeyConfig`](MapConfig::KeyConfig) is the config of the keys the map
+//!   hands out. Maps whose configs have the same key config share a key
+//!   type.
+//! - [`Storage`](MapConfig::Storage) is the collection the slots live in,
+//!   such as a `Vec`.
+//! - [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW) determies what happens to
+//!   a slot whose generation runs out.
+//!
+//! [`DefaultMapConfig`] is the config a [`GenMap`] uses when none is named.
+//! Its keys use the [`DefaultKeyConfig`], so they are a `u32` index and a
+//! `u32` generation stored as two fields. Its slots live in a `Vec`, and a
+//! slot retires when its generation runs out. [`DefaultKeyConfig`] is also
+//! the key config a [`Key`] uses when none is named.
 //!
 //! A config is only used as a type parameter and never created as a value,
-//! so an empty struct is enough.
+//! so an empty struct is enough. One type can implement both traits and name
+//! itself as its key config.
 //!
 //! ```
-//! use gen_map::{Config, GenMap, Split};
+//! use gen_map::{GenMap, KeyConfig, MapConfig, Split};
 //!
 //! /// A `u8` index and a `u8` generation, so keys are two bytes and the map
 //! /// holds at most 256 slots.
 //! struct Tiny;
 //!
-//! impl Config for Tiny {
+//! impl KeyConfig for Tiny {
 //!     type Idx = u8;
 //!     type Gen = u8;
 //!     type Layout = Split;
+//! }
+//!
+//! impl MapConfig for Tiny {
+//!     type KeyConfig = Self;
 //!     type Storage<S> = Vec<S>;
 //! }
 //!
@@ -108,20 +123,24 @@
 //! [`Packed`] stores them in the bits of one integer instead. `Packed<R,
 //! GEN_BITS>` gives the low `GEN_BITS` bits of an `R` to the generation and
 //! the bits above them to the index, so a key is as large as `R`, and the two
-//! parts can have any bit counts that add up to the bits of `R`. The config's
-//! `Idx` and `Gen` only have to be wide enough for their parts, and a config
-//! whose bit counts do not add up fails to compile.
+//! parts can have any bit counts that add up to the bits of `R`. The key
+//! config's `Idx` and `Gen` only have to be wide enough for their parts, and
+//! a key config whose bit counts do not add up fails to compile.
 //!
 //! ```
-//! use gen_map::{Config, GenMap, Key, Packed};
+//! use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed};
 //!
 //! /// Four byte keys with 24 bits of index and 8 bits of generation.
 //! struct Compact;
 //!
-//! impl Config for Compact {
+//! impl KeyConfig for Compact {
 //!     type Idx = u32;
 //!     type Gen = u8;
 //!     type Layout = Packed<u32, 8>;
+//! }
+//!
+//! impl MapConfig for Compact {
+//!     type KeyConfig = Self;
 //!     type Storage<S> = Vec<S>;
 //! }
 //!
@@ -141,7 +160,7 @@
 //! when it is inserted and one when it is removed, so a `u32` generation lets
 //! a slot hold over two billion values, while a 4 bit generation lets it hold
 //! eight. What happens to a slot after that is up to
-//! [`WRAP_ON_OVERFLOW`](Config::WRAP_ON_OVERFLOW).
+//! [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW).
 //!
 //! By default, the slot retires. It stays in the storage but is never used
 //! again, so no stale key can ever match a new value.
@@ -196,14 +215,18 @@
 //! [`StorageFull`](FullError::StorageFull) error instead of panicking.
 //!
 //! ```
-//! use gen_map::{Config, GenMap, InsertError, Split};
+//! use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, Split};
 //!
 //! struct Tiny;
 //!
-//! impl Config for Tiny {
+//! impl KeyConfig for Tiny {
 //!     type Idx = u8;
 //!     type Gen = u8;
 //!     type Layout = Split;
+//! }
+//!
+//! impl MapConfig for Tiny {
+//!     type KeyConfig = Self;
 //!     type Storage<S> = Vec<S>;
 //! }
 //!
@@ -315,11 +338,11 @@
 //!
 //! # Cargo features
 //!
-//! - `alloc` is on by default. It adds the `Vec` storage, [`DefaultConfig`]
-//!   and [`GenMap::new`], and makes [`DefaultConfig`] the config that
-//!   [`GenMap`] and [`Key`] use when none is named. Without it the crate
-//!   needs no allocator, and every map needs a config whose storage does not
-//!   allocate, such as an `ArrayVec`.
+//! - `alloc` is on by default. It adds the `Vec` storage,
+//!   [`DefaultMapConfig`] and [`GenMap::new`], and makes
+//!   [`DefaultMapConfig`] the config that [`GenMap`] uses when none is named.
+//!   Without it the crate needs no allocator, and every map needs a config
+//!   whose storage does not allocate, such as an `ArrayVec`.
 //! - `arrayvec` lets a config use `arrayvec::ArrayVec` as its storage.
 //! - `smallvec` lets a config use `smallvec::SmallVec` as its storage. It
 //!   uses the 2.0 beta of `smallvec`, which needs an allocator and Rust 1.86.
@@ -355,9 +378,9 @@ mod key_piece;
 mod map;
 mod storage;
 
-pub use config::Config;
 #[cfg(feature = "alloc")]
-pub use config::DefaultConfig;
+pub use config::DefaultMapConfig;
+pub use config::{DefaultKeyConfig, KeyConfig, MapConfig};
 pub use error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
 };

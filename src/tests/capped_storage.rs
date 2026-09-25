@@ -2,7 +2,8 @@
 //! map works with such a storage and reports the storage's own error type.
 
 use crate::{
-    Config, FullError, GenMap, InsertError, InsertWithError, SlotStorage, Split, StorageError,
+    FullError, GenMap, InsertError, InsertWithError, KeyConfig, MapConfig, SlotStorage, Split,
+    StorageError,
 };
 use std::vec::Vec;
 
@@ -70,10 +71,14 @@ unsafe impl<S> SlotStorage<S> for Capped<S> {
 
 struct Four;
 
-impl Config for Four {
+impl KeyConfig for Four {
     type Idx = u8;
     type Gen = u8;
     type Layout = Split;
+}
+
+impl MapConfig for Four {
+    type KeyConfig = Self;
     type Storage<S> = Capped<S>;
 }
 

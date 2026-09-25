@@ -1,5 +1,7 @@
 use super::Cfg;
-use crate::{Config, FullError, GenMap, InsertError, Key, KeyLayout, KeyPiece, Packed, Split};
+use crate::{
+    FullError, GenMap, InsertError, Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, Packed, Split,
+};
 use core::mem::size_of;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::vec::Vec;
@@ -8,10 +10,14 @@ use std::vec::Vec;
 /// exactly as wide as its field, and `Idx` is wider than its field.
 struct Compact;
 
-impl Config for Compact {
+impl KeyConfig for Compact {
     type Idx = u32;
     type Gen = u8;
     type Layout = Packed<u32, 8>;
+}
+
+impl MapConfig for Compact {
+    type KeyConfig = Self;
     type Storage<S> = Vec<S>;
 }
 
@@ -19,20 +25,28 @@ impl Config for Compact {
 /// retires after eight uses.
 struct Tiny;
 
-impl Config for Tiny {
+impl KeyConfig for Tiny {
     type Idx = u16;
     type Gen = u8;
     type Layout = Packed<u16, 4>;
+}
+
+impl MapConfig for Tiny {
+    type KeyConfig = Self;
     type Storage<S> = Vec<S>;
 }
 
 /// The same as [`Tiny`], but a slot wraps instead of retiring.
 struct TinyWrap;
 
-impl Config for TinyWrap {
+impl KeyConfig for TinyWrap {
     type Idx = u16;
     type Gen = u8;
     type Layout = Packed<u16, 4>;
+}
+
+impl MapConfig for TinyWrap {
+    type KeyConfig = Self;
     type Storage<S> = Vec<S>;
     const WRAP_ON_OVERFLOW: bool = true;
 }
@@ -40,10 +54,14 @@ impl Config for TinyWrap {
 /// One byte keys with 4 bits of index, so the map holds sixteen slots.
 struct Byte;
 
-impl Config for Byte {
+impl KeyConfig for Byte {
     type Idx = u8;
     type Gen = u8;
     type Layout = Packed<u8, 4>;
+}
+
+impl MapConfig for Byte {
+    type KeyConfig = Self;
     type Storage<S> = Vec<S>;
 }
 
@@ -51,24 +69,32 @@ impl Config for Byte {
 /// `Idx` and `Gen` twice as wide as their fields.
 struct Huge;
 
-impl Config for Huge {
+impl KeyConfig for Huge {
     type Idx = u128;
     type Gen = u128;
     type Layout = Packed<u128, 64>;
+}
+
+impl MapConfig for Huge {
+    type KeyConfig = Self;
     type Storage<S> = Vec<S>;
 }
 
 /// Keys the size of a pointer, with 8 bits of generation.
 struct Native;
 
-impl Config for Native {
+impl KeyConfig for Native {
     type Idx = usize;
     type Gen = u8;
     type Layout = Packed<usize, 8>;
+}
+
+impl MapConfig for Native {
+    type KeyConfig = Self;
     type Storage<S> = Vec<S>;
 }
 
-fn key<C: Config>(idx: C::Idx, generation: C::Gen) -> Key<C> {
+fn key<K: KeyConfig>(idx: K::Idx, generation: K::Gen) -> Key<K> {
     // SAFETY: every test passes an odd generation and parts that fit its
     // layout.
     unsafe { Key::from_raw_parts(idx, generation.into_non_zero().unwrap()) }
@@ -223,7 +249,7 @@ fn packed_keys_are_ordered_by_index_then_generation() {
 
 #[test]
 fn packed_keys_hash_and_compare_by_their_parts() {
-    fn hash_of<C: Config>(key: Key<C>) -> u64 {
+    fn hash_of<K: KeyConfig>(key: Key<K>) -> u64 {
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
         hasher.finish()
@@ -247,7 +273,11 @@ fn debug_prints_both_parts_of_a_packed_key() {
 
 /// Inserts and removes on one slot until its generation is the largest one
 /// the layout holds, and returns the keys handed out along the way.
-fn use_up_one_slot<C: Config<Idx = u16, Gen = u8>>(map: &mut GenMap<u32, C>) -> Vec<Key<C>> {
+fn use_up_one_slot<C>(map: &mut GenMap<u32, C>) -> Vec<Key<C::KeyConfig>>
+where
+    C: MapConfig,
+    C::KeyConfig: KeyConfig<Idx = u16, Gen = u8>,
+{
     let mut keys = Vec::new();
     for i in 0..8u32 {
         let key = map.insert(i);

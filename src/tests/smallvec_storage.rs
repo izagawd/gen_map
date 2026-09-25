@@ -3,7 +3,7 @@
 //! covers them too.
 
 use super::{Bomb, DropTracker};
-use crate::{Config, GenMap, Split};
+use crate::{GenMap, KeyConfig, MapConfig, Split};
 use smallvec::SmallVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -11,10 +11,14 @@ use std::vec::Vec;
 /// Room for four slots inline before the storage moves to the heap.
 struct Four;
 
-impl Config for Four {
+impl KeyConfig for Four {
     type Idx = u32;
     type Gen = u32;
     type Layout = Split;
+}
+
+impl MapConfig for Four {
+    type KeyConfig = Self;
     type Storage<S> = SmallVec<S, 4>;
 }
 

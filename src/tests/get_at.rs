@@ -1,5 +1,5 @@
 use super::{Cfg, DropTracker};
-use crate::{Config, GenMap, GetDisjointMutAtError, Key, Split};
+use crate::{GenMap, GetDisjointMutAtError, Key, KeyConfig, MapConfig, Split};
 use std::vec::Vec;
 
 type Tiny = Cfg<u8, u8>;
@@ -75,10 +75,14 @@ fn get_at_reports_the_current_key_of_a_reused_slot() {
 #[test]
 fn get_at_with_an_index_that_does_not_fit_in_usize_is_none() {
     struct Wide;
-    impl Config for Wide {
+    impl KeyConfig for Wide {
         type Idx = u128;
         type Gen = u32;
         type Layout = Split;
+    }
+
+    impl MapConfig for Wide {
+        type KeyConfig = Self;
         type Storage<S> = Vec<S>;
     }
 

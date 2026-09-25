@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 /// The collection a [`GenMap`](crate::GenMap) keeps its slots in. A
-/// [`Config`](crate::Config) names one through its `Storage` type.
+/// [`MapConfig`](crate::MapConfig) names one through its `Storage` type.
 ///
 /// A storage that can also grow on request implements [`ReserveStorage`]
 /// too.
@@ -166,15 +166,19 @@ impl<S> ReserveStorage<S> for Vec<S> {
 ///
 /// ```
 /// use arrayvec::ArrayVec;
-/// use gen_map::{Config, GenMap, Split};
+/// use gen_map::{GenMap, KeyConfig, MapConfig, Split};
 ///
 /// /// Room for sixteen slots, without any allocation.
 /// struct Inline;
 ///
-/// impl Config for Inline {
+/// impl KeyConfig for Inline {
 ///     type Idx = u8;
 ///     type Gen = u8;
 ///     type Layout = Split;
+/// }
+///
+/// impl MapConfig for Inline {
+///     type KeyConfig = Self;
 ///     type Storage<S> = ArrayVec<S, 16>;
 /// }
 ///
@@ -241,16 +245,20 @@ unsafe impl<S, const CAP: usize> SlotStorage<S> for arrayvec::ArrayVec<S, CAP> {
 /// gen_map may break this feature, so it is not covered by semver.
 ///
 /// ```
-/// use gen_map::{Config, GenMap, Split};
+/// use gen_map::{GenMap, KeyConfig, MapConfig, Split};
 /// use smallvec::SmallVec;
 ///
 /// /// Room for eight slots before the map allocates.
 /// struct Small;
 ///
-/// impl Config for Small {
+/// impl KeyConfig for Small {
 ///     type Idx = u32;
 ///     type Gen = u32;
 ///     type Layout = Split;
+/// }
+///
+/// impl MapConfig for Small {
+///     type KeyConfig = Self;
 ///     type Storage<S> = SmallVec<S, 8>;
 /// }
 ///
