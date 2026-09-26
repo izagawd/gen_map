@@ -88,6 +88,14 @@
 //! - [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW) determines what
 //!   happens to a slot whose generation runs out.
 //!
+//! A [`MapConfig`] is implemented for slot types. A slot is what the map
+//! keeps each value in, and [`SlotItem::Item`] is the type of that value. A
+//! config is usually implemented for every slot type at once, with
+//! `impl<S: SlotItem> MapConfig<S>`, and it can put bounds on the value or
+//! on the slot to limit which maps can use it.
+//! [`SlotItem`](SlotItem#bounds-on-the-value-and-the-slot) shows how, with
+//! examples.
+//!
 //! [`DefaultMapConfig`] is the config a [`GenMap`] uses when none is named.
 //! Its keys use the [`DefaultKeyConfig`], so they are a `u32` index and a
 //! `u32` generation stored as two fields. Its slots live in a `Vec`, and a
@@ -99,7 +107,7 @@
 //! itself as its key config.
 //!
 //! ```
-//! use gen_map::{GenMap, KeyConfig, MapConfig, Split};
+//! use gen_map::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
 //!
 //! /// A `u8` index and a `u8` generation, so keys are two bytes and the map
 //! /// holds at most 256 slots.
@@ -111,9 +119,9 @@
 //!     type Layout = Split;
 //! }
 //!
-//! impl MapConfig for Tiny {
+//! impl<S: SlotItem> MapConfig<S> for Tiny {
 //!     type KeyConfig = Self;
-//!     type Storage<S> = Vec<S>;
+//!     type Storage = Vec<S>;
 //! }
 //!
 //! let mut map = GenMap::<u64, Tiny>::new_with_config();
@@ -141,7 +149,7 @@
 //! a key config whose bit counts do not add up fails to compile.
 //!
 //! ```
-//! use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed};
+//! use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed, SlotItem};
 //!
 //! /// Four byte keys with 24 bits of index and 8 bits of generation.
 //! struct Compact;
@@ -152,9 +160,9 @@
 //!     type Layout = Packed<u32, 8>;
 //! }
 //!
-//! impl MapConfig for Compact {
+//! impl<S: SlotItem> MapConfig<S> for Compact {
 //!     type KeyConfig = Self;
-//!     type Storage<S> = Vec<S>;
+//!     type Storage = Vec<S>;
 //! }
 //!
 //! let mut map = GenMap::<&str, Compact>::new_with_config();
@@ -203,6 +211,11 @@
 //! relies on the storage behaving like a `Vec` when it reads slots without
 //! bounds checks.
 //!
+//! The owning `into_iter` only exists when the storage also implements
+//! `IntoIterator`. It implements `DoubleEndedIterator` only when the
+//! storage's iterator implements both `DoubleEndedIterator` and
+//! `ExactSizeIterator`. `Vec`, `ArrayVec` and `SmallVec` meet all of these.
+//!
 //! The methods that make room ahead of time, which are
 //! [`reserve`](GenMap::reserve), [`try_reserve`](GenMap::try_reserve),
 //! [`with_capacity`](GenMap::with_capacity) and
@@ -234,7 +247,7 @@
 //! [`StorageFull`](FullError::StorageFull) error instead of panicking.
 //!
 //! ```
-//! use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, Split};
+//! use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, SlotItem, Split};
 //!
 //! struct Tiny;
 //!
@@ -244,9 +257,9 @@
 //!     type Layout = Split;
 //! }
 //!
-//! impl MapConfig for Tiny {
+//! impl<S: SlotItem> MapConfig<S> for Tiny {
 //!     type KeyConfig = Self;
-//!     type Storage<S> = Vec<S>;
+//!     type Storage = Vec<S>;
 //! }
 //!
 //! let mut map = GenMap::<u32, Tiny>::new_with_config();
@@ -334,7 +347,9 @@
 //! of their keys. [`iter`](GenMap::iter), [`iter_mut`](GenMap::iter_mut),
 //! [`keys`](GenMap::keys), [`values`](GenMap::values),
 //! [`values_mut`](GenMap::values_mut) and the owning `into_iter` all know
-//! their exact length and can run from both ends.
+//! their exact length and can run from both ends, meaning they implement
+//! `DoubleEndedIterator`. `into_iter` only does when the storage's iterator
+//! implements both `DoubleEndedIterator` and `ExactSizeIterator`.
 //!
 //! [`retain`](GenMap::retain), [`drain`](GenMap::drain) and
 //! [`clear`](GenMap::clear) remove values the same way
@@ -407,7 +422,7 @@ mod storage;
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use config::DefaultMapConfig;
-pub use config::{DefaultKeyConfig, KeyConfig, MapConfig};
+pub use config::{DefaultKeyConfig, KeyConfig, MapConfig, MapConfigFor};
 pub use error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
 };
@@ -415,11 +430,11 @@ pub use key::Key;
 pub use key_layout::{KeyLayout, Packed, PackedRepr, Split, SplitRepr};
 pub use key_piece::KeyPiece;
 pub use map::{
-    Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapSlot, StorageError,
-    VacantEntry, Values, ValuesMut,
+    Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig, MapSlot,
+    StorageError, VacantEntry, Values, ValuesMut,
 };
 pub use parity::{Even, Odd};
-pub use slot::{Parity, Slot};
+pub use slot::{Parity, Slot, SlotItem};
 pub use storage::{ReserveStorage, SlotStorage};
 
 // The tests use `Vec` storage and the default config, so they need `alloc`.

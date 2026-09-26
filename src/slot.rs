@@ -397,3 +397,144 @@ impl<G: KeyPiece, T: fmt::Debug, U: fmt::Debug> fmt::Debug for Slot<G, T, U> {
             .finish()
     }
 }
+
+mod sealed {
+    /// Keeps [`SlotItem`](super::SlotItem) from being implemented outside
+    /// this crate.
+    pub trait Sealed {}
+}
+
+/// The slot a [`GenMap`](crate::GenMap) keeps each of its values in, as a
+/// [`MapConfig`](crate::MapConfig) sees it.
+///
+/// Every value in a map sits in a slot, together with the slot's
+/// generation. The slots of a `GenMap<T, C>` are
+/// [`MapSlot<T, C>`](crate::MapSlot). A config implements `MapConfig<S>` for
+/// the slot types `S` it supports, usually for all of them at once with
+/// `impl<S: SlotItem> MapConfig<S> for YourConfig`. Inside that impl, `S` is
+/// the slot and `S::Item` is the type of the value in it, so for a
+/// `GenMap<T, C>` it is `T`.
+///
+/// Only [`Slot`] implements `SlotItem`, and it cannot be implemented outside
+/// this crate.
+///
+/// # Bounds on the value and the slot
+///
+/// A config can limit which maps can use it with bounds on the value type,
+/// `S::Item`, or on the slot type, `S`. A map whose values or slots do not
+/// meet the bounds fails to compile.
+///
+/// A bound on `S::Item` limits the value types:
+///
+/// ```
+/// use gen_map::{DefaultKeyConfig, GenMap, MapConfig, SlotItem};
+///
+/// /// Only for values that are `Copy`.
+/// struct CopyValues;
+///
+/// impl<S: SlotItem> MapConfig<S> for CopyValues
+/// where
+///     S::Item: Copy,
+/// {
+///     type KeyConfig = DefaultKeyConfig;
+///     type Storage = Vec<S>;
+/// }
+///
+/// let mut map = GenMap::<u32, CopyValues>::new_with_config();
+/// let key = map.insert(5);
+/// assert_eq!(map[key], 5);
+///
+/// // `String` is not `Copy`, so this does not compile:
+/// // let map = GenMap::<String, CopyValues>::new_with_config();
+/// ```
+///
+/// Setting `Item` allows a single value type:
+///
+/// ```
+/// use gen_map::{DefaultKeyConfig, GenMap, MapConfig, SlotItem};
+///
+/// /// Only for values that are `u32`.
+/// struct U32Values;
+///
+/// impl<S: SlotItem<Item = u32>> MapConfig<S> for U32Values {
+///     type KeyConfig = DefaultKeyConfig;
+///     type Storage = Vec<S>;
+/// }
+///
+/// let mut map = GenMap::<u32, U32Values>::new_with_config();
+/// let key = map.insert(5);
+/// assert_eq!(map[key], 5);
+///
+/// // The values are `u64`, not `u32`, so this does not compile:
+/// // let map = GenMap::<u64, U32Values>::new_with_config();
+/// ```
+///
+/// A bound on `S` limits the slots. It is what a config needs when its
+/// storage type requires something of the items it holds, because those
+/// items are slots, not bare values. A slot is `Clone`, `Debug`, `Send` or
+/// `Sync` when its value is, and it is never `Copy`.
+///
+/// ```
+/// use gen_map::{DefaultKeyConfig, GenMap, MapConfig, SlotItem, SlotStorage};
+///
+/// /// A storage that only holds items that can be cloned. Its `SlotStorage`
+/// /// impl, which forwards every method to the `Vec`, is hidden here.
+/// struct ClonePool<S: Clone>(Vec<S>);
+/// # // SAFETY: every method forwards to the `Vec`.
+/// # unsafe impl<S: Clone> SlotStorage for ClonePool<S> {
+/// #     type Item = S;
+/// #     type Error = ();
+/// #     const EMPTY: Self = ClonePool(Vec::new());
+/// #     fn with_capacity(capacity: usize) -> Self {
+/// #         ClonePool(Vec::with_capacity(capacity))
+/// #     }
+/// #     fn capacity(&self) -> usize {
+/// #         self.0.capacity()
+/// #     }
+/// #     fn as_slice(&self) -> &[S] {
+/// #         &self.0
+/// #     }
+/// #     fn as_mut_slice(&mut self) -> &mut [S] {
+/// #         &mut self.0
+/// #     }
+/// #     fn ensure_room(&mut self) -> Result<(), ()> {
+/// #         Ok(())
+/// #     }
+/// #     fn try_push(&mut self, item: S) -> Result<(), S> {
+/// #         self.0.push(item);
+/// #         Ok(())
+/// #     }
+/// #     fn clear(&mut self) {
+/// #         self.0.clear();
+/// #     }
+/// # }
+///
+/// /// Only for slots that can be cloned, since `ClonePool<S>` needs
+/// /// `S: Clone`.
+/// struct Cloneable;
+///
+/// impl<S: SlotItem + Clone> MapConfig<S> for Cloneable {
+///     type KeyConfig = DefaultKeyConfig;
+///     type Storage = ClonePool<S>;
+/// }
+///
+/// // `String` is `Clone`, so a slot holding one is too.
+/// let mut map = GenMap::<String, Cloneable>::new_with_config();
+/// let key = map.insert("a".to_string());
+/// assert_eq!(map[key], "a");
+///
+/// // `Mutex` is not `Clone`, so neither is a slot holding one, and this
+/// // does not compile:
+/// // let map = GenMap::<std::sync::Mutex<u32>, Cloneable>::new_with_config();
+/// ```
+pub trait SlotItem: sealed::Sealed {
+    /// The type of the value in the slot. For the slots of a
+    /// `GenMap<T, C>`, it is `T`.
+    type Item;
+}
+
+impl<G: KeyPiece, T, U> sealed::Sealed for Slot<G, T, U> {}
+
+impl<G: KeyPiece, T, U> SlotItem for Slot<G, T, U> {
+    type Item = T;
+}

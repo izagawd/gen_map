@@ -1,4 +1,6 @@
-use crate::{FullError, GenMap, InsertError, InsertWithError, KeyConfig, MapConfig, Split};
+use crate::{
+    FullError, GenMap, InsertError, InsertWithError, KeyConfig, MapConfig, SlotItem, Split,
+};
 use std::collections::TryReserveError;
 use std::string::{String, ToString};
 use std::vec::Vec;
@@ -11,9 +13,9 @@ impl KeyConfig for Byte {
     type Layout = Split;
 }
 
-impl MapConfig for Byte {
+impl<S: SlotItem> MapConfig<S> for Byte {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 fn full_byte_map() -> GenMap<i32, Byte> {

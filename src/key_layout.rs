@@ -119,7 +119,7 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed};
+/// use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed, SlotItem};
 ///
 /// /// Four byte keys with 24 bits of index and 8 bits of generation.
 /// struct Compact;
@@ -130,9 +130,9 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 ///     type Layout = Packed<u32, 8>;
 /// }
 ///
-/// impl MapConfig for Compact {
+/// impl<S: SlotItem> MapConfig<S> for Compact {
 ///     type KeyConfig = Self;
-///     type Storage<S> = Vec<S>;
+///     type Storage = Vec<S>;
 /// }
 ///
 /// let mut map = GenMap::<&str, Compact>::new_with_config();

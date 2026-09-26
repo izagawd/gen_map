@@ -6,13 +6,17 @@ use crate::{ReserveStorage, SlotStorage};
 use std::vec::Vec;
 
 /// The ids of the items in `storage`, in order.
-fn ids<St: SlotStorage<DropItem>>(storage: &St) -> Vec<u32> {
+fn ids<St: SlotStorage<Item = DropItem>>(storage: &St) -> Vec<u32> {
     storage.as_slice().iter().map(|item| item.id).collect()
 }
 
 /// Pushes `count` items and checks their order, then checks that `clear`
 /// drops every one of them exactly once. `count` must fit the storage.
-fn check_storage<St: SlotStorage<DropItem>>(count: u32) {
+fn check_storage<St>(count: u32)
+where
+    St: SlotStorage<Item = DropItem> + IntoIterator<Item = DropItem>,
+    St::IntoIter: DoubleEndedIterator,
+{
     let tracker = DropTracker::new();
     let mut storage = St::EMPTY;
     assert!(storage.is_empty());
@@ -45,7 +49,7 @@ fn check_storage<St: SlotStorage<DropItem>>(count: u32) {
 
 /// Checks that after `try_reserve` makes room for `n` more items, the next
 /// `n` pushes succeed.
-fn check_reserve<St: ReserveStorage<u32>>() {
+fn check_reserve<St: ReserveStorage<Item = u32>>() {
     let mut storage = St::EMPTY;
     assert!(storage.try_reserve(10).is_ok());
     assert!(storage.capacity() >= 10);

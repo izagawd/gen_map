@@ -4,9 +4,11 @@
 
 #[cfg(feature = "arrayvec")]
 mod arrayvec_storage;
+mod bare_storage;
 mod basic;
 mod capped_storage;
 mod clone;
+mod config;
 mod detach;
 mod disjoint;
 mod drain;
@@ -31,7 +33,7 @@ mod unchecked;
 mod vacant_entry;
 mod zero_sized;
 
-use crate::{Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, Odd, Split};
+use crate::{Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, Odd, SlotItem, Split};
 use core::marker::PhantomData;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -49,9 +51,9 @@ impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Cfg<Idx, Gen> {
     type Layout = Split;
 }
 
-impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for Cfg<Idx, Gen> {
+impl<Idx: KeyPiece, Gen: KeyPiece, S: SlotItem> MapConfig<S> for Cfg<Idx, Gen> {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 /// The key of `K` with index `idx` and generation `generation`. Panics if

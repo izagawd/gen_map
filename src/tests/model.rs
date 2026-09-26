@@ -6,7 +6,8 @@
 use crate::map::{Gen, Idx, Layout};
 use crate::{
     DefaultMapConfig, GenMap, GetDisjointMutAtError, GetDisjointMutError, InsertError,
-    InsertWithError, Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, Odd, Packed,
+    InsertWithError, Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, MapConfigFor, MapKeyConfig,
+    MapSlot, Odd, Packed, SlotItem,
 };
 use std::vec::Vec;
 
@@ -20,9 +21,9 @@ impl KeyConfig for Retiring {
     type Layout = Packed<u16, 4>;
 }
 
-impl MapConfig for Retiring {
+impl<S: SlotItem> MapConfig<S> for Retiring {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 /// Sixteen slots that each retire after eight uses, so the index and the
@@ -35,9 +36,9 @@ impl KeyConfig for Small {
     type Layout = Packed<u8, 4>;
 }
 
-impl MapConfig for Small {
+impl<S: SlotItem> MapConfig<S> for Small {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 /// The same as [`Small`], but a slot wraps instead of retiring.
@@ -49,9 +50,9 @@ impl KeyConfig for SmallWrap {
     type Layout = Packed<u8, 4>;
 }
 
-impl MapConfig for SmallWrap {
+impl<S: SlotItem> MapConfig<S> for SmallWrap {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
     const WRAP_ON_OVERFLOW: bool = true;
 }
 
@@ -68,9 +69,9 @@ impl KeyConfig for InlineRetiring {
 }
 
 #[cfg(feature = "arrayvec")]
-impl MapConfig for InlineRetiring {
+impl<S: SlotItem> MapConfig<S> for InlineRetiring {
     type KeyConfig = Self;
-    type Storage<S> = arrayvec::ArrayVec<S, 12>;
+    type Storage = arrayvec::ArrayVec<S, 12>;
 }
 
 /// The same keys as [`SmallWrap`], but with the slots in an `ArrayVec` of
@@ -86,9 +87,9 @@ impl KeyConfig for InlineWrap {
 }
 
 #[cfg(feature = "arrayvec")]
-impl MapConfig for InlineWrap {
+impl<S: SlotItem> MapConfig<S> for InlineWrap {
     type KeyConfig = Self;
-    type Storage<S> = arrayvec::ArrayVec<S, 16>;
+    type Storage = arrayvec::ArrayVec<S, 16>;
     const WRAP_ON_OVERFLOW: bool = true;
 }
 
@@ -106,9 +107,9 @@ impl KeyConfig for Spilling {
 }
 
 #[cfg(feature = "smallvec")]
-impl MapConfig for Spilling {
+impl<S: SlotItem> MapConfig<S> for Spilling {
     type KeyConfig = Self;
-    type Storage<S> = smallvec::SmallVec<S, 4>;
+    type Storage = smallvec::SmallVec<S, 4>;
 }
 
 #[test]
@@ -151,7 +152,7 @@ fn a_small_vec_agrees_with_the_model() {
 
 /// Runs every seed for `C`. Miri is far slower than a normal run, so it gets
 /// fewer and shorter runs.
-fn run_seeds<C: MapConfig>() {
+fn run_seeds<C: MapConfigFor<u32>>() {
     let (seeds, steps) = if cfg!(miri) { (2, 300) } else { (48, 2000) };
     for seed in 0..seeds {
         run::<C>(seed, steps);
@@ -183,16 +184,16 @@ impl Rng {
 }
 
 /// What the map should hold after the operations so far.
-struct Model<C: MapConfig> {
+struct Model<C: MapConfigFor<u32>> {
     /// Every valid key and the value under it.
-    live: Vec<(Key<C::KeyConfig>, u32)>,
+    live: Vec<(Key<MapKeyConfig<u32, C>>, u32)>,
     /// Keys whose value was detached and not reattached yet.
-    detached: Vec<Key<C::KeyConfig>>,
+    detached: Vec<Key<MapKeyConfig<u32, C>>>,
     /// Keys whose value was removed. None of them may match anything, and a
     /// config that retires slots never hands one out again. A config that
     /// wraps can hand one out again, and that key then moves back to
     /// `live`.
-    dead: Vec<Key<C::KeyConfig>>,
+    dead: Vec<Key<MapKeyConfig<u32, C>>>,
     /// The value the next insert uses. Every value is different, so a value
     /// that shows up under the wrong key is caught.
     next_value: u32,
@@ -202,7 +203,7 @@ struct Model<C: MapConfig> {
     retired: usize,
 }
 
-impl<C: MapConfig> Model<C> {
+impl<C: MapConfigFor<u32>> Model<C> {
     fn fresh_value(&mut self) -> u32 {
         self.next_value += 1;
         self.next_value
@@ -233,7 +234,7 @@ impl Drop for Context {
     }
 }
 
-fn run<C: MapConfig>(seed: u64, steps: usize) {
+fn run<C: MapConfigFor<u32>>(seed: u64, steps: usize) {
     let mut rng = Rng(seed);
     let mut map = GenMap::<u32, C>::new_with_config();
     let mut model = Model::<C> {
@@ -283,17 +284,17 @@ fn run<C: MapConfig>(seed: u64, steps: usize) {
     }
 }
 
-fn largest_generation<C: MapConfig>() -> Odd<Gen<C>> {
-    <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_generation()
+fn largest_generation<C: MapConfigFor<u32>>() -> Odd<Gen<u32, C>> {
+    <Layout<u32, C> as KeyLayout<Idx<u32, C>, Gen<u32, C>>>::max_generation()
 }
 
-fn slot_count_limit<C: MapConfig>() -> Option<usize> {
-    <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_idx()
+fn slot_count_limit<C: MapConfigFor<u32>>() -> Option<usize> {
+    <Layout<u32, C> as KeyLayout<Idx<u32, C>, Gen<u32, C>>>::max_idx()
         .into_usize()?
         .checked_add(1)
 }
 
-fn insert<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn insert<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     // Dropping the entry leaves the map as it was, so the insert below must
     // hand out the key the entry promised.
     let promised = map.vacant_entry().ok().map(|entry| entry.key());
@@ -312,7 +313,7 @@ fn insert<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mu
             assert_eq!(Some(key), promised);
             assert!(model.live.iter().all(|(live, _)| *live != key));
             assert!(!model.detached.contains(&key));
-            if C::WRAP_ON_OVERFLOW {
+            if <C as MapConfig<MapSlot<u32, C>>>::WRAP_ON_OVERFLOW {
                 model.dead.retain(|dead| *dead != key);
             } else {
                 assert!(!model.dead.contains(&key));
@@ -341,14 +342,14 @@ fn insert<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mu
 
 /// Checks that every slot holds a value, is detached or is retired, so none
 /// of them can take a new value.
-fn assert_no_slot_is_free<C: MapConfig>(map: &GenMap<u32, C>, model: &Model<C>) {
-    let retired = if C::WRAP_ON_OVERFLOW {
+fn assert_no_slot_is_free<C: MapConfigFor<u32>>(map: &GenMap<u32, C>, model: &Model<C>) {
+    let retired = if <C as MapConfig<MapSlot<u32, C>>>::WRAP_ON_OVERFLOW {
         model.retired
     } else {
         (0..map.slots_len())
             .filter(|&position| {
-                let idx = Idx::<C>::from_usize(position).unwrap();
-                map.generation_at(idx) == Some(Gen::<C>::ZERO)
+                let idx = Idx::<u32, C>::from_usize(position).unwrap();
+                map.generation_at(idx) == Some(Gen::<u32, C>::ZERO)
             })
             .count()
     };
@@ -358,18 +359,18 @@ fn assert_no_slot_is_free<C: MapConfig>(map: &GenMap<u32, C>, model: &Model<C>) 
     );
 }
 
-fn retire<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn retire<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     if model.live.is_empty() {
         return;
     }
     let (key, value) = model.live.swap_remove(rng.below(model.live.len()));
     assert_eq!(map.retire(key), Some(value));
-    assert_eq!(map.generation_at(key.idx()), Some(Gen::<C>::ZERO));
+    assert_eq!(map.generation_at(key.idx()), Some(Gen::<u32, C>::ZERO));
     model.dead.push(key);
     model.retired += 1;
 }
 
-fn remove<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn remove<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     if model.live.is_empty() {
         return;
     }
@@ -380,7 +381,11 @@ fn remove<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mu
 
 /// Tries every kind of lookup with a removed, retired or detached key, none
 /// of which may find anything.
-fn look_up_invalid<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn look_up_invalid<C: MapConfigFor<u32>>(
+    map: &mut GenMap<u32, C>,
+    model: &mut Model<C>,
+    rng: &mut Rng,
+) {
     let count = model.dead.len() + model.detached.len();
     if count == 0 {
         return;
@@ -398,7 +403,7 @@ fn look_up_invalid<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>,
     assert!(map.detach(key).is_none());
 }
 
-fn overwrite<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn overwrite<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     if model.live.is_empty() {
         return;
     }
@@ -410,7 +415,7 @@ fn overwrite<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: 
     model.live[i].1 = value;
 }
 
-fn detach<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn detach<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     if model.live.is_empty() {
         return;
     }
@@ -431,7 +436,7 @@ fn detach<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mu
     }
 }
 
-fn reattach<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn reattach<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     if model.detached.is_empty() {
         return;
     }
@@ -443,7 +448,7 @@ fn reattach<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &
 
 /// Keeps a random part of the values and changes the ones it keeps. It also
 /// checks that `retain` visits every value once, in slot order.
-fn retain<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn retain<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     let mut visited = Vec::new();
     map.retain(|key, value| {
         let keep = rng.chance(70);
@@ -470,7 +475,11 @@ fn retain<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mu
     }
 }
 
-fn get_disjoint<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn get_disjoint<C: MapConfigFor<u32>>(
+    map: &mut GenMap<u32, C>,
+    model: &mut Model<C>,
+    rng: &mut Rng,
+) {
     if let Some(key) = model.dead.first() {
         let first = model.live.first().map_or(*key, |(live, _)| *live);
         assert_eq!(
@@ -508,9 +517,9 @@ fn get_disjoint<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rn
 
 /// Checks the lookups by index against the model at a random index, which
 /// may be past the last slot.
-fn look_up_by_index<C: MapConfig>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut Rng) {
+fn look_up_by_index<C: MapConfigFor<u32>>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut Rng) {
     let position = rng.below(map.slots_len() + 1);
-    let Some(idx) = Idx::<C>::from_usize(position) else {
+    let Some(idx) = Idx::<u32, C>::from_usize(position) else {
         return;
     };
     let expected = model.live.iter().find(|(key, _)| key.idx() == idx);
@@ -520,14 +529,14 @@ fn look_up_by_index<C: MapConfig>(map: &GenMap<u32, C>, model: &Model<C>, rng: &
     if let Some((key, _)) = expected {
         assert_eq!(
             map.generation_at(idx),
-            Some(Gen::<C>::from_non_zero(key.generation().get()))
+            Some(Gen::<u32, C>::from_non_zero(key.generation().get()))
         );
     }
 }
 
 /// A clone, and a map that took the contents with `clone_from`, must hold
 /// the same values and hand out the same key next.
-fn compare_clones<C: MapConfig>(map: &GenMap<u32, C>) {
+fn compare_clones<C: MapConfigFor<u32>>(map: &GenMap<u32, C>) {
     let mut copy = map.clone();
     let mut target = GenMap::<u32, C>::new_with_config();
     target.insert(0);
@@ -543,7 +552,7 @@ fn compare_clones<C: MapConfig>(map: &GenMap<u32, C>) {
 
 /// Takes a random number of values out of a drain, then drops the drain,
 /// which removes the rest.
-fn drain<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn drain<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     let mut expected = model.live.clone();
     expected.sort();
     let take = rng.below(expected.len() + 1);
@@ -558,7 +567,7 @@ fn drain<C: MapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut
 }
 
 /// Checks the whole map against the model.
-fn check<C: MapConfig>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut Rng) {
+fn check<C: MapConfigFor<u32>>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut Rng) {
     assert_eq!(map.len(), model.live.len());
     assert_eq!(map.is_empty(), model.live.is_empty());
 

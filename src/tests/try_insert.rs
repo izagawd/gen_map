@@ -1,4 +1,4 @@
-use crate::{GenMap, InsertError, KeyConfig, MapConfig, Split};
+use crate::{GenMap, InsertError, KeyConfig, MapConfig, SlotItem, Split};
 use std::string::{String, ToString};
 use std::vec::Vec;
 
@@ -10,9 +10,9 @@ impl KeyConfig for Byte {
     type Layout = Split;
 }
 
-impl MapConfig for Byte {
+impl<S: SlotItem> MapConfig<S> for Byte {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 #[test]

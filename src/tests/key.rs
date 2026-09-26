@@ -1,6 +1,7 @@
 use super::{key_from_parts, Cfg};
 use crate::{
-    DefaultKeyConfig, DefaultMapConfig, GenMap, Key, KeyConfig, KeyLayout, MapConfig, Split,
+    DefaultKeyConfig, DefaultMapConfig, GenMap, Key, KeyConfig, KeyLayout, MapConfig, SlotItem,
+    Split,
 };
 use core::mem::size_of;
 use std::vec::Vec;
@@ -17,9 +18,9 @@ fn default_key_matches_default_config() {
 fn maps_whose_configs_share_a_key_config_share_a_key_type() {
     struct Wrapping;
 
-    impl MapConfig for Wrapping {
+    impl<S: SlotItem> MapConfig<S> for Wrapping {
         type KeyConfig = DefaultKeyConfig;
-        type Storage<S> = Vec<S>;
+        type Storage = Vec<S>;
         const WRAP_ON_OVERFLOW: bool = true;
     }
 
@@ -78,9 +79,9 @@ fn every_integer_type_works_as_a_config() {
         type Layout = Split;
     }
 
-    impl MapConfig for Mixed {
+    impl<S: SlotItem> MapConfig<S> for Mixed {
         type KeyConfig = Self;
-        type Storage<S> = Vec<S>;
+        type Storage = Vec<S>;
     }
 
     struct Wide;
@@ -90,9 +91,9 @@ fn every_integer_type_works_as_a_config() {
         type Layout = Split;
     }
 
-    impl MapConfig for Wide {
+    impl<S: SlotItem> MapConfig<S> for Wide {
         type KeyConfig = Self;
-        type Storage<S> = Vec<S>;
+        type Storage = Vec<S>;
     }
 
     let mut mixed = GenMap::<i32, Mixed>::new_with_config();
@@ -123,9 +124,9 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
         type Layout = Split;
     }
 
-    impl MapConfig for Wide {
+    impl<S: SlotItem> MapConfig<S> for Wide {
         type KeyConfig = Self;
-        type Storage<S> = Vec<S>;
+        type Storage = Vec<S>;
     }
 
     let mut map = GenMap::<i32, Wide>::new_with_config();
