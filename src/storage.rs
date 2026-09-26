@@ -11,8 +11,8 @@ use core::fmt;
 /// `Storage` type.
 ///
 /// A storage that can also grow on request implements [`ReserveStorage`]
-/// too. A storage that implements `IntoIterator` gives the map an owning
-/// `into_iter`. That iterator implements `DoubleEndedIterator` only when the
+/// too. A storage that implements `IntoIterator` gives either map an owning
+/// `into_iter`. A `GenMap` implements `DoubleEndedIterator` when the
 /// storage's iterator implements both `DoubleEndedIterator` and
 /// `ExactSizeIterator`.
 ///
@@ -49,8 +49,9 @@ use core::fmt;
 ///   `ExactSizeIterator`, `next_back` must yield the items starting from the
 ///   last one, and `len` must be the number of items not yet yielded.
 pub unsafe trait SlotStorage {
-    /// The items the storage holds. A map's storage holds its
-    /// [`MapSlot`](crate::MapSlot)s.
+    /// The items the storage holds. A `GenMap`'s storage holds its
+    /// [`MapSlot`](crate::MapSlot)s, and a `SecondaryMap`'s holds its
+    /// [`SecondaryMapSlot`](crate::SecondaryMapSlot)s.
     type Item;
 
     /// Why the storage could not make room for another item.
@@ -77,10 +78,8 @@ pub unsafe trait SlotStorage {
 
     /// Makes sure the next `additional` calls of
     /// [`try_push`](Self::try_push) will succeed, growing if the storage can
-    /// and has to. A `GenMap` asks for one item at a time, and a
-    /// `SecondaryMap` asks for every slot up to the index it inserts at, all
-    /// at once, so that a key with a far index fails before any slot is
-    /// added.
+    /// and has to. A `SecondaryMap` can ask for more items than any storage
+    /// holds.
     ///
     /// # Errors
     ///

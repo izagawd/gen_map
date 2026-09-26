@@ -40,7 +40,7 @@ pub type MapSlot<T, C> = Slot<MapGen<T, C>, T, Option<MapIdx<T, C>>>;
 /// # Safety
 ///
 /// `idx` must be the position of a slot in the storage, and `generation`
-/// should refer to that slot's generation.
+/// must be the generation of that slot while it holds a value.
 #[inline]
 unsafe fn slot_key<T, C: MapConfig<T>>(
     idx: Idx<T, C>,
@@ -1272,10 +1272,9 @@ impl<T: fmt::Debug, C: MapConfigFor<T>> fmt::Debug for GenMap<T, C> {
 }
 
 /// Pushes `slot` onto a storage that is being filled with clones of another
-/// storage of the same type. The storage being cloned already holds every
-/// slot pushed here, so a refusal breaks the [`SlotStorage`] contract, and
-/// this panics.
-/// The slot is dropped with its value in that case.
+/// storage of the same type, and panics if the push fails. That only
+/// happens with a storage that cannot hold as many slots as another of its
+/// type. The slot is dropped with its value in that case.
 fn push_cloned<T, C: MapConfigFor<T>>(slots: &mut Slots<T, C>, slot: MapSlot<T, C>) {
     if slots.try_push(slot).is_err() {
         panic!("SlotStorage::try_push failed while cloning a storage of the same type");

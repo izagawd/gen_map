@@ -547,17 +547,11 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     ///   the old value is returned as `Ok(Some(old))`, and the slot now belongs
     ///   to `key`.
     ///
-    /// When the storage has no slot at the key's index yet, the map first
-    /// asks it for room for every slot up to that index at once, and then
-    /// adds the slots.
-    ///
     /// # Errors
     ///
     /// Hands `value` back, and leaves the map as it was, if the strategy
     /// kept the old value or the storage could not make room for the slots.
     /// The [`SecondaryInsertError`] variant says which of the two happened.
-    /// For a key whose index is past `usize::MAX`, the error is the one the
-    /// storage returns when it is asked for `usize::MAX` more slots.
     ///
     /// # Examples
     ///
@@ -781,9 +775,8 @@ impl<T: Clone, C: SecondaryMapConfigFor<T>> Clone for SecondaryMap<T, C> {
         // every slot being where `insert` put it.
         let mut slots = Slots::<T, C>::with_capacity(self.slots.len());
         for slot in self.slots.as_slice() {
-            // A push can only fail here if the storage runs out of memory or
-            // breaks the `SlotStorage` contract, since the storage being
-            // cloned already holds every one of these slots.
+            // A push only fails here for a storage that cannot hold as many
+            // slots as another of its type.
             if slots.try_push(slot.clone()).is_err() {
                 panic!("SlotStorage::try_push failed while cloning a storage of the same type");
             }
@@ -1034,10 +1027,6 @@ impl<T, C: SecondaryMapConfigFor<T>> FusedIterator for SecondaryValuesMut<'_, T,
 
 /// Iterator that takes each value out, with its key, in index order.
 /// Created by [`SecondaryMap::drain`].
-///
-/// When it is dropped, it removes the values it has not reached, and every
-/// slot. If it is leaked instead, the map keeps the values it has not
-/// reached.
 pub struct SecondaryDrain<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
     map: &'a mut SecondaryMap<T, C>,
     /// The position of the slot the iterator checks next.
@@ -1086,10 +1075,9 @@ impl<T, C: SecondaryMapConfigFor<T>> Drop for SecondaryDrain<'_, T, C> {
     }
 }
 
-/// Iterator that takes each value out of a map that was turned into one,
-/// with its key, in index order. Created by the map's `into_iter`, which
-/// only exists when the storage implements `IntoIterator`, as `Vec`,
-/// `ArrayVec` and `SmallVec` do.
+/// Owning iterator over `(key, value)` pairs, in index order. Created by
+/// consuming a map with `into_iter`, which a map only has when its storage
+/// implements `IntoIterator`.
 pub struct SecondaryIntoIter<T, C: SecondaryMapConfigFor<T>>
 where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,

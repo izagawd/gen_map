@@ -22,12 +22,7 @@ use core::marker::PhantomData;
 /// `Repr` that safe code can make must unpack to an index of at most
 /// `max_idx` and a generation of at most `max_generation`. A `Repr` whose
 /// fields are private and that only this layout makes, like [`SplitRepr`],
-/// meets this rule, because only `pack_unchecked` can make one. Every
-/// [`Packed`] layout on the same integer shares [`PackedRepr`], so a key can
-/// carry one that a layout with a different number of generation bits made.
-/// It meets the rule anyway, because every `PackedRepr` has its lowest bit
-/// set, and so every `Packed` layout unpacks it to parts that fit, with an
-/// odd generation.
+/// meets this rule, because only `pack_unchecked` can make one.
 pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
     /// The type a key stores its index and generation in.
     type Repr: Copy + Eq + Hash + Send + Sync + 'static;
@@ -196,7 +191,10 @@ fn low_bits(bits: u32) -> u128 {
 }
 
 // SAFETY: the two parts are put in bit fields that do not overlap and are
-// read back from the same fields.
+// read back from the same fields. Every `Packed` layout on the same integer
+// shares `PackedRepr`, so a key can carry one that a layout with a different
+// number of generation bits made. Every `PackedRepr` has its lowest bit set,
+// so this layout still unpacks it to parts that fit, with an odd generation.
 unsafe impl<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32> KeyLayout<Idx, Gen>
     for Packed<R, GEN_BITS>
 {

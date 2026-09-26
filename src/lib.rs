@@ -66,7 +66,7 @@
 //! A map is configured by a [`MapConfig`] and a [`GenMapConfig`], and its
 //! keys by a [`KeyConfig`].
 //!
-//! A [`KeyConfig`] decides:
+//! A [`KeyConfig`] decides two things.
 //!
 //! - [`Idx`](KeyConfig::Idx) and [`Gen`](KeyConfig::Gen) are the integer
 //!   types of the index and the generation. Any type that implements

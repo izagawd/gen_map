@@ -22,8 +22,8 @@ use crate::parity::Odd;
 ///
 /// # Examples
 ///
-/// A strategy that replaces a value only when the key's generation is at
-/// least 10 larger than the slot's:
+/// The strategy below replaces a value only when the key's generation is at
+/// least 10 larger than the slot's.
 ///
 /// ```
 /// use gen_map::{KeyConfig, Odd, ReplaceStrategy};

@@ -425,7 +425,7 @@ mod sealed {
 /// or on the slot type. A map whose values or slots do not meet the bounds
 /// fails to compile.
 ///
-/// A bound on the value limits the value types:
+/// A bound on the value limits the value types, as in the example below.
 ///
 /// ```
 /// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, MapConfig};
@@ -448,12 +448,12 @@ mod sealed {
 /// let key = map.insert(5);
 /// assert_eq!(map[key], 5);
 ///
-/// // `String` is not `Copy`, so this does not compile:
+/// // `String` is not `Copy`, so the next line does not compile.
 /// // let map = GenMap::<String, CopyValues>::new_with_config();
 /// ```
 ///
 /// To allow only `u32` values, implement `MapConfig<u32>` instead of
-/// `MapConfig<T>`, and `GenMapConfig` only for slots whose `Value` is `u32`:
+/// `MapConfig<T>`, and `GenMapConfig` only for slots whose `Value` is `u32`.
 ///
 /// ```
 /// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, MapConfig};
@@ -473,7 +473,7 @@ mod sealed {
 /// let key = map.insert(5);
 /// assert_eq!(map[key], 5);
 ///
-/// // The values are `u64`, not `u32`, so this does not compile:
+/// // The values are `u64`, not `u32`, so the next line does not compile.
 /// // let map = GenMap::<u64, U32Values>::new_with_config();
 /// ```
 ///
@@ -534,8 +534,8 @@ mod sealed {
 /// let key = map.insert("a".to_string());
 /// assert_eq!(map[key], "a");
 ///
-/// // `Mutex` is not `Clone`, so neither is a slot holding one, and this
-/// // does not compile:
+/// // `Mutex` is not `Clone`, so neither is a slot holding one, and the next
+/// // line does not compile.
 /// // let map = GenMap::<std::sync::Mutex<u32>, Cloneable>::new_with_config();
 /// ```
 pub trait GenSlotItem: sealed::Sealed {
@@ -552,16 +552,6 @@ impl<G: KeyPiece, T, U> GenSlotItem for Slot<G, T, U> {
 
 /// The slot a [`SecondaryMap`](crate::SecondaryMap) keeps each of its values
 /// in, as a [`SecondaryMapConfig`](crate::SecondaryMapConfig) sees it.
-///
-/// It is to a `SecondaryMapConfig` what [`GenSlotItem`] is to a
-/// [`GenMapConfig`](crate::GenMapConfig). A config implements
-/// `SecondaryMapConfig<S>` for the slot types `S` it supports, usually for
-/// all of them at once with
-/// `impl<S: SecondarySlotItem> SecondaryMapConfig<S> for YourConfig`. Inside
-/// that impl, `S` is the slot and `S::Value` is the type of the value in it.
-/// For a `SecondaryMap<T, C>`, `S::Value` is `T`. Bounds on `S` and on
-/// `S::Value` limit which maps can use the config, in the same way as in the
-/// examples on [`GenSlotItem`].
 ///
 /// Only [`SecondarySlot`] implements it, and it cannot be implemented
 /// outside this crate.
