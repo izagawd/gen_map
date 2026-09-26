@@ -14,8 +14,7 @@ use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
 
-/// The key config of a [`GenMap<T, C>`](GenMap). The map reads it from
-/// `C`'s impl for `Slot<u8, T, ()>`, as [`MapConfigFor`] explains.
+/// The key config of a [`GenMap<T, C>`](GenMap), the one `C` refers to.
 pub type MapKeyConfig<T, C> = <C as MapConfig<KeyConfigSlot<T>>>::KeyConfig;
 
 /// The index type of the keys a [`GenMap<T, C>`](GenMap) hands out.
