@@ -46,8 +46,8 @@ unsafe fn slot_key<T, C: MapConfig<T>>(
     idx: Idx<T, C>,
     generation: Odd<Gen<T, C>>,
 ) -> Key<MapKeyConfig<T, C>> {
-    // SAFETY: the map never lets a slot's position or generation grow past
-    // what the layout holds.
+    // SAFETY: the map never lets a slot's position, or the generation of a
+    // slot that holds a value, grow past what the layout holds.
     Key::from_repr(unsafe {
         <Layout<T, C> as KeyLayout<Idx<T, C>, Gen<T, C>>>::pack_unchecked(idx, generation)
     })
@@ -107,6 +107,19 @@ fn next_generation<T, C: MapConfig<T>>(generation: Odd<Gen<T, C>>) -> Option<Eve
     } else {
         Some(generation.wrapping_next())
     }
+}
+
+/// The generation a slot has while it is detached from a key with
+/// `generation`. It is the one after the key's, wrapping around at the
+/// largest value of the generation type. It is even, so no key matches the
+/// slot, and [`GenMap::reattach`] can work it out again from the key.
+///
+/// With a [`Packed`](crate::Packed) layout, it can be one past the largest
+/// generation a key can hold. That does no harm, because a detached slot is
+/// never on the free list, so its generation never goes into a key.
+#[inline]
+fn detached_generation<T, C: MapConfig<T>>(generation: Odd<Gen<T, C>>) -> Even<Gen<T, C>> {
+    generation.wrapping_next()
 }
 
 /// The error the storage of a `GenMap<T, C>` gives when it cannot make room
@@ -1045,10 +1058,10 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// the key and [`len`](Self::len) does not count the value, but the slot
     /// is not on the free list, so no insert uses it.
     ///
-    /// Returns `None` if there is no value for `key`. It also returns `None`,
-    /// and leaves the value in the map, if the slot's generation is already
-    /// the largest one its key can hold, because a slot that is about to
-    /// retire or wrap cannot promise to give the same key back.
+    /// Returns `None` if there is no value for `key`.
+    /// While the slot is detached, its generation is the one after
+    /// the key's with wrapping, which no key matches, and `reattach` gives the slot the
+    /// key's generation back.
     ///
     /// [`clear`](Self::clear) and [`retain`](Self::retain) leave a detached
     /// slot as it is, since it holds no value. [`reset`](Self::reset) removes
@@ -1075,10 +1088,12 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     pub fn detach(&mut self, key: Key<MapKeyConfig<T, C>>) -> Option<T> {
         let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
         slot.get_odd(key.generation())?;
-        let next = next_generation::<T, C>(key.generation())?;
         self.len -= 1;
+        let detached = detached_generation::<T, C>(key.generation());
+        // A slot that links to itself is detached. A slot on the free list
+        // links to another slot or to nothing, and so does a retired one.
         // SAFETY: the slot's generation matched the key's, which is odd.
-        Some(unsafe { slot.replace_odd_unchecked(next, Some(key.idx())) })
+        Some(unsafe { slot.replace_odd_unchecked(detached, Some(key.idx())) })
     }
 
     /// Puts a value back under a key whose value [`detach`](Self::detach)
@@ -1096,11 +1111,10 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
             .into_usize()
             .and_then(|position| self.slots.as_mut_slice().get_mut(position))
             .filter(|slot| {
-                // Detaching added one to the generation and made the slot
-                // link to itself, so a slot still detached under this key has
-                // the generation after the key's and links to its own index.
-                next_generation::<T, C>(generation)
-                    .and_then(|next| slot.get_even(next))
+                // Detaching gave the slot the generation `detached_generation`
+                // works out from the key's, and made the slot link to itself.
+                // A slot still detached under this key has both.
+                slot.get_even(detached_generation::<T, C>(generation))
                     .is_some_and(|link| *link == Some(key.idx()))
             })
             .expect("reattach on a key that is not detached");

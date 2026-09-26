@@ -7,7 +7,7 @@ use crate::map::{Gen, Idx, Layout};
 use crate::{
     DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
     GetDisjointMutError, InsertError, InsertWithError, Key, KeyConfig, KeyLayout, KeyPiece,
-    MapConfig, MapConfigFor, MapKeyConfig, MapSlot, Odd, Packed,
+    MapConfig, MapConfigFor, MapKeyConfig, MapSlot, Packed,
 };
 use std::vec::Vec;
 
@@ -305,10 +305,6 @@ fn run<C: MapConfigFor<u32>>(seed: u64, steps: usize) {
     }
 }
 
-fn largest_generation<C: MapConfigFor<u32>>() -> Odd<Gen<u32, C>> {
-    <Layout<u32, C> as KeyLayout<Idx<u32, C>, Gen<u32, C>>>::max_generation()
-}
-
 fn slot_count_limit<C: MapConfigFor<u32>>() -> Option<usize> {
     <Layout<u32, C> as KeyLayout<Idx<u32, C>, Gen<u32, C>>>::max_idx()
         .into_usize()?
@@ -367,10 +363,13 @@ fn assert_no_slot_is_free<C: MapConfigFor<u32>>(map: &GenMap<u32, C>, model: &Mo
     let retired = if <C as GenMapConfig<MapSlot<u32, C>>>::WRAP_ON_OVERFLOW {
         model.retired
     } else {
+        // A slot detached at the largest generation can have generation zero
+        // too, so the slots of detached keys are left out.
         (0..map.slots_len())
             .filter(|&position| {
                 let idx = Idx::<u32, C>::from_usize(position).unwrap();
                 map.generation_at(idx) == Some(Gen::<u32, C>::ZERO)
+                    && !model.detached.iter().any(|key| key.idx() == idx)
             })
             .count()
     };
@@ -441,20 +440,9 @@ fn detach<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, 
         return;
     }
     let (key, value) = model.live.swap_remove(rng.below(model.live.len()));
-    match map.detach(key) {
-        Some(taken) => {
-            assert_eq!(taken, value);
-            model.detached.push(key);
-        }
-        None => {
-            // `detach` only refuses a slot whose generation is already the
-            // largest one, and the value then stays in the map.
-            assert!(key.is_max_generation());
-            assert_eq!(key.generation(), largest_generation::<C>());
-            assert_eq!(map.get(key), Some(&value));
-            model.live.push((key, value));
-        }
-    }
+    // Every key can be detached, including one at the largest generation.
+    assert_eq!(map.detach(key), Some(value));
+    model.detached.push(key);
 }
 
 fn reattach<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
