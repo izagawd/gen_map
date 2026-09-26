@@ -1520,8 +1520,9 @@ impl<T, C: MapConfigFor<T>> FusedIterator for ValuesMut<'_, T, C> {}
 
 /// Owning iterator over `(key, value)` pairs. Created by consuming a map with
 /// `into_iter`, which a map only has when its storage implements
-/// `IntoIterator`. It runs from both ends when the storage's iterator is
-/// double-ended and exact-size.
+/// `IntoIterator`. It implements `DoubleEndedIterator`, which gives it
+/// `next_back` and `rev`, only when the storage's iterator implements both
+/// `DoubleEndedIterator` and `ExactSizeIterator`.
 pub struct IntoIter<T, C: MapConfigFor<T>>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,
@@ -1557,8 +1558,11 @@ where
     }
 }
 
-// `Enumerate` needs the storage's iterator to be exact-size as well to run
-// from the back, since it works out each position from what is left.
+// `next_back` calls `Enumerate::next_back`, which needs the storage's
+// iterator to implement `ExactSizeIterator` as well as
+// `DoubleEndedIterator`. When it takes the last slot, it works out that
+// slot's position as the number of slots already taken from the front plus
+// `len()`, the number of slots still left.
 impl<T, C: MapConfigFor<T>> DoubleEndedIterator for IntoIter<T, C>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,

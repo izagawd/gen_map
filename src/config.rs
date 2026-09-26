@@ -42,11 +42,15 @@ pub trait KeyConfig {
 /// Chooses the key config of a [`GenMap`](crate::GenMap), the storage its
 /// slots live in, and what happens when a slot's generation runs out.
 ///
-/// A config is implemented for slot types, usually all of them at once with
-/// a blanket impl over `S: SlotItem`. A `GenMap<T, C>` uses `C`'s impl for
-/// its [`MapSlot<T, C>`](crate::MapSlot). The impl can put bounds on `S`, or
-/// on the value it holds through [`SlotItem::Item`], when its storage needs
-/// them.
+/// `S` is the slot type, the [`Slot`] the map keeps each value in, and
+/// `S::Item` is the type of that value. A config is usually implemented for
+/// every slot type at once, with `impl<S: SlotItem> MapConfig<S> for
+/// YourConfig`, as in the example below. A `GenMap<T, C>` then uses the impl
+/// for its own slots, [`MapSlot<T, C>`](crate::MapSlot).
+///
+/// The impl can put bounds on `S::Item` or on `S` to limit which maps can
+/// use the config. [`SlotItem`](SlotItem#bounds-on-the-value-and-the-slot)
+/// shows how, with examples.
 ///
 /// A map's slot type is made from its key config, so the map reads the key
 /// config from the impl for a stand-in slot, `Slot<u8, T, ()>`, which holds

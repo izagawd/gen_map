@@ -5,7 +5,8 @@ use crate::{GenMap, KeyConfig, MapConfig, SlotItem, SlotStorage, Split};
 use std::vec::Vec;
 
 /// A `Vec` behind `SlotStorage` alone. With `ITER` it also has an owning
-/// iterator, which only runs forwards and does not know its length.
+/// iterator, which implements `Iterator` but not `DoubleEndedIterator` or
+/// `ExactSizeIterator`.
 struct Bare<S, const ITER: bool>(Vec<S>);
 
 // SAFETY: every method forwards to the `Vec`, which is the behaviour the
@@ -46,7 +47,8 @@ unsafe impl<S, const ITER: bool> SlotStorage for Bare<S, ITER> {
     }
 }
 
-/// Runs forwards only.
+/// A `Vec` iterator that only implements `Iterator`, so it has no
+/// `next_back` and no `len`.
 struct Forwards<S>(std::vec::IntoIter<S>);
 
 impl<S> Iterator for Forwards<S> {
@@ -82,7 +84,7 @@ impl<S: SlotItem> MapConfig<S> for NoIter {
     type Storage = Bare<S, false>;
 }
 
-/// Its storage has an owning iterator that only runs forwards.
+/// Its storage's owning iterator is a `Forwards`.
 struct ForwardIter;
 
 impl<S: SlotItem> MapConfig<S> for ForwardIter {
@@ -109,7 +111,7 @@ fn a_map_works_without_an_owning_iterator() {
 }
 
 #[test]
-fn a_forward_only_storage_iterator_gives_a_forward_only_into_iter() {
+fn into_iter_works_when_the_storage_iterator_has_no_next_back() {
     let mut map = GenMap::<u32, ForwardIter>::new_with_config();
     let keys: Vec<_> = (0..4).map(|i| map.insert(i)).collect();
     map.remove(keys[1]);

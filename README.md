@@ -37,8 +37,8 @@ for (key, value) in &map {
 A `KeyConfig` picks the index and generation integers and how a key stores
 the two. A `MapConfig` picks the key config, where the slots live and what
 happens when a slot's generation runs out. It is implemented for slot types,
-usually for every `SlotItem` at once, so it can put bounds on the slots or on
-the values they hold. Maps whose configs pick the same
+usually for every one at once as below. See
+[Limiting which maps can use a config](#limiting-which-maps-can-use-a-config). Maps whose configs pick the same
 key config share a key type. The default uses a `u32` index and a `u32`
 generation stored as two fields, keeps the slots in a `Vec`, and retires a
 slot whose generation runs out, so no stale key can ever match a new value.
@@ -70,6 +70,40 @@ assert_eq!(core::mem::size_of_val(&key), 2);
 ```
 
 `Option<Key>` is the same size as `Key` with either layout.
+
+### Limiting which maps can use a config
+
+A map keeps each value in a slot. In `impl<S: SlotItem> MapConfig<S>`, `S` is
+the slot and `S::Item` is the type of the value in it. A bound on `S::Item`
+limits which values a map using the config can hold:
+
+```rust
+use gen_map::{DefaultKeyConfig, GenMap, MapConfig, SlotItem};
+
+/// Only for values that are `Copy`.
+struct CopyValues;
+
+impl<S: SlotItem> MapConfig<S> for CopyValues
+where
+    S::Item: Copy,
+{
+    type KeyConfig = DefaultKeyConfig;
+    type Storage = Vec<S>;
+}
+
+let mut map = GenMap::<u32, CopyValues>::new_with_config();
+let key = map.insert(5);
+assert_eq!(map[key], 5);
+
+// `String` is not `Copy`, so this does not compile:
+// let map = GenMap::<String, CopyValues>::new_with_config();
+```
+
+`S: SlotItem<Item = u32>` allows only `u32` values. A bound on `S` itself,
+such as `S: SlotItem + Clone`, limits the slot instead. That is what a
+config needs when its storage type requires something of the items it holds,
+because those items are slots. A slot is `Clone`, `Debug`, `Send` or `Sync`
+when its value is. The `SlotItem` docs have an example of each.
 
 ### Packing the key into one integer
 
@@ -120,7 +154,8 @@ feature, so it is not covered by semver.
 
 `reserve`, `try_reserve` and the `with_capacity` constructors are only there
 when the storage also implements `ReserveStorage`, which `Vec` and
-`SmallVec` do.
+`SmallVec` do. The owning `into_iter` is only there when the storage also
+implements `IntoIterator`, which all three do.
 
 ## Handling a full map
 

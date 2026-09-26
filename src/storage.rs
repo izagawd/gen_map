@@ -9,8 +9,9 @@ use core::fmt;
 ///
 /// A storage that can also grow on request implements [`ReserveStorage`]
 /// too. A storage that implements `IntoIterator` gives the map an owning
-/// `into_iter`, which can run from both ends when the storage's iterator
-/// can.
+/// `into_iter`. That iterator implements `DoubleEndedIterator` only when the
+/// storage's iterator implements both `DoubleEndedIterator` and
+/// `ExactSizeIterator`.
 ///
 /// # Safety
 ///
@@ -23,9 +24,10 @@ use core::fmt;
 /// pushed, and must return the same items every time unless a `&mut self`
 /// method of this trait was called in between. If the storage implements
 /// `IntoIterator<Item = Self::Item>`, `into_iter` must yield those same
-/// items, in the same order, and if its iterator is also double-ended and
-/// exact-size, `next_back` must yield them from the end and `len` must be
-/// the number not yet yielded. [`try_push`](Self::try_push) must append
+/// items, in the same order. If that iterator also implements
+/// `DoubleEndedIterator` and `ExactSizeIterator`, `next_back` must yield
+/// the items starting from the last one, and `len` must be the number of
+/// items not yet yielded. [`try_push`](Self::try_push) must append
 /// at the end and leave the other items where they are, and once
 /// [`ensure_room`](Self::ensure_room) has returned `Ok`, the next `try_push`
 /// must succeed, as long as no other `&mut self` method of this trait runs

@@ -88,10 +88,13 @@
 //! - [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW) determines what
 //!   happens to a slot whose generation runs out.
 //!
-//! A [`MapConfig`] is implemented for slot types, usually for every
-//! [`SlotItem`] at once with a blanket impl. That lets a config put bounds
-//! on the slots it supports, or on the values they hold, when its storage
-//! needs them.
+//! A [`MapConfig`] is implemented for slot types. A slot is what the map
+//! keeps each value in, and [`SlotItem::Item`] is the type of that value. A
+//! config is usually implemented for every slot type at once, with
+//! `impl<S: SlotItem> MapConfig<S>`, and it can put bounds on the value or
+//! on the slot to limit which maps can use it.
+//! [`SlotItem`](SlotItem#bounds-on-the-value-and-the-slot) shows how, with
+//! examples.
 //!
 //! [`DefaultMapConfig`] is the config a [`GenMap`] uses when none is named.
 //! Its keys use the [`DefaultKeyConfig`], so they are a `u32` index and a
@@ -207,6 +210,11 @@
 //! before it allocates. [`SlotStorage`] is an unsafe trait, because the map
 //! relies on the storage behaving like a `Vec` when it reads slots without
 //! bounds checks.
+//!
+//! The owning `into_iter` only exists when the storage also implements
+//! `IntoIterator`. It implements `DoubleEndedIterator` only when the
+//! storage's iterator implements both `DoubleEndedIterator` and
+//! `ExactSizeIterator`. `Vec`, `ArrayVec` and `SmallVec` meet all of these.
 //!
 //! The methods that make room ahead of time, which are
 //! [`reserve`](GenMap::reserve), [`try_reserve`](GenMap::try_reserve),
@@ -339,7 +347,9 @@
 //! of their keys. [`iter`](GenMap::iter), [`iter_mut`](GenMap::iter_mut),
 //! [`keys`](GenMap::keys), [`values`](GenMap::values),
 //! [`values_mut`](GenMap::values_mut) and the owning `into_iter` all know
-//! their exact length and can run from both ends.
+//! their exact length and can run from both ends, meaning they implement
+//! `DoubleEndedIterator`. `into_iter` only does when the storage's iterator
+//! implements both `DoubleEndedIterator` and `ExactSizeIterator`.
 //!
 //! [`retain`](GenMap::retain), [`drain`](GenMap::drain) and
 //! [`clear`](GenMap::clear) remove values the same way
