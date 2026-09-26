@@ -1,9 +1,11 @@
 //! A storage with a fixed capacity and no `ReserveStorage`, to check that a
 //! map works with such a storage and reports the storage's own error type.
 
+use super::key_from_parts;
 use crate::{
-    FullError, GenMap, GenMapConfig, GenSlotItem, GenSlotStorage, InsertError, InsertWithError,
-    KeyConfig, MapConfig, Split, StorageError,
+    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeyConfig,
+    MapConfig, NewerWins, SecondaryInsertError, SecondaryMap, SecondaryMapConfig,
+    SecondarySlotItem, SecondaryStorageError, SlotStorage, Split, StorageError,
 };
 use std::vec::Vec;
 
@@ -26,7 +28,7 @@ impl<S> IntoIterator for Capped<S> {
 
 // SAFETY: this is a `Vec` that refuses pushes past `CAP`, which is the
 // behaviour the trait describes.
-unsafe impl<S> GenSlotStorage for Capped<S> {
+unsafe impl<S> SlotStorage for Capped<S> {
     type Item = S;
     type Error = CapReached;
 
@@ -48,8 +50,8 @@ unsafe impl<S> GenSlotStorage for Capped<S> {
         &mut self.0
     }
 
-    fn ensure_room(&mut self) -> Result<(), CapReached> {
-        if self.0.len() < CAP {
+    fn ensure_room(&mut self, additional: usize) -> Result<(), CapReached> {
+        if additional <= CAP - self.0.len() {
             Ok(())
         } else {
             Err(CapReached)
@@ -83,6 +85,11 @@ impl<T> MapConfig<T> for Four {
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Four {
+    type Storage = Capped<S>;
+}
+
+impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Four {
+    type ReplaceStrategy = NewerWins;
     type Storage = Capped<S>;
 }
 
@@ -156,4 +163,33 @@ fn clone_works_on_a_fixed_storage() {
 fn insert_panics_with_the_storages_reason() {
     let mut map = full_map();
     map.insert(99);
+}
+
+#[test]
+fn a_secondary_map_hands_back_the_storages_own_error_and_adds_no_slots() {
+    let mut map = SecondaryMap::<i32, Four>::new_with_config();
+    let error: SecondaryInsertError<i32, SecondaryStorageError<i32, Four>> =
+        map.insert(key_from_parts::<Four>(9, 1), 9).unwrap_err();
+    assert!(matches!(
+        error,
+        SecondaryInsertError::StorageFull(9, CapReached)
+    ));
+    assert_eq!(map.slots_len(), 0);
+
+    // Inserting at index 3 fills all four slots the storage has room for.
+    assert_eq!(map.insert(key_from_parts::<Four>(3, 1), 3).unwrap(), None);
+    assert_eq!(map.slots_len(), CAP);
+    assert_eq!(map.len(), 1);
+}
+
+#[test]
+fn a_secondary_map_clones_without_a_cloneable_storage() {
+    // `Capped` does not implement `Clone`, and the map does not need it to.
+    let mut map = SecondaryMap::<i32, Four>::new_with_config();
+    let key = key_from_parts::<Four>(2, 1);
+    map.insert(key, 7).unwrap();
+    let copy = map.clone();
+    assert_eq!(copy.len(), 1);
+    assert_eq!(copy.slots_len(), 3);
+    assert_eq!(copy[key], 7);
 }

@@ -1,9 +1,12 @@
 use crate::key_layout::{KeyLayout, Split};
 use crate::key_piece::KeyPiece;
 use crate::map::MapSlot;
-use crate::secondary_storage::SecondarySlotStorage;
+#[cfg(feature = "alloc")]
+use crate::replace_strategy::NewerWinsWrapping;
+use crate::replace_strategy::ReplaceStrategy;
+use crate::secondary_map::SecondaryMapSlot;
 use crate::slot::{GenSlotItem, SecondarySlotItem};
-use crate::storage::GenSlotStorage;
+use crate::storage::SlotStorage;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
@@ -46,8 +49,8 @@ pub trait KeyConfig {
 /// implemented for every value type at once, with `impl<T> MapConfig<T> for
 /// YourConfig`, as in the example below. The impl can put bounds on `T` to
 /// limit which maps can use the config.
-/// [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) shows how,
-/// with examples.
+/// [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) has two
+/// examples of bounds on `T`.
 ///
 /// The config of a [`GenMap`](crate::GenMap) also implements
 /// [`GenMapConfig`], which has `MapConfig` as a supertrait.
@@ -92,8 +95,8 @@ pub trait MapConfig<T> {
     type KeyConfig: KeyConfig;
 }
 
-/// This trait is used to choose what happens when a slot's generation runs out, and the
-/// collection the slots of a [`GenMap`](crate::GenMap) live in.
+/// This trait is used to choose what happens when a slot's generation runs
+/// out, and the collection the slots of a [`GenMap`](crate::GenMap) live in.
 ///
 /// `S` is the slot type, the [`Slot`](crate::Slot) the map keeps each value
 /// in, and `S::Value` is the type of that value. A config is usually
@@ -105,8 +108,8 @@ pub trait MapConfig<T> {
 /// [`MapConfig<S::Value>`](MapConfig) is a supertrait, so the impl can only
 /// cover slots whose values the [`MapConfig`] impl covers. The impl can put
 /// bounds on `S::Value` or on `S` to limit which maps can use the config.
-/// [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) shows how,
-/// with examples.
+/// [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) has three
+/// examples of these bounds.
 pub trait GenMapConfig<S: GenSlotItem>: MapConfig<S::Value> {
     /// What happens when a slot's generation runs out, meaning it reaches
     /// the largest one its key can hold.
@@ -119,34 +122,74 @@ pub trait GenMapConfig<S: GenSlotItem>: MapConfig<S::Value> {
     const WRAP_ON_OVERFLOW: bool = false;
 
     /// The collection the map keeps its slots in.
-    type Storage: GenSlotStorage<Item = S>;
+    type Storage: SlotStorage<Item = S>;
 }
 
-/// Chooses whether a key with a newer generation replaces the value in a
-/// slot, and the collection [`SecondarySlotItem`] slots are kept in.
+/// This trait is used to choose the [`ReplaceStrategy`] of a
+/// [`SecondaryMap`](crate::SecondaryMap), and the collection its slots live
+/// in.
 ///
-/// `S` is the slot type, and `S::Value` is the type of the value in it. The
-/// key config comes from the [`MapConfig<S::Value>`](MapConfig) impl, which
-/// is a supertrait.
+/// `S` is the slot type, the [`SecondarySlot`](crate::SecondarySlot) the map
+/// keeps each value in, and `S::Value` is the type of that value. A config is
+/// usually implemented for every slot type at once, with
+/// `impl<S: SecondarySlotItem> SecondaryMapConfig<S> for YourConfig`, as in
+/// the example below. A `SecondaryMap<T, C>` then uses the impl for its own
+/// slots, [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot).
+///
+/// [`MapConfig<S::Value>`](MapConfig) is a supertrait, and its key config is
+/// the key config of the keys the map works with.
+///
+/// # Examples
+///
+/// A map with the config below keeps each value until it is removed, even
+/// when a value is inserted under a newer key for the same slot.
+///
+/// ```
+/// use gen_map::{
+///     DefaultKeyConfig, ExistingWins, GenMap, MapConfig, SecondaryMap, SecondaryMapConfig,
+///     SecondarySlotItem,
+/// };
+///
+/// struct Keep;
+///
+/// impl<T> MapConfig<T> for Keep {
+///     type KeyConfig = DefaultKeyConfig;
+/// }
+///
+/// impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Keep {
+///     type ReplaceStrategy = ExistingWins;
+///     type Storage = Vec<S>;
+/// }
+///
+/// let mut names = GenMap::new();
+/// let mut ages = SecondaryMap::<u32, Keep>::new_with_config();
+/// let alice = names.insert("Alice");
+/// ages.insert(alice, 30).unwrap();
+///
+/// // Bob gets Alice's slot, but her age stays until it is removed.
+/// names.remove(alice);
+/// let bob = names.insert("Bob");
+/// assert!(ages.insert(bob, 25).is_err());
+/// assert_eq!(ages[alice], 30);
+/// ```
 pub trait SecondaryMapConfig<S: SecondarySlotItem>: MapConfig<S::Value> {
-    /// What happens when a value is inserted under a key whose generation is
-    /// newer than the generation of a slot that already holds a value.
-    ///
-    /// `true`, the default, replaces the slot's value with the new one.
-    ///
-    /// `false` keeps the slot's value, and the new value is not inserted.
-    ///
-    /// Either way, when the slot holds a value, a key whose generation is the
-    /// same as the slot's always replaces that value, and a key whose
-    /// generation is older than the slot's never does.
-    const OVERRIDE_OLDER_GEN: bool = true;
+    /// Decides whether a value inserted under a key replaces the value in
+    /// the slot at the key's index, when that value was inserted under a
+    /// different generation. The built-in strategies are
+    /// [`NewerWinsWrapping`](crate::NewerWinsWrapping),
+    /// [`NewerWins`](crate::NewerWins) and
+    /// [`ExistingWins`](crate::ExistingWins).
+    type ReplaceStrategy: ReplaceStrategy<<Self as MapConfig<S::Value>>::KeyConfig>;
 
-    /// The collection the slots are kept in.
-    type Storage: SecondarySlotStorage<Item = S>;
+    /// The collection the map keeps its slots in. The map keeps a slot at
+    /// every index up to the largest one inserted. `type Storage = Vec<S>;`
+    /// keeps them in a `Vec`, and any other [`SlotStorage`] works too,
+    /// such as the `ArrayVec` and `SmallVec` a [`GenMapConfig`] can use.
+    type Storage: SlotStorage<Item = S>;
 }
 
-/// What a [`GenMap<T, C>`](crate::GenMap) needs from its config `C`: a
-/// [`MapConfig<T>`](MapConfig) impl, and a [`GenMapConfig`] impl for the
+/// What a [`GenMap<T, C>`](crate::GenMap) needs from its config `C`. `C`
+/// must implement [`MapConfig<T>`](MapConfig), and [`GenMapConfig`] for the
 /// map's [`MapSlot<T, C>`](crate::MapSlot).
 ///
 /// It is implemented for every such `C`, and it is sealed, so it cannot be
@@ -174,11 +217,52 @@ mod sealed {
     /// Keeps [`MapConfigFor`](super::MapConfigFor) from being implemented
     /// outside this crate.
     pub trait Sealed<T> {}
+
+    /// Keeps [`SecondaryMapConfigFor`](super::SecondaryMapConfigFor) from
+    /// being implemented outside this crate.
+    pub trait SecondarySealed<T> {}
 }
 
 impl<T, C> sealed::Sealed<T> for C where C: MapConfig<T> + GenMapConfig<MapSlot<T, C>> {}
 
 impl<T, C> MapConfigFor<T> for C where C: MapConfig<T> + GenMapConfig<MapSlot<T, C>> {}
+
+/// What a [`SecondaryMap<T, C>`](crate::SecondaryMap) needs from its config
+/// `C`. `C` must implement [`MapConfig<T>`](MapConfig), and
+/// [`SecondaryMapConfig`] for the map's
+/// [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot).
+///
+/// It is implemented for every such `C`, and it is sealed, so it cannot be
+/// implemented outside this crate. It is the bound to use in code that is
+/// generic over secondary maps.
+///
+/// ```
+/// use gen_map::{GenMap, SecondaryMap, SecondaryMapConfigFor};
+///
+/// fn total<C: SecondaryMapConfigFor<u32>>(map: &SecondaryMap<u32, C>) -> u32 {
+///     map.values().sum()
+/// }
+///
+/// let mut keys = GenMap::new();
+/// let mut map = SecondaryMap::new();
+/// map.insert(keys.insert(()), 1).unwrap();
+/// map.insert(keys.insert(()), 2).unwrap();
+/// assert_eq!(total(&map), 3);
+/// ```
+pub trait SecondaryMapConfigFor<T>:
+    sealed::SecondarySealed<T> + MapConfig<T> + SecondaryMapConfig<SecondaryMapSlot<T, Self>>
+{
+}
+
+impl<T, C> sealed::SecondarySealed<T> for C where
+    C: MapConfig<T> + SecondaryMapConfig<SecondaryMapSlot<T, C>>
+{
+}
+
+impl<T, C> SecondaryMapConfigFor<T> for C where
+    C: MapConfig<T> + SecondaryMapConfig<SecondaryMapSlot<T, C>>
+{
+}
 
 /// The key config a [`Key`](crate::Key) uses when none is named.
 ///
@@ -192,11 +276,15 @@ impl KeyConfig for DefaultKeyConfig {
     type Layout = Split;
 }
 
-/// The config a [`GenMap`](crate::GenMap) uses when none is named.
+/// The config of a [`GenMap<T>`](crate::GenMap) and a
+/// [`SecondaryMap<T>`](crate::SecondaryMap), which leave out their config
+/// parameter `C`.
 ///
-/// Keys use the [`DefaultKeyConfig`], slots live in a `Vec`, and slots
-/// retire when their generation runs out. It needs the `alloc` feature,
-/// which is on by default.
+/// Keys use the [`DefaultKeyConfig`], and slots live in a `Vec`. A `GenMap`
+/// slot retires when its generation runs out. A `SecondaryMap` uses
+/// [`NewerWinsWrapping`](crate::NewerWinsWrapping) to decide whether an
+/// insert replaces a value that was inserted under a different generation.
+/// It needs the `alloc` feature.
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -209,5 +297,11 @@ impl<T> MapConfig<T> for DefaultMapConfig {
 
 #[cfg(feature = "alloc")]
 impl<S: GenSlotItem> GenMapConfig<S> for DefaultMapConfig {
+    type Storage = Vec<S>;
+}
+
+#[cfg(feature = "alloc")]
+impl<S: SecondarySlotItem> SecondaryMapConfig<S> for DefaultMapConfig {
+    type ReplaceStrategy = NewerWinsWrapping;
     type Storage = Vec<S>;
 }

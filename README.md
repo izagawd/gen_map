@@ -3,7 +3,7 @@
 A customizable generational map that returns a `Key` upon inserting a value. The key can be used to later access or remove the value, and removing a value bumps its slot's generation, so the old key no longer matches.
 The operations for inserting, removing and accessing a value are all O(1).
 
-The crate is `no_std`.
+The crate never uses `std`, so it also works on targets that do not have it.
 
 ```toml
 [dependencies]
@@ -72,14 +72,35 @@ The [documentation](https://docs.rs/gen_map) covers the rest, such as key
 layouts, storage, what happens when a generation runs out, and limiting which
 maps can use a config.
 
+## Secondary maps
+
+A `SecondaryMap` stores values under the keys a `GenMap` hands out, to add
+data to a `GenMap`'s values without changing their type. Its config picks a
+`ReplaceStrategy`, which decides whether an insert replaces a value that was
+inserted under a different generation. The config also picks the storage the
+slots live in, which can be any storage a `GenMap` can use. The map keeps a
+slot at every index up to the largest one inserted.
+
+```rust
+use gen_map::{GenMap, SecondaryMap};
+
+let mut names = GenMap::new();
+let mut ages = SecondaryMap::new();
+let alice = names.insert("Alice");
+ages.insert(alice, 30).unwrap();
+assert_eq!(ages[alice], 30);
+```
+
 ## Cargo features
 
-- `alloc` (on by default): `Vec` storage and the default config. Turn it off
-  and use `arrayvec` to run without an allocator.
-- `arrayvec`: `ArrayVec` storage, which has a fixed capacity and never
-  allocates.
-- `smallvec`: `SmallVec` storage, which keeps a few slots inline before it
-  allocates. It uses a beta of smallvec 2.0, so it is not covered by semver.
+- `alloc` is on by default. It adds the `Vec` storage and the default
+  config. Turn default features off and use `arrayvec` instead to run
+  without an allocator.
+- `arrayvec` adds `ArrayVec` storage for a `GenMap` or a `SecondaryMap`. An
+  `ArrayVec` has a fixed capacity and never allocates.
+- `smallvec` adds `SmallVec` storage for a `GenMap` or a `SecondaryMap`. A
+  `SmallVec` keeps a few slots inline before it allocates. The feature uses a
+  beta of smallvec 2.0, so it is not covered by semver.
 
 ## License
 

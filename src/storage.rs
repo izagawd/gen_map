@@ -4,9 +4,11 @@ use alloc::collections::TryReserveError;
 use alloc::vec::Vec;
 use core::fmt;
 
-/// The collection a [`GenMap`](crate::GenMap) keeps its slots in. A
-/// [`GenMapConfig`](crate::GenMapConfig) chooses one with its `Storage`
-/// type.
+/// The collection a [`GenMap`](crate::GenMap) or a
+/// [`SecondaryMap`](crate::SecondaryMap) keeps its slots in. A
+/// [`GenMapConfig`](crate::GenMapConfig) or a
+/// [`SecondaryMapConfig`](crate::SecondaryMapConfig) chooses one with its
+/// `Storage` type.
 ///
 /// A storage that can also grow on request implements [`ReserveStorage`]
 /// too. A storage that implements `IntoIterator` gives the map an owning
@@ -16,21 +18,28 @@ use core::fmt;
 ///
 /// # Safety
 ///
-/// The map reads slots without bounds checks at positions it has already
+/// A `GenMap` reads slots without bounds checks at positions it has already
 /// checked against [`len`](Self::len), and it keeps a free list of positions
-/// that it expects to still be there. So a storage must behave like a `Vec`
-/// in these ways:
+/// that it expects to still be there. A `SecondaryMap` builds each value's
+/// key from the position of its slot without checking that the position fits
+/// in the key, and it reads a slot it has just pushed without a bounds check.
+/// So a storage must behave like a `Vec` in the ways listed below.
 ///
 /// - [`as_slice`](Self::as_slice) and [`as_mut_slice`](Self::as_mut_slice)
-///   must return every item pushed since the last [`clear`](Self::clear), in
-///   the order they were pushed.
-/// - They must return the same items every time, unless a `&mut self` method
-///   of this trait was called in between.
-/// - [`try_push`](Self::try_push) must append at the end and leave the other
-///   items where they are.
-/// - Once [`ensure_room`](Self::ensure_room) has returned `Ok`, the next
-///   `try_push` must succeed, as long as no other `&mut self` method of this
-///   trait runs in between.
+///   must return exactly the items pushed with [`try_push`](Self::try_push)
+///   since the last [`clear`](Self::clear), in the order they were pushed,
+///   and no others. [`len`](Self::len) and [`is_empty`](Self::is_empty) must
+///   agree with them, as the provided methods do.
+/// - Apart from `clear`, and dropping the storage itself, no method may
+///   remove, drop, replace or change an item. That includes the methods of
+///   [`ReserveStorage`] and of any other trait. An item only changes through
+///   the slice `as_mut_slice` returns. Growing may move the items in memory,
+///   but must keep them as they are.
+/// - `try_push` must either append the item at the end and return `Ok`, or
+///   hand the item back in `Err` and leave the storage as it was.
+/// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n`
+///   items, the next `n` calls of `try_push` must succeed, as long as no
+///   other `&mut self` method of this trait runs in between.
 /// - `clear` must drop every item and leave the storage empty.
 /// - [`EMPTY`](Self::EMPTY) and [`with_capacity`](Self::with_capacity) must
 ///   hold no items.
@@ -39,7 +48,7 @@ use core::fmt;
 /// - If that iterator also implements `DoubleEndedIterator` and
 ///   `ExactSizeIterator`, `next_back` must yield the items starting from the
 ///   last one, and `len` must be the number of items not yet yielded.
-pub unsafe trait GenSlotStorage {
+pub unsafe trait SlotStorage {
     /// The items the storage holds. A map's storage holds its
     /// [`MapSlot`](crate::MapSlot)s.
     type Item;
@@ -66,14 +75,18 @@ pub unsafe trait GenSlotStorage {
     /// Every item mutably, in the order they were pushed.
     fn as_mut_slice(&mut self) -> &mut [Self::Item];
 
-    /// Makes sure the next [`try_push`](Self::try_push) will succeed,
-    /// growing if the storage can and has to.
+    /// Makes sure the next `additional` calls of
+    /// [`try_push`](Self::try_push) will succeed, growing if the storage can
+    /// and has to. A `GenMap` asks for one item at a time, and a
+    /// `SecondaryMap` asks for every slot up to the index it inserts at, all
+    /// at once, so that a key with a far index fails before any slot is
+    /// added.
     ///
     /// # Errors
     ///
-    /// Returns the reason the push would fail if the storage cannot make
-    /// room.
-    fn ensure_room(&mut self) -> Result<(), Self::Error>;
+    /// Returns the reason the pushes would fail if the storage cannot make
+    /// room for all of them.
+    fn ensure_room(&mut self, additional: usize) -> Result<(), Self::Error>;
 
     /// Appends `item`.
     ///
@@ -98,10 +111,10 @@ pub unsafe trait GenSlotStorage {
     }
 }
 
-/// A [`GenSlotStorage`] that can make room for more items on request. After
+/// A [`SlotStorage`] that can make room for more items on request. After
 /// [`try_reserve`](Self::try_reserve) has returned `Ok` for `n` more items,
-/// the next `n` calls of [`try_push`](GenSlotStorage::try_push) succeed.
-pub trait ReserveStorage: GenSlotStorage {
+/// the next `n` calls of [`try_push`](SlotStorage::try_push) succeed.
+pub trait ReserveStorage: SlotStorage {
     /// Makes room for at least `additional` more items.
     ///
     /// # Panics
@@ -123,8 +136,9 @@ pub trait ReserveStorage: GenSlotStorage {
 // SAFETY: `Vec` is the behaviour the trait describes. `Vec::push` itself
 // panics on capacity overflow and aborts on allocation failure, so both
 // `ensure_room` and `try_push` go through `try_reserve`, which reports the
-// two as errors.
-unsafe impl<S> GenSlotStorage for Vec<S> {
+// two as errors. Once `try_reserve` has made room for `additional` items,
+// the next `additional` pushes cannot fail.
+unsafe impl<S> SlotStorage for Vec<S> {
     type Item = S;
     type Error = TryReserveError;
 
@@ -151,8 +165,8 @@ unsafe impl<S> GenSlotStorage for Vec<S> {
     }
 
     #[inline]
-    fn ensure_room(&mut self) -> Result<(), TryReserveError> {
-        Vec::try_reserve(self, 1)
+    fn ensure_room(&mut self, additional: usize) -> Result<(), TryReserveError> {
+        Vec::try_reserve(self, additional)
     }
 
     #[inline]
@@ -191,7 +205,10 @@ impl<S> ReserveStorage for Vec<S> {
 ///
 /// The storage cannot grow, so once all `CAP` slots exist and none of them
 /// are free, inserting fails with
-/// [`FullError::StorageFull`](crate::FullError::StorageFull).
+/// [`FullError::StorageFull`](crate::FullError::StorageFull). In a
+/// [`SecondaryMap`](crate::SecondaryMap), inserting under a key whose index
+/// is `CAP` or more fails with
+/// [`SecondaryInsertError::StorageFull`](crate::SecondaryInsertError::StorageFull).
 ///
 /// ```
 /// use arrayvec::ArrayVec;
@@ -223,8 +240,8 @@ impl<S> ReserveStorage for Vec<S> {
 #[cfg_attr(docsrs, doc(cfg(feature = "arrayvec")))]
 // SAFETY: an `ArrayVec` keeps its items in order and in place, like a
 // `Vec`. Its `try_push` only fails when it is full, and `ensure_room`
-// returns `Ok` only when it is not.
-unsafe impl<S, const CAP: usize> GenSlotStorage for arrayvec::ArrayVec<S, CAP> {
+// returns `Ok` only when it has room for all `additional` items.
+unsafe impl<S, const CAP: usize> SlotStorage for arrayvec::ArrayVec<S, CAP> {
     type Item = S;
     type Error = arrayvec::CapacityError;
 
@@ -253,11 +270,11 @@ unsafe impl<S, const CAP: usize> GenSlotStorage for arrayvec::ArrayVec<S, CAP> {
     }
 
     #[inline]
-    fn ensure_room(&mut self) -> Result<(), arrayvec::CapacityError> {
-        if arrayvec::ArrayVec::is_full(self) {
-            Err(arrayvec::CapacityError::new(()))
-        } else {
+    fn ensure_room(&mut self, additional: usize) -> Result<(), arrayvec::CapacityError> {
+        if additional <= arrayvec::ArrayVec::remaining_capacity(self) {
             Ok(())
+        } else {
+            Err(arrayvec::CapacityError::new(()))
         }
     }
 
@@ -308,8 +325,9 @@ unsafe impl<S, const CAP: usize> GenSlotStorage for arrayvec::ArrayVec<S, CAP> {
 // SAFETY: a `SmallVec` behaves like a `Vec` whether its items are inline or
 // on the heap. `SmallVec::push` panics or aborts when it cannot grow, so
 // both `ensure_room` and `try_push` go through `try_reserve`, which returns
-// an error instead.
-unsafe impl<S, const N: usize> GenSlotStorage for smallvec::SmallVec<S, N> {
+// an error instead. Once `try_reserve` has made room for `additional` items,
+// the next `additional` pushes cannot fail.
+unsafe impl<S, const N: usize> SlotStorage for smallvec::SmallVec<S, N> {
     type Item = S;
     type Error = smallvec::CollectionAllocErr;
 
@@ -336,8 +354,8 @@ unsafe impl<S, const N: usize> GenSlotStorage for smallvec::SmallVec<S, N> {
     }
 
     #[inline]
-    fn ensure_room(&mut self) -> Result<(), smallvec::CollectionAllocErr> {
-        smallvec::SmallVec::try_reserve(self, 1)
+    fn ensure_room(&mut self, additional: usize) -> Result<(), smallvec::CollectionAllocErr> {
+        smallvec::SmallVec::try_reserve(self, additional)
     }
 
     #[inline]

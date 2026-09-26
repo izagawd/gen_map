@@ -96,6 +96,53 @@ impl<T, S: fmt::Display> fmt::Display for InsertError<T, S> {
     }
 }
 
+/// Why [`SecondaryMap::insert`](crate::SecondaryMap::insert) could not
+/// insert. Each variant hands the value back so that the caller can keep it.
+/// `S` is the map's [`SecondaryStorageError`](crate::SecondaryStorageError).
+pub enum SecondaryInsertError<T, S> {
+    /// The slot at the key's index holds a value that was inserted under a
+    /// different generation, and the config's
+    /// [`ReplaceStrategy`](crate::ReplaceStrategy) kept that value.
+    Refused(T),
+
+    /// The storage could not make room for a slot at the key's index. The
+    /// second field says why.
+    StorageFull(T, S),
+}
+
+impl<T, S> SecondaryInsertError<T, S> {
+    /// Takes the value back out of the error.
+    #[inline]
+    pub fn into_inner(self) -> T {
+        match self {
+            Self::Refused(value) | Self::StorageFull(value, _) => value,
+        }
+    }
+}
+
+// Written by hand so that it does not require `T: Debug`.
+impl<T, S: fmt::Debug> fmt::Debug for SecondaryInsertError<T, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Refused(_) => f.write_str("Refused(..)"),
+            Self::StorageFull(_, error) => write!(f, "StorageFull(.., {error:?})"),
+        }
+    }
+}
+
+impl<T, S: fmt::Display> fmt::Display for SecondaryInsertError<T, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Refused(_) => f.write_str(
+                "the slot holds a value from a different generation, and the replace strategy kept it",
+            ),
+            Self::StorageFull(_, error) => {
+                write!(f, "the storage cannot make room for the slot: {error}")
+            }
+        }
+    }
+}
+
 /// Why [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key)
 /// could not insert. The map can be full before the closure runs, or the
 /// closure can refuse to make a value, and this tells the two apart. `E` is
@@ -185,12 +232,13 @@ impl<E: fmt::Display, S: fmt::Display> fmt::Display for InsertWithError<E, S> {
     }
 }
 
-/// Why [`GenMap::get_disjoint_mut`](crate::GenMap::get_disjoint_mut) could
-/// not hand out its references.
+/// Why [`GenMap::get_disjoint_mut`](crate::GenMap::get_disjoint_mut) or
+/// [`SecondaryMap::get_disjoint_mut`](crate::SecondaryMap::get_disjoint_mut)
+/// could not hand out its references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutError {
-    /// The map has no value for one of the keys, meaning
-    /// [`contains_key`](crate::GenMap::contains_key) returns `false` for it.
+    /// The map has no value for one of the keys, meaning the map's
+    /// `contains_key` returns `false` for it.
     InvalidKey,
 
     /// Two or more of the keys point at the same slot, so the references would
@@ -207,12 +255,13 @@ impl fmt::Display for GetDisjointMutError {
     }
 }
 
-/// Why [`GenMap::get_disjoint_mut_at`](crate::GenMap::get_disjoint_mut_at)
+/// Why [`GenMap::get_disjoint_mut_at`](crate::GenMap::get_disjoint_mut_at) or
+/// [`SecondaryMap::get_disjoint_mut_at`](crate::SecondaryMap::get_disjoint_mut_at)
 /// could not hand out its references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutAtError {
     /// There is no slot at one of the indices, or the slot holds no value,
-    /// meaning [`key_at`](crate::GenMap::key_at) returns `None` for it.
+    /// meaning the map's `key_at` returns `None` for it.
     NoValue,
 
     /// Two of the indices are the same, so the references would alias.

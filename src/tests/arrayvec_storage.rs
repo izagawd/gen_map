@@ -1,10 +1,11 @@
 //! Maps whose slots live in an `ArrayVec`, which has a fixed capacity and
 //! never allocates. The randomized model test covers them too.
 
-use super::{Bomb, DropTracker};
+use super::{key_from_parts, Bomb, DropTracker};
 use crate::{
     FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeyConfig,
-    MapConfig, Packed, Split,
+    MapConfig, NewerWinsWrapping, Packed, SecondaryInsertError, SecondaryMap, SecondaryMapConfig,
+    SecondarySlotItem, Split,
 };
 use arrayvec::ArrayVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -24,6 +25,11 @@ impl<T> MapConfig<T> for Four {
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Four {
+    type Storage = ArrayVec<S, 4>;
+}
+
+impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Four {
+    type ReplaceStrategy = NewerWinsWrapping;
     type Storage = ArrayVec<S, 4>;
 }
 
@@ -190,4 +196,50 @@ fn an_array_vec_drops_every_value_once_when_a_drop_panics() {
     drop(iter.next());
     assert!(catch_unwind(AssertUnwindSafe(move || drop(iter))).is_err());
     tracker.assert_all_dropped_exactly_once(4);
+}
+
+#[test]
+fn a_secondary_map_in_an_array_vec_holds_the_first_four_indices() {
+    // The map is made in a `const`, which works because an `ArrayVec` needs
+    // no allocation.
+    const EMPTY: SecondaryMap<u32, Four> = SecondaryMap::new_with_config();
+
+    let mut map = EMPTY;
+    for i in 0..4 {
+        let key = key_from_parts::<Four>(i, 1);
+        assert_eq!(map.insert(key, u32::from(i)).unwrap(), None);
+    }
+    assert_eq!(map.slots_len(), 4);
+
+    // The fifth index does not fit, and the map stays as it was.
+    let fifth = key_from_parts::<Four>(4, 1);
+    assert!(matches!(
+        map.insert(fifth, 4),
+        Err(SecondaryInsertError::StorageFull(4, _))
+    ));
+    assert_eq!(map.len(), 4);
+    assert_eq!(map.slots_len(), 4);
+
+    let pairs: Vec<(u8, u32)> = map
+        .into_iter()
+        .map(|(key, value)| (key.idx(), value))
+        .collect();
+    assert_eq!(pairs, [(0, 0), (1, 1), (2, 2), (3, 3)]);
+}
+
+#[test]
+fn a_secondary_map_in_an_array_vec_adds_no_slots_for_an_index_that_does_not_fit() {
+    let mut map = SecondaryMap::<u32, Four>::new_with_config();
+    let far = key_from_parts::<Four>(200, 1);
+    assert!(matches!(
+        map.insert(far, 1),
+        Err(SecondaryInsertError::StorageFull(1, _))
+    ));
+    assert_eq!(map.slots_len(), 0);
+
+    // The storage still has room for all four slots.
+    let last = key_from_parts::<Four>(3, 1);
+    assert_eq!(map.insert(last, 3).unwrap(), None);
+    assert_eq!(map.slots_len(), 4);
+    assert_eq!(map[last], 3);
 }

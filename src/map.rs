@@ -9,7 +9,7 @@ use crate::key_layout::KeyLayout;
 use crate::key_piece::KeyPiece;
 use crate::parity::{Even, Odd};
 use crate::slot::{Parity, Slot};
-use crate::storage::{GenSlotStorage, ReserveStorage};
+use crate::storage::{ReserveStorage, SlotStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -112,8 +112,7 @@ fn next_generation<T, C: MapConfig<T>>(generation: Odd<Gen<T, C>>) -> Option<Eve
 /// The error the storage of a `GenMap<T, C>` gives when it cannot make room
 /// for another slot. It is `TryReserveError` for a `Vec`, `CapacityError` for
 /// an `ArrayVec` and `CollectionAllocErr` for a `SmallVec`.
-pub type StorageError<T, C> =
-    <<C as GenMapConfig<MapSlot<T, C>>>::Storage as GenSlotStorage>::Error;
+pub type StorageError<T, C> = <<C as GenMapConfig<MapSlot<T, C>>>::Storage as SlotStorage>::Error;
 
 /// Where the next inserted value will go, worked out before anything is
 /// written.
@@ -893,7 +892,7 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
                 let idx = Idx::<T, C>::from_usize(position)
                     .filter(|idx| *idx <= max_idx::<T, C>())
                     .ok_or(FullError::IndexExhausted)?;
-                self.slots.ensure_room().map_err(FullError::StorageFull)?;
+                self.slots.ensure_room(1).map_err(FullError::StorageFull)?;
                 (idx, position, Even::ZERO, false)
             }
         };
@@ -928,11 +927,11 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
             self.next_free = unsafe { slot.replace_even_unchecked(target.generation, value) };
         } else {
             let slot = Slot::new_odd(target.generation, value);
-            // `next_target` made room for this slot, and `GenSlotStorage`
+            // `next_target` made room for this slot, and `SlotStorage`
             // promises `try_push` succeeds then, so a refusal is a broken
             // storage. The slot is dropped with its value in that case.
             if self.slots.try_push(slot).is_err() {
-                panic!("GenSlotStorage::try_push failed although ensure_room returned Ok");
+                panic!("SlotStorage::try_push failed although ensure_room returned Ok");
             }
         }
         self.len += 1;
@@ -1259,12 +1258,12 @@ impl<T: fmt::Debug, C: MapConfigFor<T>> fmt::Debug for GenMap<T, C> {
 
 /// Pushes `slot` onto a storage that is being filled with clones of another
 /// storage of the same type. The storage being cloned already holds every
-/// slot pushed here, so a refusal breaks the [`GenSlotStorage`] contract, and
+/// slot pushed here, so a refusal breaks the [`SlotStorage`] contract, and
 /// this panics.
 /// The slot is dropped with its value in that case.
 fn push_cloned<T, C: MapConfigFor<T>>(slots: &mut Slots<T, C>, slot: MapSlot<T, C>) {
     if slots.try_push(slot).is_err() {
-        panic!("GenSlotStorage::try_push failed while cloning a storage of the same type");
+        panic!("SlotStorage::try_push failed while cloning a storage of the same type");
     }
 }
 
@@ -1275,7 +1274,7 @@ struct ClearOnUnwind<'a, T, C: MapConfigFor<T>>(&'a mut Slots<T, C>);
 
 impl<T, C: MapConfigFor<T>> Drop for ClearOnUnwind<'_, T, C> {
     fn drop(&mut self) {
-        GenSlotStorage::clear(self.0);
+        SlotStorage::clear(self.0);
     }
 }
 
@@ -1301,7 +1300,7 @@ impl<T: Clone, C: MapConfigFor<T>> Clone for GenMap<T, C> {
         self.next_free = None;
         self.len = 0;
         let guard: ClearOnUnwind<'_, T, C> = ClearOnUnwind(&mut self.slots);
-        GenSlotStorage::clear(guard.0);
+        SlotStorage::clear(guard.0);
         // An allocation that is too small would grow several times while the
         // slots are pushed, so it is swapped for one of the right size.
         if guard.0.capacity() < source.slots.len() {

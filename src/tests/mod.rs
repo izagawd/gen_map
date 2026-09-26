@@ -24,6 +24,7 @@ mod parity;
 mod reset;
 mod retain;
 mod retire;
+mod secondary;
 mod slot;
 #[cfg(feature = "smallvec")]
 mod smallvec_storage;

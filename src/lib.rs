@@ -10,9 +10,9 @@
 //! [`reattach`](GenMap::reattach), which puts a value back under the key it
 //! was detached from. All three are described below.
 //!
-//! Inserting, removing and looking up a value are all O(1). The crate is
-//! `no_std`, and [Cargo features](#cargo-features) says when it needs an
-//! allocator.
+//! Inserting, removing and looking up a value are all O(1). The crate never
+//! uses `std`, and [Cargo features](#cargo-features) has information on
+//! which features need an allocator.
 //!
 //! # Examples
 //!
@@ -89,7 +89,7 @@
 //!   happens to a slot whose generation runs out.
 //! - [`Storage`](GenMapConfig::Storage) is the collection the map keeps its
 //!   slots in. `type Storage = Vec<S>;` keeps them in a `Vec`. The type must
-//!   implement [`GenSlotStorage`]. `Vec` implements it when the `alloc`
+//!   implement [`SlotStorage`]. `Vec` implements it when the `alloc`
 //!   feature is on, which it is by default, `arrayvec::ArrayVec` when the
 //!   `arrayvec` feature is on, and `smallvec::SmallVec` when the `smallvec`
 //!   feature is on.
@@ -101,8 +101,8 @@
 //! value in, and [`GenSlotItem::Value`] is the type of that value. Either
 //! impl can put bounds on the value, and the [`GenMapConfig`] impl can put
 //! bounds on the slot, to limit which maps can use the config.
-//! [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) shows how,
-//! with examples.
+//! [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) has three
+//! examples of these bounds.
 //!
 //! [`DefaultMapConfig`] is the config a [`GenMap`] uses when none is named.
 //! Its keys use the [`DefaultKeyConfig`], so they are a `u32` index and a
@@ -169,11 +169,11 @@
 //!
 //! ## Storage
 //!
-//! The slots can live in any collection that implements [`GenSlotStorage`]. A
+//! The slots can live in any collection that implements [`SlotStorage`]. A
 //! `Vec` does, and so do two collections from other crates when their
 //! features are on. `ArrayVec` from `arrayvec` has a fixed capacity and
 //! never allocates, and `SmallVec` from `smallvec` keeps a few slots inline
-//! before it allocates. [`GenSlotStorage`] is an unsafe trait, because the map
+//! before it allocates. [`SlotStorage`] is an unsafe trait, because the map
 //! relies on the storage behaving like a `Vec` when it reads slots without
 //! bounds checks.
 //!
@@ -293,26 +293,66 @@
 //!
 //! # Unchecked access
 //!
-//! Every lookup has an `_unchecked` form, such as
-//! [`get_unchecked`](GenMap::get_unchecked), that skips the checks the
-//! normal form makes, for code that already knows they would pass. Calling
-//! one when a check would fail is undefined behavior.
+//! Every lookup on a `GenMap` or a `SecondaryMap` has an `_unchecked` form,
+//! such as [`get_unchecked`](GenMap::get_unchecked), that skips the checks
+//! the normal form makes, for code that already knows they would pass.
+//! Calling one when a check would fail is undefined behavior.
+//!
+//! # Secondary maps
+//!
+//! A [`SecondaryMap`] stores values under the keys a [`GenMap`] hands out,
+//! to add data to the values of a `GenMap` without changing their type. Its
+//! config must have the same [`KeyConfig`] as the `GenMap`'s config, so
+//! that both maps use the same key type.
+//!
+//! ```
+//! use gen_map::{GenMap, SecondaryMap};
+//!
+//! let mut names = GenMap::new();
+//! let mut ages = SecondaryMap::new();
+//! let alice = names.insert("Alice");
+//! ages.insert(alice, 30).unwrap();
+//! assert_eq!(ages[alice], 30);
+//! ```
+//!
+//! Removing a value from the `GenMap` does not remove it from the
+//! `SecondaryMap`. When the `GenMap` gives the slot to a new value, an
+//! insert under the new key finds the old value in the `SecondaryMap`, and
+//! the config's [`ReplaceStrategy`](SecondaryMapConfig::ReplaceStrategy)
+//! decides whether to replace it.
+//!
+//! - [`NewerWinsWrapping`] replaces it when the key's generation is newer,
+//!   counting past the largest generation back to zero. It is the
+//!   `ReplaceStrategy` of [`DefaultMapConfig`].
+//! - [`NewerWins`] replaces it when the key's generation is larger.
+//! - [`ExistingWins`] never replaces it.
+//!
+//! Any other type that implements [`ReplaceStrategy`] can be used instead.
+//!
+//! A `SecondaryMap` keeps a slot at every index up to the largest one
+//! inserted. The config's [`Storage`](SecondaryMapConfig::Storage) is the
+//! collection the slots live in. Like a `GenMap`'s storage, it can be any
+//! [`SlotStorage`], so `Vec`, `ArrayVec` and `SmallVec` all work.
+//! [`SecondaryMapConfig`] has an example of a config.
 //!
 //! # Cargo features
 //!
 //! - `alloc` is on by default. It adds the `Vec` storage,
-//!   [`DefaultMapConfig`] and [`GenMap::new`], and makes
-//!   [`DefaultMapConfig`] the config that [`GenMap`] uses when none is named.
-//!   Without it, every map needs a config that names its storage, and the
-//!   crate needs no allocator unless the `smallvec` feature is on, since a
-//!   `SmallVec` allocates.
-//! - `arrayvec` lets a config use `arrayvec::ArrayVec` as its storage.
-//! - `smallvec` lets a config use `smallvec::SmallVec` as its storage. It
+//!   [`DefaultMapConfig`], [`GenMap::new`] and [`SecondaryMap::new`], and
+//!   makes [`DefaultMapConfig`] the config of a `GenMap<T>` and a
+//!   `SecondaryMap<T>`. Without it, there is no default config, so every map
+//!   needs a config of its own, and the crate needs no allocator unless the
+//!   `smallvec` feature is on, since a `SmallVec` allocates.
+//! - `arrayvec` lets a [`GenMapConfig`] or a [`SecondaryMapConfig`] use
+//!   `arrayvec::ArrayVec` as its storage.
+//! - `smallvec` lets a [`GenMapConfig`] or a [`SecondaryMapConfig`] use
+//!   `smallvec::SmallVec` as its storage. It
 //!   uses the 2.0 beta of `smallvec`, which needs an allocator and Rust 1.86.
 //!   Until smallvec 2.0 is released, a newer smallvec beta or a new release
 //!   of `gen_map` may break this feature, so it is not covered by semver.
 //!
-//! To use the map without any allocator, turn `alloc` off and `arrayvec` on.
+//! To use the crate without any allocator, turn default features off and
+//! `arrayvec` on.
 //!
 //! ```toml
 //! [dependencies]
@@ -345,7 +385,8 @@ mod key_layout;
 mod key_piece;
 mod map;
 mod parity;
-mod secondary_storage;
+mod replace_strategy;
+mod secondary_map;
 mod slot;
 mod storage;
 
@@ -354,9 +395,11 @@ mod storage;
 pub use config::DefaultMapConfig;
 pub use config::{
     DefaultKeyConfig, GenMapConfig, KeyConfig, MapConfig, MapConfigFor, SecondaryMapConfig,
+    SecondaryMapConfigFor,
 };
 pub use error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
+    SecondaryInsertError,
 };
 pub use key::Key;
 pub use key_layout::{KeyLayout, Packed, PackedRepr, Split, SplitRepr};
@@ -366,9 +409,13 @@ pub use map::{
     StorageError, VacantEntry, Values, ValuesMut,
 };
 pub use parity::{Even, Odd};
-pub use secondary_storage::SecondarySlotStorage;
-pub use slot::{GenSlotItem, Parity, SecondarySlotItem, Slot};
-pub use storage::{GenSlotStorage, ReserveStorage};
+pub use replace_strategy::{ExistingWins, NewerWins, NewerWinsWrapping, ReplaceStrategy};
+pub use secondary_map::{
+    SecondaryDrain, SecondaryIntoIter, SecondaryIter, SecondaryIterMut, SecondaryKeys,
+    SecondaryMap, SecondaryMapSlot, SecondaryStorageError, SecondaryValues, SecondaryValuesMut,
+};
+pub use slot::{GenSlotItem, Parity, SecondarySlot, SecondarySlotItem, Slot};
+pub use storage::{ReserveStorage, SlotStorage};
 
 // The tests use `Vec` storage and the default config, so they need `alloc`.
 #[cfg(all(test, feature = "alloc"))]

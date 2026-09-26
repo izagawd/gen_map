@@ -12,6 +12,9 @@ use core::marker::PhantomData;
 /// [`generation`](Self::generation) must return exactly what
 /// [`pack_unchecked`](Self::pack_unchecked) was given, and two `Repr`
 /// values must be equal only if they were packed from the same parts.
+/// [`max_idx`](Self::max_idx) and [`max_generation`](Self::max_generation)
+/// must return the same value every time, because the maps pack parts again
+/// long after they first checked them against those limits.
 ///
 /// `generation` is safe to call and returns an [`Odd`], and
 /// [`Key::from_repr`](crate::Key::from_repr) accepts any `Repr`, so safe code

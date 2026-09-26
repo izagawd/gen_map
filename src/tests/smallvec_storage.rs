@@ -2,8 +2,11 @@
 //! moves them to the heap once there are more. The randomized model test
 //! covers them too.
 
-use super::{Bomb, DropTracker};
-use crate::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
+use super::{key_from_parts, Bomb, DropTracker};
+use crate::{
+    GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, NewerWinsWrapping, SecondaryMap,
+    SecondaryMapConfig, SecondarySlotItem, Split,
+};
 use smallvec::SmallVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -22,6 +25,11 @@ impl<T> MapConfig<T> for Four {
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Four {
+    type Storage = SmallVec<S, 4>;
+}
+
+impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Four {
+    type ReplaceStrategy = NewerWinsWrapping;
     type Storage = SmallVec<S, 4>;
 }
 
@@ -128,4 +136,23 @@ fn a_small_vec_iterator_drops_every_value_once_when_a_drop_panics() {
         assert!(catch_unwind(AssertUnwindSafe(move || drop(iter))).is_err());
         tracker.assert_all_dropped_exactly_once(count);
     }
+}
+
+#[test]
+fn a_secondary_map_in_a_small_vec_keeps_working_after_it_moves_to_the_heap() {
+    let mut map = SecondaryMap::<u32, Four>::new_with_config();
+    // The keys use every third index, so the map holds empty slots between
+    // them.
+    let keys: Vec<_> = (0..20).map(|i| key_from_parts::<Four>(i * 3, 1)).collect();
+    for (i, &key) in keys.iter().enumerate() {
+        assert_eq!(map.insert(key, i as u32).unwrap(), None);
+    }
+    assert_eq!(map.slots_len(), 58);
+    for (i, &key) in keys.iter().enumerate() {
+        assert_eq!(map[key], i as u32);
+    }
+    assert_eq!(map.remove(keys[7]), Some(7));
+    let values: Vec<u32> = map.into_iter().map(|(_, value)| value).collect();
+    assert_eq!(values.len(), 19);
+    assert!(!values.contains(&7));
 }
