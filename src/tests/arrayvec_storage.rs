@@ -3,7 +3,8 @@
 
 use super::{Bomb, DropTracker};
 use crate::{
-    FullError, GenMap, InsertError, InsertWithError, KeyConfig, MapConfig, Packed, SlotItem, Split,
+    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeyConfig,
+    MapConfig, Packed, Split,
 };
 use arrayvec::ArrayVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -18,8 +19,11 @@ impl KeyConfig for Four {
     type Layout = Split;
 }
 
-impl<S: SlotItem> MapConfig<S> for Four {
+impl<T> MapConfig<T> for Four {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Four {
     type Storage = ArrayVec<S, 4>;
 }
 
@@ -33,8 +37,11 @@ impl KeyConfig for Sixteen {
     type Layout = Packed<u8, 4>;
 }
 
-impl<S: SlotItem> MapConfig<S> for Sixteen {
+impl<T> MapConfig<T> for Sixteen {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Sixteen {
     type Storage = ArrayVec<S, 16>;
 }
 

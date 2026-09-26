@@ -2,8 +2,8 @@
 //! map works with such a storage and reports the storage's own error type.
 
 use crate::{
-    FullError, GenMap, InsertError, InsertWithError, KeyConfig, MapConfig, SlotItem, SlotStorage,
-    Split, StorageError,
+    FullError, GenMap, GenMapConfig, GenSlotItem, GenSlotStorage, InsertError, InsertWithError,
+    KeyConfig, MapConfig, Split, StorageError,
 };
 use std::vec::Vec;
 
@@ -26,7 +26,7 @@ impl<S> IntoIterator for Capped<S> {
 
 // SAFETY: this is a `Vec` that refuses pushes past `CAP`, which is the
 // behaviour the trait describes.
-unsafe impl<S> SlotStorage for Capped<S> {
+unsafe impl<S> GenSlotStorage for Capped<S> {
     type Item = S;
     type Error = CapReached;
 
@@ -78,8 +78,11 @@ impl KeyConfig for Four {
     type Layout = Split;
 }
 
-impl<S: SlotItem> MapConfig<S> for Four {
+impl<T> MapConfig<T> for Four {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Four {
     type Storage = Capped<S>;
 }
 

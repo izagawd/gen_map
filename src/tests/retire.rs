@@ -2,7 +2,7 @@
 //! covers it too.
 
 use super::DropTracker;
-use crate::{GenMap, InsertError, KeyConfig, MapConfig, Packed, SlotItem};
+use crate::{GenMap, GenMapConfig, GenSlotItem, InsertError, KeyConfig, MapConfig, Packed};
 use std::vec::Vec;
 
 /// Sixteen slots whose generations wrap after eight values, so every slot is
@@ -15,10 +15,13 @@ impl KeyConfig for Wrapping {
     type Layout = Packed<u8, 4>;
 }
 
-impl<S: SlotItem> MapConfig<S> for Wrapping {
+impl<T> MapConfig<T> for Wrapping {
     type KeyConfig = Self;
-    type Storage = Vec<S>;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Wrapping {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Storage = Vec<S>;
 }
 
 #[test]

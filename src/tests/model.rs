@@ -5,9 +5,9 @@
 
 use crate::map::{Gen, Idx, Layout};
 use crate::{
-    DefaultMapConfig, GenMap, GetDisjointMutAtError, GetDisjointMutError, InsertError,
-    InsertWithError, Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, MapConfigFor, MapKeyConfig,
-    MapSlot, Odd, Packed, SlotItem,
+    DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
+    GetDisjointMutError, InsertError, InsertWithError, Key, KeyConfig, KeyLayout, KeyPiece,
+    MapConfig, MapConfigFor, MapKeyConfig, MapSlot, Odd, Packed,
 };
 use std::vec::Vec;
 
@@ -21,8 +21,11 @@ impl KeyConfig for Retiring {
     type Layout = Packed<u16, 4>;
 }
 
-impl<S: SlotItem> MapConfig<S> for Retiring {
+impl<T> MapConfig<T> for Retiring {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Retiring {
     type Storage = Vec<S>;
 }
 
@@ -36,8 +39,11 @@ impl KeyConfig for Small {
     type Layout = Packed<u8, 4>;
 }
 
-impl<S: SlotItem> MapConfig<S> for Small {
+impl<T> MapConfig<T> for Small {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Small {
     type Storage = Vec<S>;
 }
 
@@ -50,10 +56,13 @@ impl KeyConfig for SmallWrap {
     type Layout = Packed<u8, 4>;
 }
 
-impl<S: SlotItem> MapConfig<S> for SmallWrap {
+impl<T> MapConfig<T> for SmallWrap {
     type KeyConfig = Self;
-    type Storage = Vec<S>;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for SmallWrap {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Storage = Vec<S>;
 }
 
 /// The same keys as [`Small`], but with the slots in an `ArrayVec` of
@@ -69,8 +78,12 @@ impl KeyConfig for InlineRetiring {
 }
 
 #[cfg(feature = "arrayvec")]
-impl<S: SlotItem> MapConfig<S> for InlineRetiring {
+impl<T> MapConfig<T> for InlineRetiring {
     type KeyConfig = Self;
+}
+
+#[cfg(feature = "arrayvec")]
+impl<S: GenSlotItem> GenMapConfig<S> for InlineRetiring {
     type Storage = arrayvec::ArrayVec<S, 12>;
 }
 
@@ -87,10 +100,14 @@ impl KeyConfig for InlineWrap {
 }
 
 #[cfg(feature = "arrayvec")]
-impl<S: SlotItem> MapConfig<S> for InlineWrap {
+impl<T> MapConfig<T> for InlineWrap {
     type KeyConfig = Self;
-    type Storage = arrayvec::ArrayVec<S, 16>;
+}
+
+#[cfg(feature = "arrayvec")]
+impl<S: GenSlotItem> GenMapConfig<S> for InlineWrap {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Storage = arrayvec::ArrayVec<S, 16>;
 }
 
 /// The same keys as [`Retiring`], but with the slots in a `SmallVec` that
@@ -107,8 +124,12 @@ impl KeyConfig for Spilling {
 }
 
 #[cfg(feature = "smallvec")]
-impl<S: SlotItem> MapConfig<S> for Spilling {
+impl<T> MapConfig<T> for Spilling {
     type KeyConfig = Self;
+}
+
+#[cfg(feature = "smallvec")]
+impl<S: GenSlotItem> GenMapConfig<S> for Spilling {
     type Storage = smallvec::SmallVec<S, 4>;
 }
 
@@ -313,7 +334,7 @@ fn insert<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, 
             assert_eq!(Some(key), promised);
             assert!(model.live.iter().all(|(live, _)| *live != key));
             assert!(!model.detached.contains(&key));
-            if <C as MapConfig<MapSlot<u32, C>>>::WRAP_ON_OVERFLOW {
+            if <C as GenMapConfig<MapSlot<u32, C>>>::WRAP_ON_OVERFLOW {
                 model.dead.retain(|dead| *dead != key);
             } else {
                 assert!(!model.dead.contains(&key));
@@ -343,7 +364,7 @@ fn insert<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, 
 /// Checks that every slot holds a value, is detached or is retired, so none
 /// of them can take a new value.
 fn assert_no_slot_is_free<C: MapConfigFor<u32>>(map: &GenMap<u32, C>, model: &Model<C>) {
-    let retired = if <C as MapConfig<MapSlot<u32, C>>>::WRAP_ON_OVERFLOW {
+    let retired = if <C as GenMapConfig<MapSlot<u32, C>>>::WRAP_ON_OVERFLOW {
         model.retired
     } else {
         (0..map.slots_len())

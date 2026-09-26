@@ -33,7 +33,9 @@ mod unchecked;
 mod vacant_entry;
 mod zero_sized;
 
-use crate::{Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, Odd, SlotItem, Split};
+use crate::{
+    GenMapConfig, GenSlotItem, Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, Odd, Split,
+};
 use core::marker::PhantomData;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -51,8 +53,11 @@ impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Cfg<Idx, Gen> {
     type Layout = Split;
 }
 
-impl<Idx: KeyPiece, Gen: KeyPiece, S: SlotItem> MapConfig<S> for Cfg<Idx, Gen> {
+impl<Idx: KeyPiece, Gen: KeyPiece, T> MapConfig<T> for Cfg<Idx, Gen> {
     type KeyConfig = Self;
+}
+
+impl<Idx: KeyPiece, Gen: KeyPiece, S: GenSlotItem> GenMapConfig<S> for Cfg<Idx, Gen> {
     type Storage = Vec<S>;
 }
 

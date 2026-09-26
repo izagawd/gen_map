@@ -1,12 +1,12 @@
-//! Checks each built-in storage against what `SlotStorage` promises,
+//! Checks each built-in storage against what `GenSlotStorage` promises,
 //! without a map, so the methods a map seldom calls are covered too.
 
 use super::{DropItem, DropTracker};
-use crate::{ReserveStorage, SlotStorage};
+use crate::{GenSlotStorage, ReserveStorage};
 use std::vec::Vec;
 
 /// The ids of the items in `storage`, in order.
-fn ids<St: SlotStorage<Item = DropItem>>(storage: &St) -> Vec<u32> {
+fn ids<St: GenSlotStorage<Item = DropItem>>(storage: &St) -> Vec<u32> {
     storage.as_slice().iter().map(|item| item.id).collect()
 }
 
@@ -14,7 +14,7 @@ fn ids<St: SlotStorage<Item = DropItem>>(storage: &St) -> Vec<u32> {
 /// drops every one of them exactly once. `count` must fit the storage.
 fn check_storage<St>(count: u32)
 where
-    St: SlotStorage<Item = DropItem> + IntoIterator<Item = DropItem>,
+    St: GenSlotStorage<Item = DropItem> + IntoIterator<Item = DropItem>,
     St::IntoIter: DoubleEndedIterator,
 {
     let tracker = DropTracker::new();
@@ -81,11 +81,11 @@ fn a_full_array_vec_hands_the_item_back() {
     for _ in 0..2 {
         assert!(storage.try_push(tracker.make_item()).is_ok());
     }
-    assert_eq!(SlotStorage::capacity(&storage), 2);
+    assert_eq!(GenSlotStorage::capacity(&storage), 2);
     assert!(storage.ensure_room().is_err());
 
     let item = tracker.make_item();
-    let back = SlotStorage::try_push(&mut storage, item).unwrap_err();
+    let back = GenSlotStorage::try_push(&mut storage, item).unwrap_err();
     assert_eq!(back.id, 2);
     tracker.assert_none_dropped();
     drop(back);

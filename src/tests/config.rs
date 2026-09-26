@@ -1,7 +1,9 @@
 //! Configs that put bounds on the slots they support, through the value
 //! type the slots hold.
 
-use crate::{DefaultKeyConfig, GenMap, Key, KeyConfig, MapConfig, SlotItem, Split};
+use crate::{
+    DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, Key, KeyConfig, MapConfig, Split,
+};
 use std::vec::Vec;
 
 /// A trait only these tests implement.
@@ -15,11 +17,14 @@ impl Component for Position {}
 /// Only supports values that implement `Component`.
 struct Components;
 
-impl<S: SlotItem> MapConfig<S> for Components
+impl<T: Component> MapConfig<T> for Components {
+    type KeyConfig = DefaultKeyConfig;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Components
 where
     S::Value: Component,
 {
-    type KeyConfig = DefaultKeyConfig;
     type Storage = Vec<S>;
 }
 
@@ -33,8 +38,11 @@ fn a_config_can_bound_the_value_by_any_trait() {
 /// Only supports `u32` values.
 struct OnlyU32;
 
-impl<S: SlotItem<Value = u32>> MapConfig<S> for OnlyU32 {
+impl MapConfig<u32> for OnlyU32 {
     type KeyConfig = DefaultKeyConfig;
+}
+
+impl<S: GenSlotItem<Value = u32>> GenMapConfig<S> for OnlyU32 {
     type Storage = Vec<S>;
 }
 
@@ -74,11 +82,14 @@ impl KeysFor for u64 {
 /// Takes its key config from the value type.
 struct PerValue;
 
-impl<S: SlotItem> MapConfig<S> for PerValue
+impl<T: KeysFor> MapConfig<T> for PerValue {
+    type KeyConfig = T::Keys;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for PerValue
 where
     S::Value: KeysFor,
 {
-    type KeyConfig = <S::Value as KeysFor>::Keys;
     type Storage = Vec<S>;
 }
 
