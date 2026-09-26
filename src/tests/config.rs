@@ -17,7 +17,7 @@ struct Components;
 
 impl<S: SlotItem> MapConfig<S> for Components
 where
-    S::Item: Component,
+    S::Value: Component,
 {
     type KeyConfig = DefaultKeyConfig;
     type Storage = Vec<S>;
@@ -33,7 +33,7 @@ fn a_config_can_bound_the_value_by_any_trait() {
 /// Only supports `u32` values.
 struct OnlyU32;
 
-impl<S: SlotItem<Item = u32>> MapConfig<S> for OnlyU32 {
+impl<S: SlotItem<Value = u32>> MapConfig<S> for OnlyU32 {
     type KeyConfig = DefaultKeyConfig;
     type Storage = Vec<S>;
 }
@@ -76,9 +76,9 @@ struct PerValue;
 
 impl<S: SlotItem> MapConfig<S> for PerValue
 where
-    S::Item: KeysFor,
+    S::Value: KeysFor,
 {
-    type KeyConfig = <S::Item as KeysFor>::Keys;
+    type KeyConfig = <S::Value as KeysFor>::Keys;
     type Storage = Vec<S>;
 }
 

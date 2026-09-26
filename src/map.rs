@@ -14,8 +14,7 @@ use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
 
-/// The key config of a [`GenMap<T, C>`](GenMap). The map reads it from
-/// `C`'s impl for `Slot<u8, T, ()>`, as [`MapConfigFor`] explains.
+/// The key config of a [`GenMap<T, C>`](GenMap), the one `C` refers to.
 pub type MapKeyConfig<T, C> = <C as MapConfig<KeyConfigSlot<T>>>::KeyConfig;
 
 /// The index type of the keys a [`GenMap<T, C>`](GenMap) hands out.
@@ -196,7 +195,14 @@ impl<T, C: MapConfigFor<T>> fmt::Debug for VacantEntry<'_, T, C> {
     }
 }
 
-/// A generational map configured by `C`.
+/// A generational map that holds values of type `T` and is configured by
+/// `C`.
+///
+/// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`]. To use
+/// your own config, implement [`MapConfig`] for it, usually as
+/// `impl<S: SlotItem> MapConfig<S> for YourConfig`. The bound on `C`,
+/// [`MapConfigFor<T>`](MapConfigFor), is implemented automatically for every
+/// such config, so you never implement it yourself.
 ///
 /// See the [crate documentation](crate) for examples.
 pub struct GenMap<
@@ -803,8 +809,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
 
     /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail and
     /// a full map is an error rather than a panic. On either error nothing
-    /// is inserted, and the key `f` was given matches nothing until a later
-    /// insert hands it out again.
+    /// is inserted. The key `f` was given does not match anything, but the
+    /// next insert can hand out that same key for a different value.
     ///
     /// # Errors
     ///

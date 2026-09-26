@@ -108,8 +108,10 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 ///
 /// `GEN_BITS` must be at least one and less than the bits of `R`, `Gen` must
 /// have at least `GEN_BITS` bits, and `Idx` must have at least the bits that
-/// are left for the index. A key config that breaks one of these does not
-/// compile.
+/// are left for the index. A key config that breaks one of these fails to
+/// compile, but only in `cargo build` or `cargo test`, and only if a map
+/// uses it. `cargo check` and some editors such as rust-analyzer may not report
+/// it.
 ///
 /// The largest index is `(1 << (R::BITS - GEN_BITS)) - 1` and the largest
 /// generation is `(1 << GEN_BITS) - 1`, no matter how wide `Idx` and `Gen`
@@ -140,6 +142,8 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 /// assert_eq!(core::mem::size_of_val(&key), 4);
 /// assert_eq!(core::mem::size_of::<Option<Key<Compact>>>(), 4);
 /// assert_eq!(key.idx(), 0);
+/// // `generation` returns an `Odd<u8>`. Its `get` returns a `NonZero<u8>`,
+/// // and that type's `get` returns the `u8`.
 /// assert_eq!(key.generation().get().get(), 1);
 /// ```
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]

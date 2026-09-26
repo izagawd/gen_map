@@ -11,9 +11,8 @@
 //! was detached from. All three are described below.
 //!
 //! Inserting, removing and looking up a value are all O(1). The crate is
-//! `no_std`, and it only needs an allocator for storage that uses the heap,
-//! such as `Vec`. The `Vec` storage comes from the `alloc` feature, which is
-//! on by default and can be turned off. See [Cargo features](#cargo-features).
+//! `no_std`, and [Cargo features](#cargo-features) says when it needs an
+//! allocator.
 //!
 //! # Examples
 //!
@@ -74,7 +73,8 @@
 //!   `u128`, and `usize`.
 //! - [`Layout`](KeyConfig::Layout) is how a key stores the generation and
 //!   index. [`Split`] keeps them as two fields and [`Packed`] puts them in
-//!   the bits of one integer.
+//!   the bits of one integer. With either, `Option<Key>` is the same size as
+//!   `Key`.
 //!
 //! A [`MapConfig`] decides three things.
 //!
@@ -89,7 +89,7 @@
 //!   happens to a slot whose generation runs out.
 //!
 //! A [`MapConfig`] is implemented for slot types. A slot is what the map
-//! keeps each value in, and [`SlotItem::Item`] is the type of that value. A
+//! keeps each value in, and [`SlotItem::Value`] is the type of that value. A
 //! config is usually implemented for every slot type at once, with
 //! `impl<S: SlotItem> MapConfig<S>`, and it can put bounds on the value or
 //! on the slot to limit which maps can use it.
@@ -130,53 +130,8 @@
 //! assert_eq!(map[key], 7);
 //! ```
 //!
-//! [`GenMap::new`] only exists for the default config. Rust does not use a
-//! default type parameter when it infers types, so a `new` that took any
-//! config would need the config written out on every call. Any other config
-//! goes through [`GenMap::new_with_config`].
-//!
-//! ## Key layouts
-//!
-//! [`Split`] stores the index and the generation as two fields, so a key is
-//! as large as the two together, plus any padding their alignment needs.
-//! The index and the generation can each use every value of their type.
-//!
-//! [`Packed`] stores them in the bits of one integer instead. `Packed<R,
-//! GEN_BITS>` gives the low `GEN_BITS` bits of an `R` to the generation and
-//! the bits above them to the index, so a key is as large as `R`, and the two
-//! parts can have any bit counts that add up to the bits of `R`. The key
-//! config's `Idx` and `Gen` only have to be wide enough for their parts, and
-//! a key config whose bit counts do not add up fails to compile.
-//!
-//! ```
-//! use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed, SlotItem};
-//!
-//! /// Four byte keys with 24 bits of index and 8 bits of generation.
-//! struct Compact;
-//!
-//! impl KeyConfig for Compact {
-//!     type Idx = u32;
-//!     type Gen = u8;
-//!     type Layout = Packed<u32, 8>;
-//! }
-//!
-//! impl<S: SlotItem> MapConfig<S> for Compact {
-//!     type KeyConfig = Self;
-//!     type Storage = Vec<S>;
-//! }
-//!
-//! let mut map = GenMap::<&str, Compact>::new_with_config();
-//! let key = map.insert("a");
-//! assert_eq!(core::mem::size_of::<Key<Compact>>(), 4);
-//! assert_eq!(map[key], "a");
-//! ```
-//!
-//! With either layout, `Option<Key>` is the same size as `Key`.
-//!
-//! A key can also be built by hand. [`KeyLayout::pack`] packs an index and
-//! an [`Odd`] generation into the layout's `Repr`, or returns `None` if
-//! either does not fit, and [`Key::from_repr`] turns the `Repr` into a key.
-//! [`Key::repr`] hands it back.
+//! [`GenMap::new`] only exists for the default config. Any other config goes
+//! through [`GenMap::new_with_config`].
 //!
 //! ## When a generation runs out
 //!
@@ -212,9 +167,7 @@
 //! bounds checks.
 //!
 //! The owning `into_iter` only exists when the storage also implements
-//! `IntoIterator`. It implements `DoubleEndedIterator` only when the
-//! storage's iterator implements both `DoubleEndedIterator` and
-//! `ExactSizeIterator`. `Vec`, `ArrayVec` and `SmallVec` meet all of these.
+//! `IntoIterator`, which `Vec`, `ArrayVec` and `SmallVec` do.
 //!
 //! The methods that make room ahead of time, which are
 //! [`reserve`](GenMap::reserve), [`try_reserve`](GenMap::try_reserve),
@@ -245,32 +198,6 @@
 //!
 //! When a `Vec` cannot allocate, these methods also return a
 //! [`StorageFull`](FullError::StorageFull) error instead of panicking.
-//!
-//! ```
-//! use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, SlotItem, Split};
-//!
-//! struct Tiny;
-//!
-//! impl KeyConfig for Tiny {
-//!     type Idx = u8;
-//!     type Gen = u8;
-//!     type Layout = Split;
-//! }
-//!
-//! impl<S: SlotItem> MapConfig<S> for Tiny {
-//!     type KeyConfig = Self;
-//!     type Storage = Vec<S>;
-//! }
-//!
-//! let mut map = GenMap::<u32, Tiny>::new_with_config();
-//! for i in 0..256 {
-//!     map.insert(i);
-//! }
-//! match map.try_insert(256) {
-//!     Err(InsertError::IndexExhausted(value)) => assert_eq!(value, 256),
-//!     _ => unreachable!(),
-//! }
-//! ```
 //!
 //! # Values that know their own key
 //!
@@ -322,18 +249,6 @@
 //! [`get_disjoint_mut_at`](GenMap::get_disjoint_mut_at) does the same with
 //! slot indices, and hands each key back with its value.
 //!
-//! ```
-//! use gen_map::GenMap;
-//!
-//! let mut map = GenMap::new();
-//! let a = map.insert(1);
-//! let b = map.insert(2);
-//!
-//! let [x, y] = map.get_disjoint_mut([a, b]).unwrap();
-//! core::mem::swap(x, y);
-//! assert_eq!((map[a], map[b]), (2, 1));
-//! ```
-//!
 //! # Looking a slot up by its index
 //!
 //! [`key_at`](GenMap::key_at) and [`get_at`](GenMap::get_at) find the value
@@ -348,8 +263,10 @@
 //! [`keys`](GenMap::keys), [`values`](GenMap::values),
 //! [`values_mut`](GenMap::values_mut) and the owning `into_iter` all know
 //! their exact length and can run from both ends, meaning they implement
-//! `DoubleEndedIterator`. `into_iter` only does when the storage's iterator
-//! implements both `DoubleEndedIterator` and `ExactSizeIterator`.
+//! `DoubleEndedIterator`. The exception is [`IntoIter`], the iterator
+//! `into_iter` returns, which only implements `DoubleEndedIterator` when the
+//! storage's iterator implements both `DoubleEndedIterator` and
+//! `ExactSizeIterator`.
 //!
 //! [`retain`](GenMap::retain), [`drain`](GenMap::drain) and
 //! [`clear`](GenMap::clear) remove values the same way
@@ -375,8 +292,9 @@
 //! - `alloc` is on by default. It adds the `Vec` storage,
 //!   [`DefaultMapConfig`] and [`GenMap::new`], and makes
 //!   [`DefaultMapConfig`] the config that [`GenMap`] uses when none is named.
-//!   Without it the crate needs no allocator, and every map needs a config
-//!   whose storage does not allocate, such as an `ArrayVec`.
+//!   Without it, every map needs a config that names its storage, and the
+//!   crate needs no allocator unless the `smallvec` feature is on, since a
+//!   `SmallVec` allocates.
 //! - `arrayvec` lets a config use `arrayvec::ArrayVec` as its storage.
 //! - `smallvec` lets a config use `smallvec::SmallVec` as its storage. It
 //!   uses the 2.0 beta of `smallvec`, which needs an allocator and Rust 1.86.

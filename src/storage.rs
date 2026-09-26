@@ -18,22 +18,26 @@ use core::fmt;
 /// The map reads slots without bounds checks at positions it has already
 /// checked against [`len`](Self::len), and it keeps a free list of positions
 /// that it expects to still be there. So a storage must behave like a `Vec`
-/// in these ways. [`as_slice`](Self::as_slice) and
-/// [`as_mut_slice`](Self::as_mut_slice) must return every item that has been
-/// pushed since the last [`clear`](Self::clear), in the order they were
-/// pushed, and must return the same items every time unless a `&mut self`
-/// method of this trait was called in between. If the storage implements
-/// `IntoIterator<Item = Self::Item>`, `into_iter` must yield those same
-/// items, in the same order. If that iterator also implements
-/// `DoubleEndedIterator` and `ExactSizeIterator`, `next_back` must yield
-/// the items starting from the last one, and `len` must be the number of
-/// items not yet yielded. [`try_push`](Self::try_push) must append
-/// at the end and leave the other items where they are, and once
-/// [`ensure_room`](Self::ensure_room) has returned `Ok`, the next `try_push`
-/// must succeed, as long as no other `&mut self` method of this trait runs
-/// in between. `clear` must drop every item and leave the storage empty.
-/// [`EMPTY`](Self::EMPTY) and [`with_capacity`](Self::with_capacity) must
-/// hold no items.
+/// in these ways:
+///
+/// - [`as_slice`](Self::as_slice) and [`as_mut_slice`](Self::as_mut_slice)
+///   must return every item pushed since the last [`clear`](Self::clear), in
+///   the order they were pushed.
+/// - They must return the same items every time, unless a `&mut self` method
+///   of this trait was called in between.
+/// - [`try_push`](Self::try_push) must append at the end and leave the other
+///   items where they are.
+/// - Once [`ensure_room`](Self::ensure_room) has returned `Ok`, the next
+///   `try_push` must succeed, as long as no other `&mut self` method of this
+///   trait runs in between.
+/// - `clear` must drop every item and leave the storage empty.
+/// - [`EMPTY`](Self::EMPTY) and [`with_capacity`](Self::with_capacity) must
+///   hold no items.
+/// - If the storage implements `IntoIterator<Item = Self::Item>`,
+///   `into_iter` must yield the same items as `as_slice`, in the same order.
+/// - If that iterator also implements `DoubleEndedIterator` and
+///   `ExactSizeIterator`, `next_back` must yield the items starting from the
+///   last one, and `len` must be the number of items not yet yielded.
 pub unsafe trait SlotStorage {
     /// The items the storage holds. A map's storage holds its
     /// [`MapSlot`](crate::MapSlot)s.
