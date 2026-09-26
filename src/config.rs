@@ -43,12 +43,12 @@ pub trait KeyConfig {
 /// slots live in, and what happens when a slot's generation runs out.
 ///
 /// `S` is the slot type, the [`Slot`] the map keeps each value in, and
-/// `S::Item` is the type of that value. A config is usually implemented for
+/// `S::Value` is the type of that value. A config is usually implemented for
 /// every slot type at once, with `impl<S: SlotItem> MapConfig<S> for
 /// YourConfig`, as in the example below. A `GenMap<T, C>` then uses the impl
 /// for its own slots, [`MapSlot<T, C>`](crate::MapSlot).
 ///
-/// The impl can put bounds on `S::Item` or on `S` to limit which maps can
+/// The impl can put bounds on `S::Value` or on `S` to limit which maps can
 /// use the config. [`SlotItem`](SlotItem#bounds-on-the-value-and-the-slot)
 /// shows how, with examples.
 ///
@@ -88,7 +88,7 @@ pub trait KeyConfig {
 /// ```
 pub trait MapConfig<S: SlotItem> {
     /// The config of the keys the map hands out. It can depend on the value
-    /// type, `S::Item`, but not on the rest of `S`. Maps whose configs name
+    /// type, `S::Value`, but not on the rest of `S`. Maps whose configs name
     /// the same key config share a key type.
     type KeyConfig: KeyConfig;
 

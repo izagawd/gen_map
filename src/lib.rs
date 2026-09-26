@@ -89,7 +89,7 @@
 //!   happens to a slot whose generation runs out.
 //!
 //! A [`MapConfig`] is implemented for slot types. A slot is what the map
-//! keeps each value in, and [`SlotItem::Item`] is the type of that value. A
+//! keeps each value in, and [`SlotItem::Value`] is the type of that value. A
 //! config is usually implemented for every slot type at once, with
 //! `impl<S: SlotItem> MapConfig<S>`, and it can put bounds on the value or
 //! on the slot to limit which maps can use it.
@@ -145,8 +145,10 @@
 //! GEN_BITS>` gives the low `GEN_BITS` bits of an `R` to the generation and
 //! the bits above them to the index, so a key is as large as `R`, and the two
 //! parts can have any bit counts that add up to the bits of `R`. The key
-//! config's `Idx` and `Gen` only have to be wide enough for their parts, and
-//! a key config whose bit counts do not add up fails to compile.
+//! config's `Idx` and `Gen` only have to be wide enough for their parts. A
+//! key config whose bit counts do not add up fails to compile, but only in
+//! `cargo build` or `cargo test`, and only if a map uses it. `cargo check`
+//! and editors such as rust-analyzer may not report it.
 //!
 //! ```
 //! use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed, SlotItem};
@@ -212,9 +214,10 @@
 //! bounds checks.
 //!
 //! The owning `into_iter` only exists when the storage also implements
-//! `IntoIterator`. It implements `DoubleEndedIterator` only when the
-//! storage's iterator implements both `DoubleEndedIterator` and
-//! `ExactSizeIterator`. `Vec`, `ArrayVec` and `SmallVec` meet all of these.
+//! `IntoIterator`. The iterator it returns, [`IntoIter`], only implements
+//! `DoubleEndedIterator` when the storage's iterator implements both
+//! `DoubleEndedIterator` and `ExactSizeIterator`. `Vec`, `ArrayVec` and
+//! `SmallVec` meet all of these.
 //!
 //! The methods that make room ahead of time, which are
 //! [`reserve`](GenMap::reserve), [`try_reserve`](GenMap::try_reserve),
@@ -348,8 +351,10 @@
 //! [`keys`](GenMap::keys), [`values`](GenMap::values),
 //! [`values_mut`](GenMap::values_mut) and the owning `into_iter` all know
 //! their exact length and can run from both ends, meaning they implement
-//! `DoubleEndedIterator`. `into_iter` only does when the storage's iterator
-//! implements both `DoubleEndedIterator` and `ExactSizeIterator`.
+//! `DoubleEndedIterator`. The exception is [`IntoIter`], the iterator
+//! `into_iter` returns, which only implements `DoubleEndedIterator` when the
+//! storage's iterator implements both `DoubleEndedIterator` and
+//! `ExactSizeIterator`.
 //!
 //! [`retain`](GenMap::retain), [`drain`](GenMap::drain) and
 //! [`clear`](GenMap::clear) remove values the same way
@@ -375,8 +380,9 @@
 //! - `alloc` is on by default. It adds the `Vec` storage,
 //!   [`DefaultMapConfig`] and [`GenMap::new`], and makes
 //!   [`DefaultMapConfig`] the config that [`GenMap`] uses when none is named.
-//!   Without it the crate needs no allocator, and every map needs a config
-//!   whose storage does not allocate, such as an `ArrayVec`.
+//!   Without it, every map needs a config that names its storage, and the
+//!   crate needs no allocator unless the `smallvec` feature is on, since a
+//!   `SmallVec` allocates.
 //! - `arrayvec` lets a config use `arrayvec::ArrayVec` as its storage.
 //! - `smallvec` lets a config use `smallvec::SmallVec` as its storage. It
 //!   uses the 2.0 beta of `smallvec`, which needs an allocator and Rust 1.86.

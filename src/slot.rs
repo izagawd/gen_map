@@ -412,7 +412,7 @@ mod sealed {
 /// [`MapSlot<T, C>`](crate::MapSlot). A config implements `MapConfig<S>` for
 /// the slot types `S` it supports, usually for all of them at once with
 /// `impl<S: SlotItem> MapConfig<S> for YourConfig`. Inside that impl, `S` is
-/// the slot and `S::Item` is the type of the value in it, so for a
+/// the slot and `S::Value` is the type of the value in it, so for a
 /// `GenMap<T, C>` it is `T`.
 ///
 /// Only [`Slot`] implements `SlotItem`, and it cannot be implemented outside
@@ -421,10 +421,10 @@ mod sealed {
 /// # Bounds on the value and the slot
 ///
 /// A config can limit which maps can use it with bounds on the value type,
-/// `S::Item`, or on the slot type, `S`. A map whose values or slots do not
+/// `S::Value`, or on the slot type, `S`. A map whose values or slots do not
 /// meet the bounds fails to compile.
 ///
-/// A bound on `S::Item` limits the value types:
+/// A bound on `S::Value` limits the value types:
 ///
 /// ```
 /// use gen_map::{DefaultKeyConfig, GenMap, MapConfig, SlotItem};
@@ -434,7 +434,7 @@ mod sealed {
 ///
 /// impl<S: SlotItem> MapConfig<S> for CopyValues
 /// where
-///     S::Item: Copy,
+///     S::Value: Copy,
 /// {
 ///     type KeyConfig = DefaultKeyConfig;
 ///     type Storage = Vec<S>;
@@ -448,7 +448,7 @@ mod sealed {
 /// // let map = GenMap::<String, CopyValues>::new_with_config();
 /// ```
 ///
-/// Setting `Item` allows a single value type:
+/// Setting `Value` allows a single value type:
 ///
 /// ```
 /// use gen_map::{DefaultKeyConfig, GenMap, MapConfig, SlotItem};
@@ -456,7 +456,7 @@ mod sealed {
 /// /// Only for values that are `u32`.
 /// struct U32Values;
 ///
-/// impl<S: SlotItem<Item = u32>> MapConfig<S> for U32Values {
+/// impl<S: SlotItem<Value = u32>> MapConfig<S> for U32Values {
 ///     type KeyConfig = DefaultKeyConfig;
 ///     type Storage = Vec<S>;
 /// }
@@ -530,11 +530,11 @@ mod sealed {
 pub trait SlotItem: sealed::Sealed {
     /// The type of the value in the slot. For the slots of a
     /// `GenMap<T, C>`, it is `T`.
-    type Item;
+    type Value;
 }
 
 impl<G: KeyPiece, T, U> sealed::Sealed for Slot<G, T, U> {}
 
 impl<G: KeyPiece, T, U> SlotItem for Slot<G, T, U> {
-    type Item = T;
+    type Value = T;
 }

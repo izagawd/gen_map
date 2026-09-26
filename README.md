@@ -28,7 +28,7 @@ let c = map.insert("c"); // This takes the slot `a` had, but under a new key.
 assert_ne!(a, c);
 
 for (key, value) in &map {
-println!("{key:?} = {value}");
+    println!("{key:?} = {value}");
 }
 ```
 
