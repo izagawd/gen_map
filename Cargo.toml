@@ -5,11 +5,11 @@ edition = "2021"
 rust-version = "1.79.0"
 authors = ["Izagawd <theizaboss@gmail.com>"]
 keywords = ["generational", "slotmap", "arena", "handle", "no-std"]
-categories = ["memory-management", "data-structures", "no-std"]
+categories = ["memory-management", "data-structures", "no-std", "no-std::no-alloc"]
 license = "MIT"
 repository = "https://github.com/izagawd/gen_map"
 readme = "README.md"
-description = "This crate provides customizable generational maps."
+description = "A generational map with configurable key size, key layout and storage."
 
 [features]
 default = ["alloc"]
@@ -19,6 +19,7 @@ smallvec = ["dep:smallvec"]
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 arrayvec = { version = "0.7", default-features = false, optional = true }

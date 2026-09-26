@@ -60,6 +60,8 @@ unsafe fn index_of<C: MapConfig>(position: usize) -> Idx<C> {
         Idx::<C>::from_usize(position).is_some(),
         "every slot position fits in the configured index type"
     );
+    // SAFETY: the caller promises that `position` belongs to a slot, and
+    // every slot's position fits in `Idx<C>`.
     unsafe { Idx::<C>::from_usize_unchecked(position) }
 }
 
@@ -76,6 +78,8 @@ unsafe fn position_of<C: MapConfig>(idx: Idx<C>) -> usize {
         idx.into_usize().is_some(),
         "every index of a slot fits in usize"
     );
+    // SAFETY: the caller promises that `idx` is a slot's index, and every
+    // slot's index was once its position, which is a `usize`.
     unsafe { idx.into_usize_unchecked() }
 }
 
@@ -195,6 +199,7 @@ pub struct GenMap<
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<T> GenMap<T> {
     /// Creates an empty map with the [`DefaultMapConfig`].
     ///
@@ -355,10 +360,15 @@ impl<T, C: MapConfig> GenMap<T, C> {
     #[inline]
     pub unsafe fn get_unchecked(&self, key: Key<C::KeyConfig>) -> &T {
         debug_assert!(self.contains_key(key));
-        self.slots
-            .as_slice()
-            .get_unchecked(position_of::<C>(key.idx()))
-            .get_odd_unchecked()
+        // SAFETY: the caller promises the map has a value for `key`, so its
+        // index is the position of a slot in bounds, and that slot's
+        // generation is odd.
+        unsafe {
+            self.slots
+                .as_slice()
+                .get_unchecked(position_of::<C>(key.idx()))
+                .get_odd_unchecked()
+        }
     }
 
     /// [`get_mut`](Self::get_mut) without the bounds and generation checks.
@@ -370,10 +380,13 @@ impl<T, C: MapConfig> GenMap<T, C> {
     #[inline]
     pub unsafe fn get_unchecked_mut(&mut self, key: Key<C::KeyConfig>) -> &mut T {
         debug_assert!(self.contains_key(key));
-        self.slots
-            .as_mut_slice()
-            .get_unchecked_mut(position_of::<C>(key.idx()))
-            .get_odd_unchecked_mut()
+        // SAFETY: the same as in `get_unchecked`.
+        unsafe {
+            self.slots
+                .as_mut_slice()
+                .get_unchecked_mut(position_of::<C>(key.idx()))
+                .get_odd_unchecked_mut()
+        }
     }
 
     /// Returns the key of the value in the slot at `idx`, or `None` if there
@@ -399,8 +412,13 @@ impl<T, C: MapConfig> GenMap<T, C> {
     #[inline]
     pub unsafe fn key_at_unchecked(&self, idx: MapIdx<C>) -> Key<C::KeyConfig> {
         debug_assert!(self.key_at(idx).is_some());
-        let slot = self.slots.as_slice().get_unchecked(position_of::<C>(idx));
-        slot_key::<C>(idx, Odd::new_unchecked(slot.generation()))
+        // SAFETY: the caller promises a slot at `idx` that holds a value, so
+        // `idx` is the position of a slot in bounds, and that slot's
+        // generation is odd.
+        unsafe {
+            let slot = self.slots.as_slice().get_unchecked(position_of::<C>(idx));
+            slot_key::<C>(idx, Odd::new_unchecked(slot.generation()))
+        }
     }
 
     /// Returns the key and a reference to the value in the slot at `idx`, or
@@ -409,8 +427,8 @@ impl<T, C: MapConfig> GenMap<T, C> {
     #[inline]
     pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<C::KeyConfig>, &T)> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
-            // SAFETY: `idx` is the slot's position.
             Parity::Odd(generation, value) => {
+                // SAFETY: `idx` is the slot's position.
                 Some((unsafe { slot_key::<C>(idx, generation) }, value))
             }
             Parity::Even(..) => None,
@@ -428,8 +446,8 @@ impl<T, C: MapConfig> GenMap<T, C> {
             .get_mut(idx.into_usize()?)?
             .as_parity_mut()
         {
-            // SAFETY: `idx` is the slot's position.
             Parity::Odd(generation, value) => {
+                // SAFETY: `idx` is the slot's position.
                 Some((unsafe { slot_key::<C>(idx, generation) }, value))
             }
             Parity::Even(..) => None,
@@ -447,11 +465,14 @@ impl<T, C: MapConfig> GenMap<T, C> {
     #[inline]
     pub unsafe fn get_at_unchecked(&self, idx: MapIdx<C>) -> (Key<C::KeyConfig>, &T) {
         debug_assert!(self.key_at(idx).is_some());
-        let slot = self.slots.as_slice().get_unchecked(position_of::<C>(idx));
-        (
-            slot_key::<C>(idx, Odd::new_unchecked(slot.generation())),
-            slot.get_odd_unchecked(),
-        )
+        // SAFETY: the same as in `key_at_unchecked`.
+        unsafe {
+            let slot = self.slots.as_slice().get_unchecked(position_of::<C>(idx));
+            (
+                slot_key::<C>(idx, Odd::new_unchecked(slot.generation())),
+                slot.get_odd_unchecked(),
+            )
+        }
     }
 
     /// [`get_at_mut`](Self::get_at_mut) without the bounds and occupancy
@@ -463,12 +484,15 @@ impl<T, C: MapConfig> GenMap<T, C> {
     #[inline]
     pub unsafe fn get_at_unchecked_mut(&mut self, idx: MapIdx<C>) -> (Key<C::KeyConfig>, &mut T) {
         debug_assert!(self.key_at(idx).is_some());
-        let slot = self
-            .slots
-            .as_mut_slice()
-            .get_unchecked_mut(position_of::<C>(idx));
-        let key = slot_key::<C>(idx, Odd::new_unchecked(slot.generation()));
-        (key, slot.get_odd_unchecked_mut())
+        // SAFETY: the same as in `key_at_unchecked`.
+        unsafe {
+            let slot = self
+                .slots
+                .as_mut_slice()
+                .get_unchecked_mut(position_of::<C>(idx));
+            let key = slot_key::<C>(idx, Odd::new_unchecked(slot.generation()));
+            (key, slot.get_odd_unchecked_mut())
+        }
     }
 
     /// Returns the generation of the slot at `idx`, or `None` if there is no
@@ -492,10 +516,14 @@ impl<T, C: MapConfig> GenMap<T, C> {
     #[inline]
     pub unsafe fn generation_at_unchecked(&self, idx: MapIdx<C>) -> MapGen<C> {
         debug_assert!(self.generation_at(idx).is_some());
-        self.slots
-            .as_slice()
-            .get_unchecked(position_of::<C>(idx))
-            .generation()
+        // SAFETY: the caller promises a slot at `idx`, so `idx` is the
+        // position of a slot in bounds.
+        unsafe {
+            self.slots
+                .as_slice()
+                .get_unchecked(position_of::<C>(idx))
+                .generation()
+        }
     }
 
     /// Returns the key and a mutable reference to the value in the slot at

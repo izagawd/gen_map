@@ -103,6 +103,10 @@ pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'stati
 macro_rules! impl_key_piece {
     ($($t:ty)*) => {
         $(
+            // SAFETY: these are the standard unsigned integers the trait
+            // describes. Every method forwards to the integer's own operation
+            // or to an exact cast, and the largest value of every unsigned
+            // integer is odd.
             unsafe impl KeyPiece for $t {
                 type NonZero = NonZero<$t>;
 

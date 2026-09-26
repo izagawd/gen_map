@@ -104,11 +104,12 @@ pub trait ReserveStorage<S>: SlotStorage<S> {
     fn try_reserve(&mut self, additional: usize) -> Result<(), Self::Error>;
 }
 
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 // SAFETY: `Vec` is the behaviour the trait describes. `Vec::push` itself
 // panics on capacity overflow and aborts on allocation failure, so both
 // `ensure_room` and `try_push` go through `try_reserve`, which reports the
 // two as errors.
-#[cfg(feature = "alloc")]
 unsafe impl<S> SlotStorage<S> for Vec<S> {
     type Error = TryReserveError;
 
@@ -157,6 +158,7 @@ unsafe impl<S> SlotStorage<S> for Vec<S> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<S> ReserveStorage<S> for Vec<S> {
     #[inline]
     fn reserve(&mut self, additional: usize) {
@@ -200,6 +202,7 @@ impl<S> ReserveStorage<S> for Vec<S> {
 /// assert_eq!(map.capacity(), 16);
 /// ```
 #[cfg(feature = "arrayvec")]
+#[cfg_attr(docsrs, doc(cfg(feature = "arrayvec")))]
 // SAFETY: an `ArrayVec` keeps its items in order and in place, like a
 // `Vec`. Its `try_push` only fails when it is full, and `ensure_room`
 // returns `Ok` only when it is not.
@@ -279,6 +282,7 @@ unsafe impl<S, const CAP: usize> SlotStorage<S> for arrayvec::ArrayVec<S, CAP> {
 /// assert_eq!(map[keys[19]], 19);
 /// ```
 #[cfg(feature = "smallvec")]
+#[cfg_attr(docsrs, doc(cfg(feature = "smallvec")))]
 // SAFETY: a `SmallVec` behaves like a `Vec` whether its items are inline or
 // on the heap. `SmallVec::push` panics or aborts when it cannot grow, so
 // both `ensure_room` and `try_push` go through `try_reserve`, which returns
@@ -332,6 +336,7 @@ unsafe impl<S, const N: usize> SlotStorage<S> for smallvec::SmallVec<S, N> {
 }
 
 #[cfg(feature = "smallvec")]
+#[cfg_attr(docsrs, doc(cfg(feature = "smallvec")))]
 impl<S, const N: usize> ReserveStorage<S> for smallvec::SmallVec<S, N> {
     #[inline]
     fn reserve(&mut self, additional: usize) {

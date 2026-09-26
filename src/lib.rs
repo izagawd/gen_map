@@ -381,7 +381,12 @@
 //! Rust 1.86, because the 2.0 beta of `smallvec` does.
 
 #![no_std]
-#![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(
+    missing_docs,
+    unsafe_op_in_unsafe_fn,
+    clippy::undocumented_unsafe_blocks
+)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -400,6 +405,7 @@ mod slot;
 mod storage;
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use config::DefaultMapConfig;
 pub use config::{DefaultKeyConfig, KeyConfig, MapConfig};
 pub use error::{

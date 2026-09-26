@@ -108,6 +108,7 @@ impl KeyConfig for DefaultKeyConfig {
 /// retire when their generation runs out. It needs the `alloc` feature,
 /// which is on by default.
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct DefaultMapConfig;
 
