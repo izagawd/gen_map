@@ -2,7 +2,9 @@
 //! never allocates. The randomized model test covers them too.
 
 use super::{Bomb, DropTracker};
-use crate::{FullError, GenMap, InsertError, InsertWithError, KeyConfig, MapConfig, Packed, Split};
+use crate::{
+    FullError, GenMap, InsertError, InsertWithError, KeyConfig, MapConfig, Packed, SlotItem, Split,
+};
 use arrayvec::ArrayVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -16,9 +18,9 @@ impl KeyConfig for Four {
     type Layout = Split;
 }
 
-impl MapConfig for Four {
+impl<S: SlotItem> MapConfig<S> for Four {
     type KeyConfig = Self;
-    type Storage<S> = ArrayVec<S, 4>;
+    type Storage = ArrayVec<S, 4>;
 }
 
 /// Sixteen slots in the storage and sixteen indices in the keys, so both run
@@ -31,9 +33,9 @@ impl KeyConfig for Sixteen {
     type Layout = Packed<u8, 4>;
 }
 
-impl MapConfig for Sixteen {
+impl<S: SlotItem> MapConfig<S> for Sixteen {
     type KeyConfig = Self;
-    type Storage<S> = ArrayVec<S, 16>;
+    type Storage = ArrayVec<S, 16>;
 }
 
 /// Fills every slot of a [`Four`] map.

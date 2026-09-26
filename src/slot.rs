@@ -397,3 +397,27 @@ impl<G: KeyPiece, T: fmt::Debug, U: fmt::Debug> fmt::Debug for Slot<G, T, U> {
             .finish()
     }
 }
+
+mod sealed {
+    /// Keeps [`SlotItem`](super::SlotItem) from being implemented outside
+    /// this crate.
+    pub trait Sealed {}
+}
+
+/// A slot type a [`MapConfig`](crate::MapConfig) can be implemented for.
+///
+/// Only [`Slot`] implements it, and it cannot be implemented outside this
+/// crate. A config is implemented for every slot type it supports, and
+/// [`Item`](Self::Item) names the value the slot holds, so the config can
+/// put bounds on it.
+pub trait SlotItem: sealed::Sealed {
+    /// The value the slot holds while its generation is odd. For a map's
+    /// [`MapSlot`](crate::MapSlot), it is the map's value type.
+    type Item;
+}
+
+impl<G: KeyPiece, T, U> sealed::Sealed for Slot<G, T, U> {}
+
+impl<G: KeyPiece, T, U> SlotItem for Slot<G, T, U> {
+    type Item = T;
+}

@@ -3,7 +3,7 @@
 //! covers them too.
 
 use super::{Bomb, DropTracker};
-use crate::{GenMap, KeyConfig, MapConfig, Split};
+use crate::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
 use smallvec::SmallVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -17,9 +17,9 @@ impl KeyConfig for Four {
     type Layout = Split;
 }
 
-impl MapConfig for Four {
+impl<S: SlotItem> MapConfig<S> for Four {
     type KeyConfig = Self;
-    type Storage<S> = SmallVec<S, 4>;
+    type Storage = SmallVec<S, 4>;
 }
 
 #[test]

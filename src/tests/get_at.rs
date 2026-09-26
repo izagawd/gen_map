@@ -1,5 +1,5 @@
 use super::{Cfg, DropTracker};
-use crate::{GenMap, GetDisjointMutAtError, Key, KeyConfig, MapConfig, Split};
+use crate::{GenMap, GetDisjointMutAtError, Key, KeyConfig, MapConfig, SlotItem, Split};
 use std::vec::Vec;
 
 type Tiny = Cfg<u8, u8>;
@@ -81,9 +81,9 @@ fn get_at_with_an_index_that_does_not_fit_in_usize_is_none() {
         type Layout = Split;
     }
 
-    impl MapConfig for Wide {
+    impl<S: SlotItem> MapConfig<S> for Wide {
         type KeyConfig = Self;
-        type Storage<S> = Vec<S>;
+        type Storage = Vec<S>;
     }
 
     let mut map = GenMap::<i32, Wide>::new_with_config();

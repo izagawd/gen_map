@@ -8,7 +8,9 @@ use core::fmt;
 /// [`MapConfig`](crate::MapConfig) names one through its `Storage` type.
 ///
 /// A storage that can also grow on request implements [`ReserveStorage`]
-/// too.
+/// too. A storage that implements `IntoIterator` gives the map an owning
+/// `into_iter`, which can run from both ends when the storage's iterator
+/// can.
 ///
 /// # Safety
 ///
@@ -19,17 +21,22 @@ use core::fmt;
 /// [`as_mut_slice`](Self::as_mut_slice) must return every item that has been
 /// pushed since the last [`clear`](Self::clear), in the order they were
 /// pushed, and must return the same items every time unless a `&mut self`
-/// method of this trait was called in between. `into_iter` must yield those
-/// same items, in the same order. [`try_push`](Self::try_push) must append
+/// method of this trait was called in between. If the storage implements
+/// `IntoIterator<Item = Self::Item>`, `into_iter` must yield those same
+/// items, in the same order, and if its iterator is also double-ended and
+/// exact-size, `next_back` must yield them from the end and `len` must be
+/// the number not yet yielded. [`try_push`](Self::try_push) must append
 /// at the end and leave the other items where they are, and once
 /// [`ensure_room`](Self::ensure_room) has returned `Ok`, the next `try_push`
 /// must succeed, as long as no other `&mut self` method of this trait runs
 /// in between. `clear` must drop every item and leave the storage empty.
 /// [`EMPTY`](Self::EMPTY) and [`with_capacity`](Self::with_capacity) must
 /// hold no items.
-pub unsafe trait SlotStorage<S>:
-    IntoIterator<Item = S, IntoIter: DoubleEndedIterator + ExactSizeIterator>
-{
+pub unsafe trait SlotStorage {
+    /// The items the storage holds. A map's storage holds its
+    /// [`MapSlot`](crate::MapSlot)s.
+    type Item;
+
     /// Why the storage could not make room for another item.
     type Error: fmt::Debug;
 
@@ -47,10 +54,10 @@ pub unsafe trait SlotStorage<S>:
     fn capacity(&self) -> usize;
 
     /// Every item, in the order they were pushed.
-    fn as_slice(&self) -> &[S];
+    fn as_slice(&self) -> &[Self::Item];
 
     /// Every item mutably, in the order they were pushed.
-    fn as_mut_slice(&mut self) -> &mut [S];
+    fn as_mut_slice(&mut self) -> &mut [Self::Item];
 
     /// Makes sure the next [`try_push`](Self::try_push) will succeed,
     /// growing if the storage can and has to.
@@ -66,7 +73,7 @@ pub unsafe trait SlotStorage<S>:
     /// # Errors
     ///
     /// Hands `item` back if the storage cannot make room for it.
-    fn try_push(&mut self, item: S) -> Result<(), S>;
+    fn try_push(&mut self, item: Self::Item) -> Result<(), Self::Item>;
 
     /// Drops every item, which leaves the storage empty.
     fn clear(&mut self);
@@ -87,7 +94,7 @@ pub unsafe trait SlotStorage<S>:
 /// A [`SlotStorage`] that can make room for more items on request. After
 /// [`try_reserve`](Self::try_reserve) has returned `Ok` for `n` more items,
 /// the next `n` calls of [`try_push`](SlotStorage::try_push) succeed.
-pub trait ReserveStorage<S>: SlotStorage<S> {
+pub trait ReserveStorage: SlotStorage {
     /// Makes room for at least `additional` more items.
     ///
     /// # Panics
@@ -110,7 +117,8 @@ pub trait ReserveStorage<S>: SlotStorage<S> {
 // panics on capacity overflow and aborts on allocation failure, so both
 // `ensure_room` and `try_push` go through `try_reserve`, which reports the
 // two as errors.
-unsafe impl<S> SlotStorage<S> for Vec<S> {
+unsafe impl<S> SlotStorage for Vec<S> {
+    type Item = S;
     type Error = TryReserveError;
 
     const EMPTY: Self = Vec::new();
@@ -159,7 +167,7 @@ unsafe impl<S> SlotStorage<S> for Vec<S> {
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-impl<S> ReserveStorage<S> for Vec<S> {
+impl<S> ReserveStorage for Vec<S> {
     #[inline]
     fn reserve(&mut self, additional: usize) {
         Vec::reserve(self, additional);
@@ -180,7 +188,7 @@ impl<S> ReserveStorage<S> for Vec<S> {
 ///
 /// ```
 /// use arrayvec::ArrayVec;
-/// use gen_map::{GenMap, KeyConfig, MapConfig, Split};
+/// use gen_map::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
 ///
 /// /// Room for sixteen slots, without any allocation.
 /// struct Inline;
@@ -191,9 +199,9 @@ impl<S> ReserveStorage<S> for Vec<S> {
 ///     type Layout = Split;
 /// }
 ///
-/// impl MapConfig for Inline {
+/// impl<S: SlotItem> MapConfig<S> for Inline {
 ///     type KeyConfig = Self;
-///     type Storage<S> = ArrayVec<S, 16>;
+///     type Storage = ArrayVec<S, 16>;
 /// }
 ///
 /// let mut map = GenMap::<u32, Inline>::new_with_config();
@@ -206,7 +214,8 @@ impl<S> ReserveStorage<S> for Vec<S> {
 // SAFETY: an `ArrayVec` keeps its items in order and in place, like a
 // `Vec`. Its `try_push` only fails when it is full, and `ensure_room`
 // returns `Ok` only when it is not.
-unsafe impl<S, const CAP: usize> SlotStorage<S> for arrayvec::ArrayVec<S, CAP> {
+unsafe impl<S, const CAP: usize> SlotStorage for arrayvec::ArrayVec<S, CAP> {
+    type Item = S;
     type Error = arrayvec::CapacityError;
 
     const EMPTY: Self = arrayvec::ArrayVec::new_const();
@@ -260,7 +269,7 @@ unsafe impl<S, const CAP: usize> SlotStorage<S> for arrayvec::ArrayVec<S, CAP> {
 /// `gen_map` may break this feature, so it is not covered by semver.
 ///
 /// ```
-/// use gen_map::{GenMap, KeyConfig, MapConfig, Split};
+/// use gen_map::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
 /// use smallvec::SmallVec;
 ///
 /// /// Room for eight slots before the map allocates.
@@ -272,9 +281,9 @@ unsafe impl<S, const CAP: usize> SlotStorage<S> for arrayvec::ArrayVec<S, CAP> {
 ///     type Layout = Split;
 /// }
 ///
-/// impl MapConfig for Small {
+/// impl<S: SlotItem> MapConfig<S> for Small {
 ///     type KeyConfig = Self;
-///     type Storage<S> = SmallVec<S, 8>;
+///     type Storage = SmallVec<S, 8>;
 /// }
 ///
 /// let mut map = GenMap::<u32, Small>::new_with_config();
@@ -287,7 +296,8 @@ unsafe impl<S, const CAP: usize> SlotStorage<S> for arrayvec::ArrayVec<S, CAP> {
 // on the heap. `SmallVec::push` panics or aborts when it cannot grow, so
 // both `ensure_room` and `try_push` go through `try_reserve`, which returns
 // an error instead.
-unsafe impl<S, const N: usize> SlotStorage<S> for smallvec::SmallVec<S, N> {
+unsafe impl<S, const N: usize> SlotStorage for smallvec::SmallVec<S, N> {
+    type Item = S;
     type Error = smallvec::CollectionAllocErr;
 
     const EMPTY: Self = smallvec::SmallVec::new();
@@ -337,7 +347,7 @@ unsafe impl<S, const N: usize> SlotStorage<S> for smallvec::SmallVec<S, N> {
 
 #[cfg(feature = "smallvec")]
 #[cfg_attr(docsrs, doc(cfg(feature = "smallvec")))]
-impl<S, const N: usize> ReserveStorage<S> for smallvec::SmallVec<S, N> {
+impl<S, const N: usize> ReserveStorage for smallvec::SmallVec<S, N> {
     #[inline]
     fn reserve(&mut self, additional: usize) {
         smallvec::SmallVec::reserve(self, additional);

@@ -1,6 +1,7 @@
 use super::Cfg;
 use crate::{
-    FullError, GenMap, InsertError, Key, KeyConfig, KeyLayout, MapConfig, Odd, Packed, Split,
+    FullError, GenMap, InsertError, Key, KeyConfig, KeyLayout, MapConfig, MapConfigFor,
+    MapKeyConfig, Odd, Packed, SlotItem, Split,
 };
 use core::mem::size_of;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -16,9 +17,9 @@ impl KeyConfig for Compact {
     type Layout = Packed<u32, 8>;
 }
 
-impl MapConfig for Compact {
+impl<S: SlotItem> MapConfig<S> for Compact {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 /// Two byte keys with 12 bits of index and 4 bits of generation, so a slot
@@ -31,9 +32,9 @@ impl KeyConfig for Tiny {
     type Layout = Packed<u16, 4>;
 }
 
-impl MapConfig for Tiny {
+impl<S: SlotItem> MapConfig<S> for Tiny {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 /// The same as [`Tiny`], but a slot wraps instead of retiring.
@@ -45,9 +46,9 @@ impl KeyConfig for TinyWrap {
     type Layout = Packed<u16, 4>;
 }
 
-impl MapConfig for TinyWrap {
+impl<S: SlotItem> MapConfig<S> for TinyWrap {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
     const WRAP_ON_OVERFLOW: bool = true;
 }
 
@@ -60,9 +61,9 @@ impl KeyConfig for Byte {
     type Layout = Packed<u8, 4>;
 }
 
-impl MapConfig for Byte {
+impl<S: SlotItem> MapConfig<S> for Byte {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 /// Sixteen byte keys with a `u128` field and 64 bits for each part, with
@@ -75,9 +76,9 @@ impl KeyConfig for Huge {
     type Layout = Packed<u128, 64>;
 }
 
-impl MapConfig for Huge {
+impl<S: SlotItem> MapConfig<S> for Huge {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 /// Keys the size of a pointer, with 8 bits of generation.
@@ -89,9 +90,9 @@ impl KeyConfig for Native {
     type Layout = Packed<usize, 8>;
 }
 
-impl MapConfig for Native {
+impl<S: SlotItem> MapConfig<S> for Native {
     type KeyConfig = Self;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 fn key<K: KeyConfig>(idx: K::Idx, generation: K::Gen) -> Key<K> {
@@ -307,10 +308,10 @@ fn debug_prints_both_parts_of_a_packed_key() {
 
 /// Inserts and removes on one slot until its generation is the largest one
 /// the layout holds, and returns the keys handed out along the way.
-fn use_up_one_slot<C>(map: &mut GenMap<u32, C>) -> Vec<Key<C::KeyConfig>>
+fn use_up_one_slot<C>(map: &mut GenMap<u32, C>) -> Vec<Key<MapKeyConfig<u32, C>>>
 where
-    C: MapConfig,
-    C::KeyConfig: KeyConfig<Idx = u16, Gen = u8>,
+    C: MapConfigFor<u32>,
+    MapKeyConfig<u32, C>: KeyConfig<Idx = u16, Gen = u8>,
 {
     let mut keys = Vec::new();
     for i in 0..8u32 {

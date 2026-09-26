@@ -88,6 +88,11 @@
 //! - [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW) determines what
 //!   happens to a slot whose generation runs out.
 //!
+//! A [`MapConfig`] is implemented for slot types, usually for every
+//! [`SlotItem`] at once with a blanket impl. That lets a config put bounds
+//! on the slots it supports, or on the values they hold, when its storage
+//! needs them.
+//!
 //! [`DefaultMapConfig`] is the config a [`GenMap`] uses when none is named.
 //! Its keys use the [`DefaultKeyConfig`], so they are a `u32` index and a
 //! `u32` generation stored as two fields. Its slots live in a `Vec`, and a
@@ -99,7 +104,7 @@
 //! itself as its key config.
 //!
 //! ```
-//! use gen_map::{GenMap, KeyConfig, MapConfig, Split};
+//! use gen_map::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
 //!
 //! /// A `u8` index and a `u8` generation, so keys are two bytes and the map
 //! /// holds at most 256 slots.
@@ -111,9 +116,9 @@
 //!     type Layout = Split;
 //! }
 //!
-//! impl MapConfig for Tiny {
+//! impl<S: SlotItem> MapConfig<S> for Tiny {
 //!     type KeyConfig = Self;
-//!     type Storage<S> = Vec<S>;
+//!     type Storage = Vec<S>;
 //! }
 //!
 //! let mut map = GenMap::<u64, Tiny>::new_with_config();
@@ -141,7 +146,7 @@
 //! a key config whose bit counts do not add up fails to compile.
 //!
 //! ```
-//! use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed};
+//! use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed, SlotItem};
 //!
 //! /// Four byte keys with 24 bits of index and 8 bits of generation.
 //! struct Compact;
@@ -152,9 +157,9 @@
 //!     type Layout = Packed<u32, 8>;
 //! }
 //!
-//! impl MapConfig for Compact {
+//! impl<S: SlotItem> MapConfig<S> for Compact {
 //!     type KeyConfig = Self;
-//!     type Storage<S> = Vec<S>;
+//!     type Storage = Vec<S>;
 //! }
 //!
 //! let mut map = GenMap::<&str, Compact>::new_with_config();
@@ -234,7 +239,7 @@
 //! [`StorageFull`](FullError::StorageFull) error instead of panicking.
 //!
 //! ```
-//! use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, Split};
+//! use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, SlotItem, Split};
 //!
 //! struct Tiny;
 //!
@@ -244,9 +249,9 @@
 //!     type Layout = Split;
 //! }
 //!
-//! impl MapConfig for Tiny {
+//! impl<S: SlotItem> MapConfig<S> for Tiny {
 //!     type KeyConfig = Self;
-//!     type Storage<S> = Vec<S>;
+//!     type Storage = Vec<S>;
 //! }
 //!
 //! let mut map = GenMap::<u32, Tiny>::new_with_config();
@@ -407,7 +412,7 @@ mod storage;
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use config::DefaultMapConfig;
-pub use config::{DefaultKeyConfig, KeyConfig, MapConfig};
+pub use config::{DefaultKeyConfig, KeyConfig, MapConfig, MapConfigFor};
 pub use error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
 };
@@ -415,11 +420,11 @@ pub use key::Key;
 pub use key_layout::{KeyLayout, Packed, PackedRepr, Split, SplitRepr};
 pub use key_piece::KeyPiece;
 pub use map::{
-    Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapSlot, StorageError,
-    VacantEntry, Values, ValuesMut,
+    Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig, MapSlot,
+    StorageError, VacantEntry, Values, ValuesMut,
 };
 pub use parity::{Even, Odd};
-pub use slot::{Parity, Slot};
+pub use slot::{Parity, Slot, SlotItem};
 pub use storage::{ReserveStorage, SlotStorage};
 
 // The tests use `Vec` storage and the default config, so they need `alloc`.

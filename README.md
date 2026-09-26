@@ -36,13 +36,15 @@ for (key, value) in &map {
 
 A `KeyConfig` picks the index and generation integers and how a key stores
 the two. A `MapConfig` picks the key config, where the slots live and what
-happens when a slot's generation runs out. Maps whose configs pick the same
+happens when a slot's generation runs out. It is implemented for slot types,
+usually for every `SlotItem` at once, so it can put bounds on the slots or on
+the values they hold. Maps whose configs pick the same
 key config share a key type. The default uses a `u32` index and a `u32`
 generation stored as two fields, keeps the slots in a `Vec`, and retires a
 slot whose generation runs out, so no stale key can ever match a new value.
 
 ```rust
-use gen_map::{GenMap, KeyConfig, MapConfig, Split};
+use gen_map::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
 
 struct TinyKey;
 
@@ -54,9 +56,9 @@ impl KeyConfig for TinyKey {
 
 struct TinyMap;
 
-impl MapConfig for TinyMap {
+impl<S: SlotItem> MapConfig<S> for TinyMap {
     type KeyConfig = TinyKey;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
     // A slot whose generation runs out is reused instead of retired. The
     // default is to retire it.
     const WRAP_ON_OVERFLOW: bool = true;
@@ -78,7 +80,7 @@ generation and the bits above them hold the index. A key config whose bit
 counts do not add up fails to compile.
 
 ```rust
-use gen_map::{GenMap, KeyConfig, MapConfig, Packed};
+use gen_map::{GenMap, KeyConfig, MapConfig, Packed, SlotItem};
 
 /// Four byte keys with 24 bits of index and 8 bits of generation.
 struct CompactKey;
@@ -91,9 +93,9 @@ impl KeyConfig for CompactKey {
 
 struct CompactMap;
 
-impl MapConfig for CompactMap {
+impl<S: SlotItem> MapConfig<S> for CompactMap {
     type KeyConfig = CompactKey;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 let mut map = GenMap::<&str, CompactMap>::new_with_config();
@@ -127,7 +129,7 @@ index left for a new slot or the storage cannot make room for one.
 `try_insert` lets you handle the failure.
 
 ```rust
-use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, Split};
+use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, SlotItem, Split};
 
 struct TinyKey;
 
@@ -139,9 +141,9 @@ impl KeyConfig for TinyKey {
 
 struct TinyMap;
 
-impl MapConfig for TinyMap {
+impl<S: SlotItem> MapConfig<S> for TinyMap {
     type KeyConfig = TinyKey;
-    type Storage<S> = Vec<S>;
+    type Storage = Vec<S>;
 }
 
 let mut map = GenMap::<u32, TinyMap>::new_with_config();
