@@ -28,90 +28,15 @@ let c = map.insert("c"); // This takes the slot `a` had, but under a new key.
 assert_ne!(a, c);
 
 for (key, value) in &map {
-    println!("{key:?} = {value}");
+println!("{key:?} = {value}");
 }
 ```
 
 ## Configuring the map
 
-A `KeyConfig` picks the index and generation integers and how a key stores
-the two. A `MapConfig` picks the key config, where the slots live and what
-happens when a slot's generation runs out. It is implemented for slot types,
-usually for every one at once as below. See
-[Limiting which maps can use a config](#limiting-which-maps-can-use-a-config). Maps whose configs pick the same
-key config share a key type. The default uses a `u32` index and a `u32`
-generation stored as two fields, keeps the slots in a `Vec`, and retires a
-slot whose generation runs out, so no stale key can ever match a new value.
-
-```rust
-use gen_map::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
-
-struct TinyKey;
-
-impl KeyConfig for TinyKey {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Split;
-}
-
-struct TinyMap;
-
-impl<S: SlotItem> MapConfig<S> for TinyMap {
-    type KeyConfig = TinyKey;
-    type Storage = Vec<S>;
-    // A slot whose generation runs out is reused instead of retired. The
-    // default is to retire it.
-    const WRAP_ON_OVERFLOW: bool = true;
-}
-
-let mut map = GenMap::<u64, TinyMap>::new_with_config();
-let key = map.insert(7);
-assert_eq!(core::mem::size_of_val(&key), 2);
-```
-
-`Option<Key>` is the same size as `Key` with either layout.
-
-### Limiting which maps can use a config
-
-A map keeps each value in a slot. In `impl<S: SlotItem> MapConfig<S>`, `S` is
-the slot and `S::Item` is the type of the value in it. A bound on `S::Item`
-limits which values a map using the config can hold:
-
-```rust
-use gen_map::{DefaultKeyConfig, GenMap, MapConfig, SlotItem};
-
-/// Only for values that are `Copy`.
-struct CopyValues;
-
-impl<S: SlotItem> MapConfig<S> for CopyValues
-where
-    S::Item: Copy,
-{
-    type KeyConfig = DefaultKeyConfig;
-    type Storage = Vec<S>;
-}
-
-let mut map = GenMap::<u32, CopyValues>::new_with_config();
-let key = map.insert(5);
-assert_eq!(map[key], 5);
-
-// `String` is not `Copy`, so this does not compile:
-// let map = GenMap::<String, CopyValues>::new_with_config();
-```
-
-`S: SlotItem<Item = u32>` allows only `u32` values. A bound on `S` itself,
-such as `S: SlotItem + Clone`, limits the slot instead. That is what a
-config needs when its storage type requires something of the items it holds,
-because those items are slots. A slot is `Clone`, `Debug`, `Send` or `Sync`
-when its value is. The `SlotItem` docs have an example of each.
-
-### Packing the key into one integer
-
-`Split` stores the index and the generation as two fields. `Packed` puts
-them in the bits of one integer instead, so the two parts can have any bit
-counts that add up to that integer. The low `GEN_BITS` bits hold the
-generation and the bits above them hold the index. A key config whose bit
-counts do not add up fails to compile.
+A `KeyConfig` picks the key's index and generation types and how the key
+stores them. A `MapConfig` picks the key config, where the slots live and
+what happens when a slot's generation runs out.
 
 ```rust
 use gen_map::{GenMap, KeyConfig, MapConfig, Packed, SlotItem};
@@ -127,6 +52,7 @@ impl KeyConfig for CompactKey {
 
 struct CompactMap;
 
+// `S` is the slot the map keeps each value in.
 impl<S: SlotItem> MapConfig<S> for CompactMap {
     type KeyConfig = CompactKey;
     type Storage = Vec<S>;
@@ -135,58 +61,20 @@ impl<S: SlotItem> MapConfig<S> for CompactMap {
 let mut map = GenMap::<&str, CompactMap>::new_with_config();
 let key = map.insert("a");
 assert_eq!(core::mem::size_of_val(&key), 4);
-assert_eq!(key.idx(), 0);
-assert_eq!(key.generation().get().get(), 1);
 ```
 
-### Choosing the storage
+The [documentation](https://docs.rs/gen_map) covers the rest, such as key
+layouts, storage, what happens when a generation runs out, and limiting which
+maps can use a config.
 
-The slots can live in any collection that implements `SlotStorage`, even
-those with a fixed capacity. Besides `Vec`, the `ArrayVec` from `arrayvec`
-and the `SmallVec` from `smallvec` work out of the box when the crate's
-`arrayvec` or `smallvec` feature is turned on. An `ArrayVec` has a fixed
-capacity and never allocates, and a `SmallVec` keeps a few slots inline
-before it allocates.
+## Cargo features
 
-The `smallvec` feature uses a beta of smallvec 2.0. Until smallvec 2.0 is
-released, a newer smallvec beta or a new release of gen_map may break this
-feature, so it is not covered by semver.
-
-`reserve`, `try_reserve` and the `with_capacity` constructors are only there
-when the storage also implements `ReserveStorage`, which `Vec` and
-`SmallVec` do. The owning `into_iter` is only there when the storage also
-implements `IntoIterator`, which all three do.
-
-## Handling a full map
-
-`insert` panics when the map is full, which happens when the keys have no
-index left for a new slot or the storage cannot make room for one.
-`try_insert` lets you handle the failure.
-
-```rust
-use gen_map::{GenMap, InsertError, KeyConfig, MapConfig, SlotItem, Split};
-
-struct TinyKey;
-
-impl KeyConfig for TinyKey {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Split;
-}
-
-struct TinyMap;
-
-impl<S: SlotItem> MapConfig<S> for TinyMap {
-    type KeyConfig = TinyKey;
-    type Storage = Vec<S>;
-}
-
-let mut map = GenMap::<u32, TinyMap>::new_with_config();
-for i in 0..256 {
-    map.insert(i);
-}
-assert!(matches!(map.try_insert(256), Err(InsertError::IndexExhausted(256))));
-```
+- `alloc` (on by default): `Vec` storage and the default config. Turn it off
+  and use `arrayvec` to run without an allocator.
+- `arrayvec`: `ArrayVec` storage, which has a fixed capacity and never
+  allocates.
+- `smallvec`: `SmallVec` storage, which keeps a few slots inline before it
+  allocates. It uses a beta of smallvec 2.0, so it is not covered by semver.
 
 ## License
 
