@@ -50,21 +50,21 @@ impl KeyConfig for CompactKey {
     type Layout = Packed<u32, 8>;
 }
 
-struct CompactMap;
+struct CompactConfig;
 
 // `S` is the slot the map keeps each value in.
-impl<S: SlotItem> MapConfig<S> for CompactMap {
+impl<S: SlotItem> MapConfig<S> for CompactConfig {
     type KeyConfig = CompactKey;
     type Storage = Vec<S>;
 }
 
-let mut map = GenMap::<&str, CompactMap>::new_with_config();
+let mut map = GenMap::<&str, CompactConfig>::new_with_config();
 let key = map.insert("a");
 assert_eq!(core::mem::size_of_val(&key), 4);
 ```
 
 The [documentation](https://docs.rs/gen_map) covers the rest, such as key
-layouts, storage, what happens when a generation runs out, and limiting which
+layouts, storage, what happens when a generation runs out, and how to limit which
 maps can use a config.
 
 ## Cargo features
