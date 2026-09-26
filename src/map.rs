@@ -1058,10 +1058,11 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// the key and [`len`](Self::len) does not count the value, but the slot
     /// is not on the free list, so no insert uses it.
     ///
-    /// Returns `None` if there is no value for `key`.
-    /// While the slot is detached, its generation is the one after
-    /// the key's with wrapping, which no key matches, and `reattach` gives the slot the
-    /// key's generation back.
+    /// Returns `None` if there is no value for `key`. While the slot is
+    /// detached, its generation is the one after the key's, and it wraps
+    /// around to zero after the largest value of the generation type. No key
+    /// matches that generation, and `reattach` gives the slot the key's
+    /// generation back.
     ///
     /// [`clear`](Self::clear) and [`retain`](Self::retain) leave a detached
     /// slot as it is, since it holds no value. [`reset`](Self::reset) removes
