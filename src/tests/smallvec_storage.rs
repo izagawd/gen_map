@@ -51,14 +51,6 @@ fn a_map_in_a_small_vec_keeps_working_after_it_moves_to_the_heap() {
 }
 
 #[test]
-fn a_map_in_a_small_vec_can_be_made_in_a_const() {
-    const EMPTY: GenMap<u32, Four> = GenMap::new_with_config();
-    let mut map = EMPTY;
-    let key = map.insert(1);
-    assert_eq!(map[key], 1);
-}
-
-#[test]
 fn a_small_vec_can_make_room_ahead_of_time() {
     let map = GenMap::<u32, Four>::with_capacity_and_config(64);
     assert!(map.capacity() >= 64);

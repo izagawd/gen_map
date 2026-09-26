@@ -41,8 +41,8 @@ use core::fmt;
 ///   items, the next `n` calls of `try_push` must succeed, as long as no
 ///   other `&mut self` method of this trait runs in between.
 /// - `clear` must drop every item and leave the storage empty.
-/// - [`EMPTY`](Self::EMPTY) and [`with_capacity`](Self::with_capacity) must
-///   hold no items.
+/// - [`empty`](Self::empty) and [`with_capacity`](Self::with_capacity) must
+///   return a storage with no items.
 /// - If the storage implements `IntoIterator<Item = Self::Item>`,
 ///   `into_iter` must yield the same items as `as_slice`, in the same order.
 /// - If that iterator also implements `DoubleEndedIterator` and
@@ -57,9 +57,8 @@ pub unsafe trait SlotStorage {
     /// Why the storage could not make room for another item.
     type Error: fmt::Debug;
 
-    /// A storage with no items. It is a constant rather than a function so
-    /// that a map can be created in a `const` context.
-    const EMPTY: Self;
+    /// Creates a storage with no items.
+    fn empty() -> Self;
 
     /// Creates a storage with no items and, if it can grow, room for
     /// `capacity` of them. A storage with a fixed capacity ignores the
@@ -141,7 +140,10 @@ unsafe impl<S> SlotStorage for Vec<S> {
     type Item = S;
     type Error = TryReserveError;
 
-    const EMPTY: Self = Vec::new();
+    #[inline]
+    fn empty() -> Self {
+        Vec::new()
+    }
 
     #[inline]
     fn with_capacity(capacity: usize) -> Self {
@@ -244,7 +246,10 @@ unsafe impl<S, const CAP: usize> SlotStorage for arrayvec::ArrayVec<S, CAP> {
     type Item = S;
     type Error = arrayvec::CapacityError;
 
-    const EMPTY: Self = arrayvec::ArrayVec::new_const();
+    #[inline]
+    fn empty() -> Self {
+        arrayvec::ArrayVec::new()
+    }
 
     /// An `ArrayVec` always has room for exactly `CAP` items, so the
     /// `capacity` argument is ignored.
@@ -330,7 +335,10 @@ unsafe impl<S, const N: usize> SlotStorage for smallvec::SmallVec<S, N> {
     type Item = S;
     type Error = smallvec::CollectionAllocErr;
 
-    const EMPTY: Self = smallvec::SmallVec::new();
+    #[inline]
+    fn empty() -> Self {
+        smallvec::SmallVec::new()
+    }
 
     #[inline]
     fn with_capacity(capacity: usize) -> Self {

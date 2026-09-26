@@ -237,7 +237,7 @@ impl<T> GenMap<T> {
     /// types.
     #[inline]
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self::new_with_config()
     }
 
@@ -326,9 +326,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// ```
     #[inline]
     #[must_use]
-    pub const fn new_with_config() -> Self {
+    pub fn new_with_config() -> Self {
         Self {
-            slots: Slots::<T, C>::EMPTY,
+            slots: Slots::<T, C>::empty(),
             next_free: None,
             len: 0,
         }

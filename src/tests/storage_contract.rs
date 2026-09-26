@@ -18,7 +18,7 @@ where
     St::IntoIter: DoubleEndedIterator,
 {
     let tracker = DropTracker::new();
-    let mut storage = St::EMPTY;
+    let mut storage = St::empty();
     assert!(storage.is_empty());
     assert!(St::with_capacity(count as usize).is_empty());
 
@@ -51,7 +51,7 @@ where
 /// Checks that after `try_reserve` makes room for `n` more items, the next
 /// `n` pushes succeed.
 fn check_reserve<St: ReserveStorage<Item = u32>>() {
-    let mut storage = St::EMPTY;
+    let mut storage = St::empty();
     assert!(storage.try_reserve(10).is_ok());
     assert!(storage.capacity() >= 10);
     for i in 0..10 {
@@ -78,7 +78,7 @@ fn an_array_vec_keeps_the_storage_contract() {
 #[test]
 fn a_full_array_vec_hands_the_item_back() {
     let tracker = DropTracker::new();
-    let mut storage = arrayvec::ArrayVec::<DropItem, 2>::EMPTY;
+    let mut storage = arrayvec::ArrayVec::<DropItem, 2>::empty();
     for _ in 0..2 {
         assert!(storage.try_push(tracker.make_item()).is_ok());
     }
@@ -98,7 +98,7 @@ fn a_full_array_vec_hands_the_item_back() {
 #[cfg(feature = "arrayvec")]
 #[test]
 fn an_array_vec_makes_room_only_for_what_fits() {
-    let mut storage = arrayvec::ArrayVec::<u32, 4>::EMPTY;
+    let mut storage = arrayvec::ArrayVec::<u32, 4>::empty();
     assert!(storage.try_push(0).is_ok());
     assert!(storage.ensure_room(3).is_ok());
     assert!(storage.ensure_room(4).is_err());
@@ -107,7 +107,7 @@ fn an_array_vec_makes_room_only_for_what_fits() {
 
 #[test]
 fn a_vec_cannot_make_room_for_usize_max_more_items() {
-    let mut storage = Vec::<u32>::EMPTY;
+    let mut storage = Vec::<u32>::empty();
     assert!(storage.ensure_room(usize::MAX).is_err());
     assert_eq!(storage.capacity(), 0);
 }

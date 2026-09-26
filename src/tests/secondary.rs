@@ -435,19 +435,6 @@ fn a_clone_has_the_same_values_and_keys() {
 }
 
 #[test]
-fn a_secondary_map_can_be_made_in_a_const() {
-    const EMPTY: SecondaryMap<u32> = SecondaryMap::new();
-    const KEEP: SecondaryMap<u32, Keep> = SecondaryMap::new_with_config();
-
-    let mut keys = GenMap::new();
-    let a = keys.insert(());
-    let mut map = EMPTY;
-    map.insert(a, 1).unwrap();
-    assert_eq!(map[a], 1);
-    assert!(KEEP.is_empty());
-}
-
-#[test]
 fn an_index_past_usize_fails_in_a_secondary_map_before_adding_a_slot() {
     type Wide = Cfg<u128, u32>;
 
@@ -608,8 +595,8 @@ impl<S: SecondarySlotItem> SecondaryMapConfig<S> for InSmallVec {
     type Storage = smallvec::SmallVec<S, 4>;
 }
 
-/// Default keys and the default strategy, with room for 1024 slots in an
-/// `ArrayVec`.
+/// Default keys and the default strategy, with room for 16 slots in an
+/// `ArrayVec`, so that even a short run fills it.
 #[cfg(feature = "arrayvec")]
 struct InArrayVec;
 
@@ -621,7 +608,7 @@ impl<T> MapConfig<T> for InArrayVec {
 #[cfg(feature = "arrayvec")]
 impl<S: SecondarySlotItem> SecondaryMapConfig<S> for InArrayVec {
     type ReplaceStrategy = NewerWinsWrapping;
-    type Storage = arrayvec::ArrayVec<S, 1024>;
+    type Storage = arrayvec::ArrayVec<S, 16>;
 }
 
 /// Picks one of the keys in `live` and `dead` at random.
@@ -634,26 +621,52 @@ fn pick(rng: &mut Rng, live: &[Key], dead: &[Key]) -> Key {
     }
 }
 
-/// Runs the same random inserts, removes and retains on a map with config
-/// `C` and on the model above, and checks that the two agree after every
-/// step. When the storage holds at most `capacity` slots, an insert at that
-/// index or past it must fail with `StorageFull` and leave the map as it was.
+/// How often the model runs met each case, so the test shows it covered
+/// them.
+#[derive(Default)]
+struct Coverage {
+    /// Inserts that met a value from a different generation.
+    met_older_or_newer: usize,
+    /// Inserts that met such a value and replaced it.
+    replaced_it: usize,
+    /// Inserts past the capacity of the storage.
+    full: usize,
+}
+
+/// Runs the model test on a map with config `C` for every seed. Miri is far
+/// slower than a normal run, so it gets fewer and shorter runs, and those
+/// are too short to be sure of meeting every case.
 fn follow_the_model<C>(capacity: Option<usize>)
 where
     C: SecondaryMapConfigFor<u32> + MapConfig<u32, KeyConfig = DefaultKeyConfig>,
 {
-    let mut rng = Rng(7);
+    let (seeds, steps) = if cfg!(miri) { (2, 300) } else { (8, 2000) };
+    let mut coverage = Coverage::default();
+    for seed in 0..seeds {
+        run_model::<C>(seed, steps, capacity, &mut coverage);
+    }
+    if !cfg!(miri) {
+        assert!(coverage.replaced_it > 0 && coverage.replaced_it < coverage.met_older_or_newer);
+        assert_eq!(coverage.full > 0, capacity.is_some());
+    }
+}
+
+/// Runs the same random inserts, removes and retains on a map with config
+/// `C` and on the model above, and checks that the two agree after every
+/// step. When the storage holds at most `capacity` slots, an insert at that
+/// index or past it must fail with `StorageFull` and leave the map as it was.
+fn run_model<C>(seed: u64, steps: u32, capacity: Option<usize>, coverage: &mut Coverage)
+where
+    C: SecondaryMapConfigFor<u32> + MapConfig<u32, KeyConfig = DefaultKeyConfig>,
+{
+    let mut rng = Rng(seed);
     let mut keys = GenMap::new();
     let mut live: Vec<Key> = Vec::new();
     let mut dead: Vec<Key> = Vec::new();
     let mut map = SecondaryMap::<u32, C>::new_with_config();
     let mut model: HashMap<u32, (u32, u32)> = HashMap::new();
-    // How often an insert met a value from a different generation, how often
-    // it replaced that value, and how often the storage was full, so the test
-    // shows it covered each case.
-    let (mut met_older_or_newer, mut replaced_it, mut full) = (0, 0, 0);
 
-    for step in 0..20_000u32 {
+    for step in 0..steps {
         match rng.below(100) {
             0..=24 => live.push(keys.insert(())),
             25..=39 if !live.is_empty() => {
@@ -664,23 +677,23 @@ where
             40..=74 if !live.is_empty() || !dead.is_empty() => {
                 let key = pick(&mut rng, &live, &dead);
                 if capacity.is_some_and(|capacity| key.idx() as usize >= capacity) {
-                    full += 1;
+                    coverage.full += 1;
                     assert!(
                         matches!(
                             map.insert(key, step),
                             Err(SecondaryInsertError::StorageFull(value, _)) if value == step
                         ),
-                        "insert past the capacity at step {step}"
+                        "insert past the capacity at step {step} of seed {seed}"
                     );
                 } else {
                     let before = model.get(&key.idx()).map(|&(generation, _)| generation);
                     let expected = model_insert(&mut model, key, step);
                     if before.is_some_and(|current| current != key.generation().get().get()) {
-                        met_older_or_newer += 1;
-                        replaced_it += usize::from(expected.is_ok());
+                        coverage.met_older_or_newer += 1;
+                        coverage.replaced_it += usize::from(expected.is_ok());
                     }
                     let found = map.insert(key, step).map_err(|error| error.into_inner());
-                    assert_eq!(found, expected, "insert at step {step}");
+                    assert_eq!(found, expected, "insert at step {step} of seed {seed}");
                 }
             }
             75..=94 if !live.is_empty() || !dead.is_empty() => {
@@ -692,7 +705,11 @@ where
                     }
                     _ => None,
                 };
-                assert_eq!(map.remove(key), expected, "remove at step {step}");
+                assert_eq!(
+                    map.remove(key),
+                    expected,
+                    "remove at step {step} of seed {seed}"
+                );
             }
             95..=99 => {
                 model.retain(|_, (_, value)| *value % 3 != 0);
@@ -702,7 +719,7 @@ where
         }
 
         assert_eq!(map.len(), model.len());
-        if step % 500 == 0 {
+        if step % 100 == 0 || step + 1 == steps {
             let mut expected: Vec<(u32, u32, u32)> = model
                 .iter()
                 .map(|(&idx, &(generation, value))| (idx, generation, value))
@@ -713,7 +730,7 @@ where
                 .iter()
                 .map(|(key, &value)| (key.idx(), key.generation().get().get(), value))
                 .collect();
-            assert_eq!(found, expected, "contents at step {step}");
+            assert_eq!(found, expected, "contents at step {step} of seed {seed}");
             for (key, value) in map.iter() {
                 assert_eq!(map.get_at(key.idx()), Some((key, value)));
                 let generation = key.generation().get().get();
@@ -721,8 +738,6 @@ where
             }
         }
     }
-    assert!(replaced_it > 0 && replaced_it < met_older_or_newer);
-    assert_eq!(full > 0, capacity.is_some());
 }
 
 #[test]
@@ -739,7 +754,7 @@ fn a_secondary_map_in_a_small_vec_follows_the_model() {
 #[cfg(feature = "arrayvec")]
 #[test]
 fn a_secondary_map_in_an_array_vec_follows_the_model() {
-    follow_the_model::<InArrayVec>(Some(1024));
+    follow_the_model::<InArrayVec>(Some(16));
 }
 
 #[test]

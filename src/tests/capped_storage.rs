@@ -32,10 +32,12 @@ unsafe impl<S> SlotStorage for Capped<S> {
     type Item = S;
     type Error = CapReached;
 
-    const EMPTY: Self = Capped(Vec::new());
+    fn empty() -> Self {
+        Capped(Vec::new())
+    }
 
     fn with_capacity(_: usize) -> Self {
-        Self::EMPTY
+        Self::empty()
     }
 
     fn capacity(&self) -> usize {

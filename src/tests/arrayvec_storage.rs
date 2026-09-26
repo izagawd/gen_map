@@ -79,14 +79,6 @@ fn a_map_in_an_array_vec_works_like_any_other() {
 }
 
 #[test]
-fn a_map_in_an_array_vec_can_be_made_in_a_const() {
-    const EMPTY: GenMap<u32, Four> = GenMap::new_with_config();
-    let mut map = EMPTY;
-    let key = map.insert(1);
-    assert_eq!(map[key], 1);
-}
-
-#[test]
 fn a_full_array_vec_reports_storage_full() {
     let mut map = full_map();
     assert_eq!(map.slots_len(), 4);
@@ -200,11 +192,7 @@ fn an_array_vec_drops_every_value_once_when_a_drop_panics() {
 
 #[test]
 fn a_secondary_map_in_an_array_vec_holds_the_first_four_indices() {
-    // The map is made in a `const`, which works because an `ArrayVec` needs
-    // no allocation.
-    const EMPTY: SecondaryMap<u32, Four> = SecondaryMap::new_with_config();
-
-    let mut map = EMPTY;
+    let mut map = SecondaryMap::<u32, Four>::new_with_config();
     for i in 0..4 {
         let key = key_from_parts::<Four>(i, 1);
         assert_eq!(map.insert(key, u32::from(i)).unwrap(), None);

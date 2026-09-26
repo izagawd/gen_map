@@ -492,7 +492,9 @@ mod sealed {
 /// # unsafe impl<S: Clone> SlotStorage for ClonePool<S> {
 /// #     type Item = S;
 /// #     type Error = ();
-/// #     const EMPTY: Self = ClonePool(Vec::new());
+/// #     fn empty() -> Self {
+/// #         ClonePool(Vec::new())
+/// #     }
 /// #     fn with_capacity(capacity: usize) -> Self {
 /// #         ClonePool(Vec::with_capacity(capacity))
 /// #     }

@@ -15,7 +15,9 @@ unsafe impl<S, const ITER: bool> SlotStorage for Bare<S, ITER> {
     type Item = S;
     type Error = ();
 
-    const EMPTY: Self = Bare(Vec::new());
+    fn empty() -> Self {
+        Bare(Vec::new())
+    }
 
     fn with_capacity(capacity: usize) -> Self {
         Bare(Vec::with_capacity(capacity))
