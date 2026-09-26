@@ -22,13 +22,13 @@ let b = map.insert("b");
 assert_eq!(map[a], "a");
 assert_eq!(map[b], "b");
 assert_eq!(map.remove(a), Some("a"));
-assert!(map.get(a).is_none()); // A removed key stays invalid forever.
+assert!(map.get(a).is_none()); // A removed key never matches again.
 
 let c = map.insert("c"); // This takes the slot `a` had, but under a new key.
 assert_ne!(a, c);
 
 for (key, value) in &map {
-println!("{key:?} = {value}");
+    println!("{key:?} = {value}");
 }
 ```
 
@@ -36,10 +36,10 @@ println!("{key:?} = {value}");
 
 A `KeyConfig` picks the index and generation integers and how a key stores
 the two. A `MapConfig` picks the key config, where the slots live and what
-happens when a slot's generation overflows. Maps whose configs pick the same
-key config can work with the same key. The default uses a `u32` index and a `u32`
+happens when a slot's generation runs out. Maps whose configs pick the same
+key config share a key type. The default uses a `u32` index and a `u32`
 generation stored as two fields, keeps the slots in a `Vec`, and retires a
-slot whose generation overflows, so no stale key can ever match a new value.
+slot whose generation runs out, so no stale key can ever match a new value.
 
 ```rust
 use gen_map::{GenMap, KeyConfig, MapConfig, Split};
@@ -57,7 +57,7 @@ struct TinyMap;
 impl MapConfig for TinyMap {
     type KeyConfig = TinyKey;
     type Storage<S> = Vec<S>;
-    // A slot whose generation overflows is reused instead of retired. The
+    // A slot whose generation runs out is reused instead of retired. The
     // default is to retire it.
     const WRAP_ON_OVERFLOW: bool = true;
 }
@@ -123,7 +123,7 @@ when the storage also implements `ReserveStorage`, which `Vec` and
 ## Handling a full map
 
 `insert` panics when the map is full, which happens when the keys have no
-index left for a new slot or the storage can not make room for one.
+index left for a new slot or the storage cannot make room for one.
 `try_insert` lets you handle the failure.
 
 ```rust
@@ -146,7 +146,7 @@ impl MapConfig for TinyMap {
 
 let mut map = GenMap::<u32, TinyMap>::new_with_config();
 for i in 0..256 {
-map.insert(i);
+    map.insert(i);
 }
 assert!(matches!(map.try_insert(256), Err(InsertError::IndexExhausted(256))));
 ```

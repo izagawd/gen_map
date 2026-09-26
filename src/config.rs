@@ -4,7 +4,9 @@ use crate::storage::SlotStorage;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-/// Compile time configuration of a [`Key`](crate::Key).
+/// Chooses the index and generation types of a [`Key`](crate::Key), and how
+/// the key stores the two.
+///
 /// # Examples
 ///
 /// ```
@@ -14,9 +16,7 @@ use alloc::vec::Vec;
 /// struct SmallKeys;
 ///
 /// impl KeyConfig for SmallKeys {
-///     // index type
 ///     type Idx = u16;
-///     // generation type
 ///     type Gen = u16;
 ///     // How a key stores the index and the generation.
 ///     type Layout = Split;
@@ -37,7 +37,9 @@ pub trait KeyConfig {
     type Layout: KeyLayout<Self::Idx, Self::Gen>;
 }
 
-/// Compile time configuration of a [`GenMap`](crate::GenMap).
+/// Chooses the key config of a [`GenMap`](crate::GenMap), the storage its
+/// slots live in, and what happens when a slot's generation runs out.
+///
 /// # Examples
 ///
 /// ```
@@ -52,7 +54,8 @@ pub trait KeyConfig {
 ///     type Layout = Split;
 /// }
 ///
-/// /// Four byte keys, and slots are never retired.
+/// /// Four byte keys, and a slot whose generation runs out wraps instead
+/// /// of retiring.
 /// struct Small;
 ///
 /// impl MapConfig for Small {
@@ -76,7 +79,8 @@ pub trait MapConfig {
     /// [`MapSlot`](crate::MapSlot) type.
     type Storage<S>: SlotStorage<S>;
 
-    /// What happens when a slot's generation overflows.
+    /// What happens when a slot's generation runs out, meaning it reaches
+    /// the largest one its key can hold.
     ///
     /// `false` retires the slot. It is never used again, so no stale key can
     /// ever match a new value.
@@ -101,9 +105,10 @@ impl KeyConfig for DefaultKeyConfig {
 /// The config a [`GenMap`](crate::GenMap) uses when none is named.
 ///
 /// Keys use the [`DefaultKeyConfig`], slots live in a `Vec`, and slots
-/// retire when their generation overflows. It needs the `alloc` feature,
+/// retire when their generation runs out. It needs the `alloc` feature,
 /// which is on by default.
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct DefaultMapConfig;
 

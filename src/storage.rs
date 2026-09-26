@@ -19,8 +19,9 @@ use core::fmt;
 /// [`as_mut_slice`](Self::as_mut_slice) must return every item that has been
 /// pushed since the last [`clear`](Self::clear), in the order they were
 /// pushed, and must return the same items every time unless a `&mut self`
-/// method of this trait was called in between. [`try_push`](Self::try_push)
-/// must append at the end and leave the other items where they are, and once
+/// method of this trait was called in between. `into_iter` must yield those
+/// same items, in the same order. [`try_push`](Self::try_push) must append
+/// at the end and leave the other items where they are, and once
 /// [`ensure_room`](Self::ensure_room) has returned `Ok`, the next `try_push`
 /// must succeed, as long as no other `&mut self` method of this trait runs
 /// in between. `clear` must drop every item and leave the storage empty.
@@ -42,7 +43,7 @@ pub unsafe trait SlotStorage<S>:
     fn with_capacity(capacity: usize) -> Self;
 
     /// How many items the storage can hold before it has to grow, or in
-    /// total if it can not grow.
+    /// total if it cannot grow.
     fn capacity(&self) -> usize;
 
     /// Every item, in the order they were pushed.
@@ -52,12 +53,19 @@ pub unsafe trait SlotStorage<S>:
     fn as_mut_slice(&mut self) -> &mut [S];
 
     /// Makes sure the next [`try_push`](Self::try_push) will succeed,
-    /// growing if the storage can and has to, or returns the reason the push
-    /// would fail.
+    /// growing if the storage can and has to.
+    ///
+    /// # Errors
+    ///
+    /// Returns the reason the push would fail if the storage cannot make
+    /// room.
     fn ensure_room(&mut self) -> Result<(), Self::Error>;
 
-    /// Appends `item`, or hands it back if the storage can not make room for
-    /// it.
+    /// Appends `item`.
+    ///
+    /// # Errors
+    ///
+    /// Hands `item` back if the storage cannot make room for it.
     fn try_push(&mut self, item: S) -> Result<(), S>;
 
     /// Drops every item, which leaves the storage empty.
@@ -84,19 +92,24 @@ pub trait ReserveStorage<S>: SlotStorage<S> {
     ///
     /// # Panics
     ///
-    /// Panics or aborts if the room can not be made, as `Vec::reserve` does.
+    /// Panics or aborts if the room cannot be made, as `Vec::reserve` does.
     /// Use [`try_reserve`](Self::try_reserve) to get an error instead.
     fn reserve(&mut self, additional: usize);
 
     /// The fallible form of [`reserve`](Self::reserve).
+    ///
+    /// # Errors
+    ///
+    /// Returns the reason the storage cannot make the room.
     fn try_reserve(&mut self, additional: usize) -> Result<(), Self::Error>;
 }
 
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 // SAFETY: `Vec` is the behaviour the trait describes. `Vec::push` itself
 // panics on capacity overflow and aborts on allocation failure, so both
 // `ensure_room` and `try_push` go through `try_reserve`, which reports the
 // two as errors.
-#[cfg(feature = "alloc")]
 unsafe impl<S> SlotStorage<S> for Vec<S> {
     type Error = TryReserveError;
 
@@ -145,6 +158,7 @@ unsafe impl<S> SlotStorage<S> for Vec<S> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<S> ReserveStorage<S> for Vec<S> {
     #[inline]
     fn reserve(&mut self, additional: usize) {
@@ -160,7 +174,7 @@ impl<S> ReserveStorage<S> for Vec<S> {
 /// Storage from the `arrayvec` crate that keeps up to `CAP` slots inline
 /// and never allocates. It needs the `arrayvec` feature.
 ///
-/// The storage can not grow, so once all `CAP` slots exist and none of them
+/// The storage cannot grow, so once all `CAP` slots exist and none of them
 /// are free, inserting fails with
 /// [`FullError::StorageFull`](crate::FullError::StorageFull).
 ///
@@ -188,6 +202,7 @@ impl<S> ReserveStorage<S> for Vec<S> {
 /// assert_eq!(map.capacity(), 16);
 /// ```
 #[cfg(feature = "arrayvec")]
+#[cfg_attr(docsrs, doc(cfg(feature = "arrayvec")))]
 // SAFETY: an `ArrayVec` keeps its items in order and in place, like a
 // `Vec`. Its `try_push` only fails when it is full, and `ensure_room`
 // returns `Ok` only when it is not.
@@ -242,7 +257,7 @@ unsafe impl<S, const CAP: usize> SlotStorage<S> for arrayvec::ArrayVec<S, CAP> {
 /// moves them to the heap once there are more. It needs the `smallvec`
 /// feature, which uses the 2.0 beta of `smallvec` and needs Rust 1.86.
 /// Until smallvec 2.0 is released, a newer smallvec beta or a new release of
-/// gen_map may break this feature, so it is not covered by semver.
+/// `gen_map` may break this feature, so it is not covered by semver.
 ///
 /// ```
 /// use gen_map::{GenMap, KeyConfig, MapConfig, Split};
@@ -267,8 +282,9 @@ unsafe impl<S, const CAP: usize> SlotStorage<S> for arrayvec::ArrayVec<S, CAP> {
 /// assert_eq!(map[keys[19]], 19);
 /// ```
 #[cfg(feature = "smallvec")]
+#[cfg_attr(docsrs, doc(cfg(feature = "smallvec")))]
 // SAFETY: a `SmallVec` behaves like a `Vec` whether its items are inline or
-// on the heap. `SmallVec::push` panics or aborts when it can not grow, so
+// on the heap. `SmallVec::push` panics or aborts when it cannot grow, so
 // both `ensure_room` and `try_push` go through `try_reserve`, which returns
 // an error instead.
 unsafe impl<S, const N: usize> SlotStorage<S> for smallvec::SmallVec<S, N> {
@@ -320,6 +336,7 @@ unsafe impl<S, const N: usize> SlotStorage<S> for smallvec::SmallVec<S, N> {
 }
 
 #[cfg(feature = "smallvec")]
+#[cfg_attr(docsrs, doc(cfg(feature = "smallvec")))]
 impl<S, const N: usize> ReserveStorage<S> for smallvec::SmallVec<S, N> {
     #[inline]
     fn reserve(&mut self, additional: usize) {

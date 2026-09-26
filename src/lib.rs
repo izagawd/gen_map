@@ -1,12 +1,14 @@
 //! A generational map with a configurable key.
 //!
-//! [`GenMap`] stores values and hands out a [`Key`] for each one. A key stays
-//! valid until its value is removed, and by default it never matches a value
-//! that later takes the same slot. The only exceptions are a config that
-//! wraps generations and [`reset`](GenMap::reset), both described below.
-//! That makes keys safe to hold on to where plain indices or references are
-//! not, such as in graphs, entity systems and anything else that refers to
-//! values by handle.
+//! [`GenMap`] stores values and hands out a [`Key`] for each one. A key
+//! matches its value until the value is removed, and by default it never
+//! matches a value that later takes the same slot. That makes keys safe to
+//! hold on to where plain indices or references are not, such as in graphs,
+//! entity systems and anything else that refers to values by handle. An old
+//! key can only match a new value with a config that wraps generations,
+//! after [`reset`](GenMap::reset), or through
+//! [`reattach`](GenMap::reattach), which puts a value back under the key it
+//! was detached from. All three are described below.
 //!
 //! Inserting, removing and looking up a value are all O(1). The crate is
 //! `no_std`, and it only needs an allocator for storage that uses the heap,
@@ -32,10 +34,9 @@
 //! assert!(map.get(a).is_none());
 //! assert_eq!(map[c], "c");
 //!
-//! for (key, value) in &map {
-//!     assert!(key == b || key == c);
-//!     assert!(*value == "b" || *value == "c");
-//! }
+//! // Values come out in slot order, and `c` took the slot `a` had.
+//! let pairs: Vec<_> = map.iter().collect();
+//! assert_eq!(pairs, [(c, &"c"), (b, &"b")]);
 //! ```
 //!
 //! # How it works
@@ -46,8 +47,9 @@
 //! generation goes up by one on every insert and every remove, so it is odd
 //! while the slot holds a value and even while it does not. A key only
 //! matches its slot while the two generations are equal, so removing a value
-//! invalidates every copy of its key at once, and the next value in that
-//! slot gets a key with a newer generation.
+//! stops every copy of its key from matching at once, and the next value in
+//! that slot gets a key with a newer generation. Retiring, wrapping and
+//! [`reattach`](GenMap::reattach) change a slot's generation in other ways.
 //!
 //! Freed slots go on a free list and are reused before the map adds new
 //! ones, so the map only grows when no slot is free.
@@ -55,10 +57,10 @@
 //! ## Slots
 //!
 //! Each slot is a [`Slot`], which pairs a generation with a `T` while the
-//! generation is odd, or with a `U` while it is even. The gen map keeps a value in
-//! the `T` and a link to the next free slot in the `U`. [`Even`] and [`Odd`]
-//! hold numbers known to be even or odd, and [`Parity`] is a slot's
-//! generation together with its value.
+//! generation is odd, or with a `U` while it is even. The map keeps a value
+//! in the `T` and, while the slot is free, a link to the next free slot in
+//! the `U`. [`Even`] and [`Odd`] hold numbers known to be even or odd, and
+//! [`Parity`] is a slot's generation together with its value.
 //!
 //! # Configuring the map
 //!
@@ -70,18 +72,21 @@
 //!   types of the index and the generation. Any type that implements
 //!   [`KeyPiece`] works, which is every unsigned integer from `u8` to
 //!   `u128`, and `usize`.
-//! - [`Layout`](KeyConfig::Layout) is how a key stores the generation and index. [`Split`] keeps
-//!   them as two fields and [`Packed`] puts them in the bits of one integer.
+//! - [`Layout`](KeyConfig::Layout) is how a key stores the generation and
+//!   index. [`Split`] keeps them as two fields and [`Packed`] puts them in
+//!   the bits of one integer.
 //!
 //! A [`MapConfig`] decides three things.
 //!
 //! - [`KeyConfig`](MapConfig::KeyConfig) is the config of the keys the map
 //!   hands out. Maps whose configs have the same key config share a key
-//!   type.
+//!   type. A key does not record which map handed it out, so another map
+//!   with the same key config accepts it and may hold an unrelated value
+//!   under it.
 //! - [`Storage`](MapConfig::Storage) is the collection the slots live in,
 //!   such as a `Vec`.
-//! - [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW) determines what happens to
-//!   a slot whose generation runs out.
+//! - [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW) determines what
+//!   happens to a slot whose generation runs out.
 //!
 //! [`DefaultMapConfig`] is the config a [`GenMap`] uses when none is named.
 //! Its keys use the [`DefaultKeyConfig`], so they are a `u32` index and a
@@ -185,7 +190,8 @@
 //! [`retire`](GenMap::retire) removes a value and retires its slot, no
 //! matter how the map is configured. Code built on a map that wraps can use
 //! it to keep the slots it chooses from wrapping, and
-//! [`Key::is_max_generation`] can be used to determine when a slot has reached that point.
+//! [`Key::is_max_generation`] can be used to determine when a slot has
+//! reached that point.
 //!
 //! ## Storage
 //!
@@ -206,9 +212,9 @@
 //!
 //! # When the map is full
 //!
-//! A map is full when none of its slots are free, and it can not add another
+//! A map is full when none of its slots are free, and it cannot add another
 //! one, either because its keys have no index left for a new slot or because
-//! the storage can not make room for one. A `u8` index, for example, allows
+//! the storage cannot make room for one. A `u8` index, for example, allows
 //! 256 slots.
 //!
 //! [`insert`](GenMap::insert) panics on a full map. The other ways to insert
@@ -219,12 +225,12 @@
 //! - [`vacant_entry`](GenMap::vacant_entry) picks the slot before the value
 //!   exists, and returns a [`FullError`] if there is none. The entry's
 //!   [`key`](VacantEntry::key) is the key the value will get, and dropping
-//!   the entry leaves the map as it was.
+//!   the entry inserts nothing.
 //! - [`try_insert_with_key`](GenMap::try_insert_with_key) runs a closure that
 //!   may fail, and returns an [`InsertWithError`] if the map is full or the
 //!   closure fails.
 //!
-//! When a `Vec` can not allocate, these methods also return a
+//! When a `Vec` cannot allocate, these methods also return a
 //! [`StorageFull`](FullError::StorageFull) error instead of panicking.
 //!
 //! ```
@@ -278,9 +284,9 @@
 //!
 //! [`detach`](GenMap::detach) moves a value out of the map but keeps its slot
 //! reserved for its key, and [`reattach`](GenMap::reattach) puts a value back
-//! under that same key. In between, the key is invalid and no insert can
-//! take the slot. This lets code take a value out, change it while borrowing
-//! the rest of the map, and put it back under the same key.
+//! under that same key. In between, the key matches with no value and no insert
+//! can take the slot. This lets code take a value out, change it while
+//! borrowing the rest of the map, and put it back under the same key.
 //!
 //! ```
 //! use gen_map::GenMap;
@@ -298,8 +304,8 @@
 //! # Several values at once
 //!
 //! [`get_disjoint_mut`](GenMap::get_disjoint_mut) hands out mutable
-//! references to several values at once, after checking that every key is
-//! valid and that no two keys point at the same slot.
+//! references to several values at once, after checking that the map has a
+//! value for every key and that no two keys point at the same slot.
 //! [`get_disjoint_mut_at`](GenMap::get_disjoint_mut_at) does the same with
 //! slot indices, and hands each key back with its value.
 //!
@@ -331,18 +337,23 @@
 //! their exact length and can run from both ends.
 //!
 //! [`retain`](GenMap::retain), [`drain`](GenMap::drain) and
-//! [`clear`](GenMap::clear) remove values but keep every slot and its
-//! generation, so old keys stay invalid. [`reset`](GenMap::reset) removes
-//! the slots too while keeping the allocation. The generations start over
-//! after a reset, so a key from before the reset can match a value inserted
-//! after it.
+//! [`clear`](GenMap::clear) remove values the same way
+//! [`remove`](GenMap::remove) does, so the slots stay and old keys stop
+//! matching. [`reset`](GenMap::reset) removes the slots too while keeping
+//! the allocation. The generations start over after a reset, so a key from
+//! before the reset can match a value inserted after it.
+//!
+//! Iterating goes through every slot, including the ones that hold no
+//! value, and so do `retain`, `drain` and `clear`. Only `reset` removes
+//! slots, so the time these take follows
+//! [`slots_len`](GenMap::slots_len) rather than [`len`](GenMap::len).
 //!
 //! # Unchecked access
 //!
 //! Every lookup has an `_unchecked` form, such as
 //! [`get_unchecked`](GenMap::get_unchecked), that skips the checks the
-//! normal form makes, for code that already knows its key or index is valid.
-//! Calling one with an invalid key or index is undefined behavior.
+//! normal form makes, for code that already knows they would pass. Calling
+//! one when a check would fail is undefined behavior.
 //!
 //! # Cargo features
 //!
@@ -355,7 +366,7 @@
 //! - `smallvec` lets a config use `smallvec::SmallVec` as its storage. It
 //!   uses the 2.0 beta of `smallvec`, which needs an allocator and Rust 1.86.
 //!   Until smallvec 2.0 is released, a newer smallvec beta or a new release
-//!   of gen_map may break this feature, so it is not covered by semver.
+//!   of `gen_map` may break this feature, so it is not covered by semver.
 //!
 //! To use the map without any allocator, turn `alloc` off and `arrayvec` on.
 //!
@@ -370,7 +381,12 @@
 //! Rust 1.86, because the 2.0 beta of `smallvec` does.
 
 #![no_std]
-#![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(
+    missing_docs,
+    unsafe_op_in_unsafe_fn,
+    clippy::undocumented_unsafe_blocks
+)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -389,6 +405,7 @@ mod slot;
 mod storage;
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use config::DefaultMapConfig;
 pub use config::{DefaultKeyConfig, KeyConfig, MapConfig};
 pub use error::{
@@ -398,8 +415,8 @@ pub use key::Key;
 pub use key_layout::{KeyLayout, Packed, PackedRepr, Split, SplitRepr};
 pub use key_piece::KeyPiece;
 pub use map::{
-    Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapSlot, StorageError, VacantEntry, Values,
-    ValuesMut,
+    Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapSlot, StorageError,
+    VacantEntry, Values, ValuesMut,
 };
 pub use parity::{Even, Odd};
 pub use slot::{Parity, Slot};

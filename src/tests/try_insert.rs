@@ -57,7 +57,7 @@ fn the_error_does_not_need_debug_from_the_value() {
 }
 
 #[test]
-#[should_panic(expected = "can not address more than 256 slots")]
+#[should_panic(expected = "cannot address more than 256 slots")]
 fn insert_panics_when_the_index_runs_out() {
     let mut map = GenMap::<i32, Byte>::new_with_config();
     for i in 0..257 {

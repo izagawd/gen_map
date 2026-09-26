@@ -35,7 +35,7 @@ impl<G: KeyPiece> Odd<G> {
         Self(unsafe { value.into_non_zero_unchecked() })
     }
 
-    /// The number as a `NonZero`.
+    /// Returns the number as a `G::NonZero`.
     #[inline]
     pub fn get(self) -> G::NonZero {
         self.0
@@ -94,7 +94,7 @@ impl<G: KeyPiece> Even<G> {
         Self(value)
     }
 
-    /// The number.
+    /// Returns the number as a plain `G`.
     #[inline]
     pub fn get(self) -> G {
         self.0

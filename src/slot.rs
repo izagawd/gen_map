@@ -83,7 +83,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
         }
     }
 
-    /// The generation.
+    /// Returns the slot's generation.
     #[inline]
     pub fn generation(&self) -> G {
         self.generation
@@ -177,7 +177,11 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     }
 
     /// Takes the `T` out of the slot if the slot's generation is
-    /// `generation`, and hands the slot back otherwise.
+    /// `generation`.
+    ///
+    /// # Errors
+    ///
+    /// Hands the slot back if its generation is not `generation`.
     #[inline]
     pub fn into_odd(self, generation: Odd<G>) -> Result<T, Self> {
         if self.generation == G::from_non_zero(generation.get()) {
@@ -215,7 +219,11 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     }
 
     /// Takes the `U` out of the slot if the slot's generation is
-    /// `generation`, and hands the slot back otherwise.
+    /// `generation`.
+    ///
+    /// # Errors
+    ///
+    /// Hands the slot back if its generation is not `generation`.
     #[inline]
     pub fn into_even(self, generation: Even<G>) -> Result<U, Self> {
         if self.generation == generation.get() {

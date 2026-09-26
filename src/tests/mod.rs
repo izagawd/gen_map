@@ -1,3 +1,7 @@
+// The tests call the unchecked methods and implement the unsafe traits on
+// purpose, so their unsafe code is not documented block by block.
+#![allow(clippy::undocumented_unsafe_blocks)]
+
 #[cfg(feature = "arrayvec")]
 mod arrayvec_storage;
 mod basic;

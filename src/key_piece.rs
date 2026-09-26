@@ -38,9 +38,7 @@ pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'stati
     fn checked_add(self, rhs: Self) -> Option<Self>;
 
     /// Returns `self + rhs`, wrapping around at the largest value of this
-    /// type. The map only calls this where it knows the sum fits, so the
-    /// wrapping never happens, and the method exists so that the add does
-    /// not have to be checked twice.
+    /// type.
     fn wrapping_add(self, rhs: Self) -> Self;
 
     /// Returns `self - rhs`, wrapping around below zero to the largest value
@@ -72,7 +70,8 @@ pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'stati
     /// returns `Some` for it.
     unsafe fn from_usize_unchecked(v: usize) -> Self;
 
-    /// Converts the value to its `NonZero` form, or returns `None` if it is zero.
+    /// Converts the value to its `NonZero` form, or returns `None` if it is
+    /// zero.
     fn into_non_zero(self) -> Option<Self::NonZero>;
 
     /// [`into_non_zero`](Self::into_non_zero) for a value that is known not
@@ -104,6 +103,10 @@ pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'stati
 macro_rules! impl_key_piece {
     ($($t:ty)*) => {
         $(
+            // SAFETY: these are the standard unsigned integers the trait
+            // describes. Every method forwards to the integer's own operation
+            // or to an exact cast, and the largest value of every unsigned
+            // integer is odd.
             unsafe impl KeyPiece for $t {
                 type NonZero = NonZero<$t>;
 
@@ -137,9 +140,9 @@ macro_rules! impl_key_piece {
                     usize::try_from(self).ok()
                 }
 
-                /// An `as` cast only truncates a value that does not fit,
-                /// and the caller promises the value fits, so the cast is
-                /// exact.
+                // An `as` cast only truncates a value that does not fit,
+                // and the caller promises the value fits, so the cast is
+                // exact.
                 #[inline]
                 unsafe fn into_usize_unchecked(self) -> usize {
                     debug_assert!(usize::try_from(self).is_ok());
@@ -151,7 +154,7 @@ macro_rules! impl_key_piece {
                     <$t>::try_from(v).ok()
                 }
 
-                /// The same kind of cast, from a `usize` to this type.
+                // The same kind of cast, from a `usize` to this type.
                 #[inline]
                 unsafe fn from_usize_unchecked(v: usize) -> Self {
                     debug_assert!(<$t>::try_from(v).is_ok());
@@ -185,7 +188,7 @@ macro_rules! impl_key_piece {
                     <$t>::try_from(v).ok()
                 }
 
-                /// The same cast as `from_usize_unchecked`, for a `u128`.
+                // The same cast as `from_usize_unchecked`, for a `u128`.
                 #[inline]
                 unsafe fn from_u128_unchecked(v: u128) -> Self {
                     debug_assert!(<$t>::try_from(v).is_ok());
