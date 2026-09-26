@@ -8,19 +8,26 @@ use core::marker::PhantomData;
 ///
 /// # Safety
 ///
-/// The map trusts what a layout hands back. [`idx`](Self::idx) and
-/// [`generation`](Self::generation) must return exactly what
-/// [`pack_unchecked`](Self::pack_unchecked) was given, and two `Repr`
-/// values must be equal only if they were packed from the same parts.
+/// The map trusts what a layout hands back. For a `Repr` that
+/// [`pack_unchecked`](Self::pack_unchecked) made, [`idx`](Self::idx) and
+/// [`generation`](Self::generation) must return exactly what it was given,
+/// and two `Repr` values must be equal only if they unpack to the same
+/// parts.
 /// [`max_idx`](Self::max_idx) and [`max_generation`](Self::max_generation)
 /// must return the same value every time, because the maps pack parts again
 /// long after they first checked them against those limits.
 ///
 /// `generation` is safe to call and returns an [`Odd`], and
-/// [`Key::from_repr`](crate::Key::from_repr) accepts any `Repr`, so safe code
-/// must not be able to make a `Repr` that `pack_unchecked` did not return. A
-/// `Repr` whose fields are private, like [`SplitRepr`] and [`PackedRepr`],
-/// meets this rule, because only `pack_unchecked` can make one.
+/// [`Key::from_repr`](crate::Key::from_repr) accepts any `Repr`, so every
+/// `Repr` that safe code can make must unpack to an index of at most
+/// `max_idx` and a generation of at most `max_generation`. A `Repr` whose
+/// fields are private and that only this layout makes, like [`SplitRepr`],
+/// meets this rule, because only `pack_unchecked` can make one. Every
+/// [`Packed`] layout on the same integer shares [`PackedRepr`], so a key can
+/// carry one that a layout with a different number of generation bits made.
+/// It meets the rule anyway, because every `PackedRepr` has its lowest bit
+/// set, and so every `Packed` layout unpacks it to parts that fit, with an
+/// odd generation.
 pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
     /// The type a key stores its index and generation in.
     type Repr: Copy + Eq + Hash + Send + Sync + 'static;
@@ -237,8 +244,11 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32> KeyL
     fn generation(repr: PackedRepr<R>) -> Odd<Gen> {
         check_packed::<Idx, Gen, R, GEN_BITS>();
         // SAFETY: the generation field has at most as many bits as `Gen`,
-        // which the check makes sure of. A `PackedRepr` only comes from
-        // `pack_unchecked`, which was given an odd generation.
+        // which the check makes sure of. Every `PackedRepr` was made by the
+        // `pack_unchecked` of a `Packed` layout on `R`, which puts an odd
+        // generation in the lowest bits, so the lowest bit is set whatever
+        // number of generation bits that layout had, and the generation read
+        // here is odd.
         unsafe {
             Odd::new_unchecked(Gen::from_u128_unchecked(
                 R::from_non_zero(repr.0).into_u128() & low_bits(GEN_BITS),

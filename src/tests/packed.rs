@@ -1,7 +1,8 @@
-use super::Cfg;
+use super::{key_from_parts, Cfg};
 use crate::{
     FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, Key, KeyConfig, KeyLayout,
-    MapConfig, MapConfigFor, MapKeyConfig, Odd, Packed, Split,
+    MapConfig, MapConfigFor, MapKeyConfig, NewerWinsWrapping, Odd, Packed, SecondaryMap,
+    SecondaryMapConfig, SecondarySlotItem, Split,
 };
 use core::mem::size_of;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -484,5 +485,61 @@ fn split_and_packed_hand_out_the_same_parts() {
             u32::from(p.generation().get().get())
         );
         assert_eq!(split.get(*s), packed.get(*p));
+    }
+}
+
+/// Keys on the same `u16` as [`Tiny`], but with eight generation bits, so
+/// both layouts store keys in a `PackedRepr<u16>`.
+struct Wide8;
+
+impl KeyConfig for Wide8 {
+    type Idx = u16;
+    type Gen = u8;
+    type Layout = Packed<u16, 8>;
+}
+
+impl<T> MapConfig<T> for Wide8 {
+    type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Wide8 {
+    type Storage = Vec<S>;
+}
+
+impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Wide8 {
+    type ReplaceStrategy = NewerWinsWrapping;
+    type Storage = Vec<S>;
+}
+
+#[test]
+fn a_repr_from_a_layout_with_other_generation_bits_is_still_a_valid_key() {
+    let max_idx = <Packed<u16, 8> as KeyLayout<u16, u8>>::max_idx();
+    let max_generation = <Packed<u16, 8> as KeyLayout<u16, u8>>::max_generation();
+    let mut map = GenMap::<u32, Wide8>::new_with_config();
+    let mut secondary = SecondaryMap::<u32, Wide8>::new_with_config();
+    for _ in 0..4 {
+        map.insert(0);
+    }
+
+    // Safe code can move any `Tiny` key into `Wide8`. Every such key must
+    // unpack to parts `Wide8` can hold, with an odd generation, which the
+    // debug assertions in `Odd` and `pack_unchecked` check as well.
+    let tiny_max_idx = <Packed<u16, 4> as KeyLayout<u16, u8>>::max_idx();
+    for idx in (0..=tiny_max_idx).step_by(97).chain([tiny_max_idx]) {
+        for generation in (1..=15).step_by(2) {
+            let moved = Key::<Wide8>::from_repr(key_from_parts::<Tiny>(idx, generation).repr());
+            assert!(moved.idx() <= max_idx);
+            assert!(moved.generation() <= max_generation);
+            assert_eq!(moved.generation().get().get() % 2, 1);
+
+            // Both maps treat it like any other key.
+            let _ = map.get(moved);
+            let _ = map.key_at(moved.idx());
+            assert!(secondary.insert(moved, 1).is_ok());
+            let found: Vec<_> = secondary.keys().collect();
+            assert_eq!(found, [moved]);
+            assert_eq!(secondary.remove(moved), Some(1));
+            secondary.clear();
+        }
     }
 }
