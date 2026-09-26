@@ -1,5 +1,6 @@
 use crate::{
-    FullError, GenMap, InsertError, InsertWithError, KeyConfig, MapConfig, SlotItem, Split,
+    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeyConfig,
+    MapConfig, Split,
 };
 use std::collections::TryReserveError;
 use std::string::{String, ToString};
@@ -13,8 +14,11 @@ impl KeyConfig for Byte {
     type Layout = Split;
 }
 
-impl<S: SlotItem> MapConfig<S> for Byte {
+impl<T> MapConfig<T> for Byte {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Byte {
     type Storage = Vec<S>;
 }
 

@@ -63,7 +63,8 @@
 //!
 //! # Configuring the map
 //!
-//! A map is configured by a [`MapConfig`], and its keys by a [`KeyConfig`].
+//! A map is configured by a [`MapConfig`] and a [`GenMapConfig`], and its
+//! keys by a [`KeyConfig`].
 //!
 //! A [`KeyConfig`] decides:
 //!
@@ -76,25 +77,32 @@
 //!   the bits of one integer. With either, `Option<Key>` is the same size as
 //!   `Key`.
 //!
-//! A [`MapConfig`] decides three things.
+//! A [`MapConfig`] has one associated type,
+//! [`KeyConfig`](MapConfig::KeyConfig), which is the config of the keys the
+//! map hands out. Maps whose configs have the same key config share a key
+//! type. A key does not record which map handed it out, so another map with
+//! the same key config accepts it and may hold an unrelated value under it.
 //!
-//! - [`KeyConfig`](MapConfig::KeyConfig) is the config of the keys the map
-//!   hands out. Maps whose configs have the same key config share a key
-//!   type. A key does not record which map handed it out, so another map
-//!   with the same key config accepts it and may hold an unrelated value
-//!   under it.
-//! - [`Storage`](MapConfig::Storage) is the collection the slots live in,
-//!   such as a `Vec`.
-//! - [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW) determines what
+//! A [`GenMapConfig`] decides two things.
+//!
+//! - [`WRAP_ON_OVERFLOW`](GenMapConfig::WRAP_ON_OVERFLOW) determines what
 //!   happens to a slot whose generation runs out.
+//! - [`Storage`](GenMapConfig::Storage) is the collection the map keeps its
+//!   slots in. `type Storage = Vec<S>;` keeps them in a `Vec`. The type must
+//!   implement [`GenSlotStorage`]. `Vec` implements it when the `alloc`
+//!   feature is on, which it is by default, `arrayvec::ArrayVec` when the
+//!   `arrayvec` feature is on, and `smallvec::SmallVec` when the `smallvec`
+//!   feature is on.
 //!
-//! A [`MapConfig`] is implemented for slot types. A slot is what the map
-//! keeps each value in, and [`SlotItem::Value`] is the type of that value. A
-//! config is usually implemented for every slot type at once, with
-//! `impl<S: SlotItem> MapConfig<S>`, and it can put bounds on the value or
-//! on the slot to limit which maps can use it.
-//! [`SlotItem`](SlotItem#bounds-on-the-value-and-the-slot) shows how, with
-//! examples.
+//! A [`MapConfig`] is implemented for value types, usually for all of them
+//! at once with `impl<T> MapConfig<T>`. A [`GenMapConfig`] is implemented
+//! for slot types, usually for all of them at once with
+//! `impl<S: GenSlotItem> GenMapConfig<S>`. A slot is what the map keeps each
+//! value in, and [`GenSlotItem::Value`] is the type of that value. Either
+//! impl can put bounds on the value, and the [`GenMapConfig`] impl can put
+//! bounds on the slot, to limit which maps can use the config.
+//! [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) shows how,
+//! with examples.
 //!
 //! [`DefaultMapConfig`] is the config a [`GenMap`] uses when none is named.
 //! Its keys use the [`DefaultKeyConfig`], so they are a `u32` index and a
@@ -103,11 +111,11 @@
 //! the key config a [`Key`] uses when none is named.
 //!
 //! A config is only used as a type parameter and never created as a value,
-//! so an empty struct is enough. One type can implement both traits and name
-//! itself as its key config.
+//! so an empty struct is enough. One type can implement all three traits and
+//! be its own key config.
 //!
 //! ```
-//! use gen_map::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
+//! use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
 //!
 //! /// A `u8` index and a `u8` generation, so keys are two bytes and the map
 //! /// holds at most 256 slots.
@@ -119,8 +127,11 @@
 //!     type Layout = Split;
 //! }
 //!
-//! impl<S: SlotItem> MapConfig<S> for Tiny {
+//! impl<T> MapConfig<T> for Tiny {
 //!     type KeyConfig = Self;
+//! }
+//!
+//! impl<S: GenSlotItem> GenMapConfig<S> for Tiny {
 //!     type Storage = Vec<S>;
 //! }
 //!
@@ -141,7 +152,7 @@
 //! when it is inserted and one when it is removed, so a `u32` generation lets
 //! a slot hold over two billion values, while a 4 bit generation lets it hold
 //! eight. What happens to a slot after that is up to
-//! [`WRAP_ON_OVERFLOW`](MapConfig::WRAP_ON_OVERFLOW).
+//! [`WRAP_ON_OVERFLOW`](GenMapConfig::WRAP_ON_OVERFLOW).
 //!
 //! By default, the slot retires. It stays in the storage but is never used
 //! again, so no stale key can ever match a new value.
@@ -158,11 +169,11 @@
 //!
 //! ## Storage
 //!
-//! The slots can live in any collection that implements [`SlotStorage`]. A
+//! The slots can live in any collection that implements [`GenSlotStorage`]. A
 //! `Vec` does, and so do two collections from other crates when their
 //! features are on. `ArrayVec` from `arrayvec` has a fixed capacity and
 //! never allocates, and `SmallVec` from `smallvec` keeps a few slots inline
-//! before it allocates. [`SlotStorage`] is an unsafe trait, because the map
+//! before it allocates. [`GenSlotStorage`] is an unsafe trait, because the map
 //! relies on the storage behaving like a `Vec` when it reads slots without
 //! bounds checks.
 //!
@@ -334,13 +345,16 @@ mod key_layout;
 mod key_piece;
 mod map;
 mod parity;
+mod secondary_storage;
 mod slot;
 mod storage;
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use config::DefaultMapConfig;
-pub use config::{DefaultKeyConfig, KeyConfig, MapConfig, MapConfigFor};
+pub use config::{
+    DefaultKeyConfig, GenMapConfig, KeyConfig, MapConfig, MapConfigFor, SecondaryMapConfig,
+};
 pub use error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
 };
@@ -352,8 +366,9 @@ pub use map::{
     StorageError, VacantEntry, Values, ValuesMut,
 };
 pub use parity::{Even, Odd};
-pub use slot::{Parity, Slot, SlotItem};
-pub use storage::{ReserveStorage, SlotStorage};
+pub use secondary_storage::SecondarySlotStorage;
+pub use slot::{GenSlotItem, Parity, SecondarySlotItem, Slot};
+pub use storage::{GenSlotStorage, ReserveStorage};
 
 // The tests use `Vec` storage and the default config, so they need `alloc`.
 #[cfg(all(test, feature = "alloc"))]

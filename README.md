@@ -35,11 +35,12 @@ for (key, value) in &map {
 ## Configuring the map
 
 A `KeyConfig` picks the key's index and generation types and how the key
-stores them. A `MapConfig` picks the key config, where the slots live and
-what happens when a slot's generation runs out.
+stores them. A `MapConfig` is used to decide the key config, and a
+`GenMapConfig` is used to decide what happens when a slot's generation runs
+out and where the slots live.
 
 ```rust
-use gen_map::{GenMap, KeyConfig, MapConfig, Packed, SlotItem};
+use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Packed};
 
 /// Four byte keys with 24 bits of index and 8 bits of generation.
 struct CompactKey;
@@ -52,9 +53,13 @@ impl KeyConfig for CompactKey {
 
 struct CompactMap;
 
-// `S` is the slot the map keeps each value in.
-impl<S: SlotItem> MapConfig<S> for CompactMap {
+// `T` is the type of the values in the map.
+impl<T> MapConfig<T> for CompactMap {
     type KeyConfig = CompactKey;
+}
+
+// `S` is the slot the map keeps each value in.
+impl<S: GenSlotItem> GenMapConfig<S> for CompactMap {
     type Storage = Vec<S>;
 }
 

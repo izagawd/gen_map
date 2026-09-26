@@ -116,12 +116,12 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 /// The largest index is `(1 << (R::BITS - GEN_BITS)) - 1` and the largest
 /// generation is `(1 << GEN_BITS) - 1`, no matter how wide `Idx` and `Gen`
 /// are. A slot whose generation reaches the largest one retires or wraps, as
-/// [`WRAP_ON_OVERFLOW`](crate::MapConfig::WRAP_ON_OVERFLOW) says.
+/// [`WRAP_ON_OVERFLOW`](crate::GenMapConfig::WRAP_ON_OVERFLOW) says.
 ///
 /// # Examples
 ///
 /// ```
-/// use gen_map::{GenMap, Key, KeyConfig, MapConfig, Packed, SlotItem};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, Key, KeyConfig, MapConfig, Packed};
 ///
 /// /// Four byte keys with 24 bits of index and 8 bits of generation.
 /// struct Compact;
@@ -132,8 +132,11 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 ///     type Layout = Packed<u32, 8>;
 /// }
 ///
-/// impl<S: SlotItem> MapConfig<S> for Compact {
+/// impl<T> MapConfig<T> for Compact {
 ///     type KeyConfig = Self;
+/// }
+///
+/// impl<S: GenSlotItem> GenMapConfig<S> for Compact {
 ///     type Storage = Vec<S>;
 /// }
 ///

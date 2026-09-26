@@ -1,5 +1,5 @@
 use super::Cfg;
-use crate::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
+use crate::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
 use std::vec::Vec;
 
 #[test]
@@ -73,8 +73,11 @@ fn key_at_with_an_index_that_does_not_fit_in_usize_is_none() {
         type Layout = Split;
     }
 
-    impl<S: SlotItem> MapConfig<S> for Wide {
+    impl<T> MapConfig<T> for Wide {
         type KeyConfig = Self;
+    }
+
+    impl<S: GenSlotItem> GenMapConfig<S> for Wide {
         type Storage = Vec<S>;
     }
 

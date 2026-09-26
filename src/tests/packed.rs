@@ -1,7 +1,7 @@
 use super::Cfg;
 use crate::{
-    FullError, GenMap, InsertError, Key, KeyConfig, KeyLayout, MapConfig, MapConfigFor,
-    MapKeyConfig, Odd, Packed, SlotItem, Split,
+    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, Key, KeyConfig, KeyLayout,
+    MapConfig, MapConfigFor, MapKeyConfig, Odd, Packed, Split,
 };
 use core::mem::size_of;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -17,8 +17,11 @@ impl KeyConfig for Compact {
     type Layout = Packed<u32, 8>;
 }
 
-impl<S: SlotItem> MapConfig<S> for Compact {
+impl<T> MapConfig<T> for Compact {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Compact {
     type Storage = Vec<S>;
 }
 
@@ -32,8 +35,11 @@ impl KeyConfig for Tiny {
     type Layout = Packed<u16, 4>;
 }
 
-impl<S: SlotItem> MapConfig<S> for Tiny {
+impl<T> MapConfig<T> for Tiny {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Tiny {
     type Storage = Vec<S>;
 }
 
@@ -46,10 +52,13 @@ impl KeyConfig for TinyWrap {
     type Layout = Packed<u16, 4>;
 }
 
-impl<S: SlotItem> MapConfig<S> for TinyWrap {
+impl<T> MapConfig<T> for TinyWrap {
     type KeyConfig = Self;
-    type Storage = Vec<S>;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for TinyWrap {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Storage = Vec<S>;
 }
 
 /// One byte keys with 4 bits of index, so the map holds sixteen slots.
@@ -61,8 +70,11 @@ impl KeyConfig for Byte {
     type Layout = Packed<u8, 4>;
 }
 
-impl<S: SlotItem> MapConfig<S> for Byte {
+impl<T> MapConfig<T> for Byte {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Byte {
     type Storage = Vec<S>;
 }
 
@@ -76,8 +88,11 @@ impl KeyConfig for Huge {
     type Layout = Packed<u128, 64>;
 }
 
-impl<S: SlotItem> MapConfig<S> for Huge {
+impl<T> MapConfig<T> for Huge {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Huge {
     type Storage = Vec<S>;
 }
 
@@ -90,8 +105,11 @@ impl KeyConfig for Native {
     type Layout = Packed<usize, 8>;
 }
 
-impl<S: SlotItem> MapConfig<S> for Native {
+impl<T> MapConfig<T> for Native {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Native {
     type Storage = Vec<S>;
 }
 

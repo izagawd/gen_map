@@ -1,4 +1,6 @@
-use crate::{GenMap, KeyConfig, MapConfig, MapConfigFor, MapSlot, SlotItem, Split};
+use crate::{
+    GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, MapConfigFor, MapSlot, Split,
+};
 use std::vec::Vec;
 
 /// A `u8` index and a `u8` generation, so a slot retires after holding 128
@@ -11,8 +13,11 @@ impl KeyConfig for Retire {
     type Layout = Split;
 }
 
-impl<S: SlotItem> MapConfig<S> for Retire {
+impl<T> MapConfig<T> for Retire {
     type KeyConfig = Self;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Retire {
     type Storage = Vec<S>;
 }
 
@@ -26,16 +31,19 @@ impl KeyConfig for Wrap {
     type Layout = Split;
 }
 
-impl<S: SlotItem> MapConfig<S> for Wrap {
+impl<T> MapConfig<T> for Wrap {
     type KeyConfig = Self;
-    type Storage = Vec<S>;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for Wrap {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Storage = Vec<S>;
 }
 
 #[test]
 fn retiring_is_the_default_policy() {
     fn policy<C: MapConfigFor<u32>>() -> bool {
-        <C as MapConfig<MapSlot<u32, C>>>::WRAP_ON_OVERFLOW
+        <C as GenMapConfig<MapSlot<u32, C>>>::WRAP_ON_OVERFLOW
     }
     assert!(!policy::<Retire>());
     assert!(!policy::<crate::DefaultMapConfig>());

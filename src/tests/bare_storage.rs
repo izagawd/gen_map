@@ -1,17 +1,17 @@
-//! Storages that implement `SlotStorage` and little else, to check that a
+//! Storages that implement `GenSlotStorage` and little else, to check that a
 //! map only asks for more where a method needs it.
 
-use crate::{GenMap, KeyConfig, MapConfig, SlotItem, SlotStorage, Split};
+use crate::{GenMap, GenMapConfig, GenSlotItem, GenSlotStorage, KeyConfig, MapConfig, Split};
 use std::vec::Vec;
 
-/// A `Vec` behind `SlotStorage` alone. With `ITER` it also has an owning
+/// A `Vec` behind `GenSlotStorage` alone. With `ITER` it also has an owning
 /// iterator, which implements `Iterator` but not `DoubleEndedIterator` or
 /// `ExactSizeIterator`.
 struct Bare<S, const ITER: bool>(Vec<S>);
 
 // SAFETY: every method forwards to the `Vec`, which is the behaviour the
 // trait describes.
-unsafe impl<S, const ITER: bool> SlotStorage for Bare<S, ITER> {
+unsafe impl<S, const ITER: bool> GenSlotStorage for Bare<S, ITER> {
     type Item = S;
     type Error = ();
 
@@ -79,16 +79,22 @@ impl KeyConfig for Keys {
 /// Its storage has no owning iterator.
 struct NoIter;
 
-impl<S: SlotItem> MapConfig<S> for NoIter {
+impl<T> MapConfig<T> for NoIter {
     type KeyConfig = Keys;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for NoIter {
     type Storage = Bare<S, false>;
 }
 
 /// Its storage's owning iterator is a `Forwards`.
 struct ForwardIter;
 
-impl<S: SlotItem> MapConfig<S> for ForwardIter {
+impl<T> MapConfig<T> for ForwardIter {
     type KeyConfig = Keys;
+}
+
+impl<S: GenSlotItem> GenMapConfig<S> for ForwardIter {
     type Storage = Bare<S, true>;
 }
 

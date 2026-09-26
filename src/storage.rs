@@ -5,7 +5,8 @@ use alloc::vec::Vec;
 use core::fmt;
 
 /// The collection a [`GenMap`](crate::GenMap) keeps its slots in. A
-/// [`MapConfig`](crate::MapConfig) names one through its `Storage` type.
+/// [`GenMapConfig`](crate::GenMapConfig) chooses one with its `Storage`
+/// type.
 ///
 /// A storage that can also grow on request implements [`ReserveStorage`]
 /// too. A storage that implements `IntoIterator` gives the map an owning
@@ -38,7 +39,7 @@ use core::fmt;
 /// - If that iterator also implements `DoubleEndedIterator` and
 ///   `ExactSizeIterator`, `next_back` must yield the items starting from the
 ///   last one, and `len` must be the number of items not yet yielded.
-pub unsafe trait SlotStorage {
+pub unsafe trait GenSlotStorage {
     /// The items the storage holds. A map's storage holds its
     /// [`MapSlot`](crate::MapSlot)s.
     type Item;
@@ -97,10 +98,10 @@ pub unsafe trait SlotStorage {
     }
 }
 
-/// A [`SlotStorage`] that can make room for more items on request. After
+/// A [`GenSlotStorage`] that can make room for more items on request. After
 /// [`try_reserve`](Self::try_reserve) has returned `Ok` for `n` more items,
-/// the next `n` calls of [`try_push`](SlotStorage::try_push) succeed.
-pub trait ReserveStorage: SlotStorage {
+/// the next `n` calls of [`try_push`](GenSlotStorage::try_push) succeed.
+pub trait ReserveStorage: GenSlotStorage {
     /// Makes room for at least `additional` more items.
     ///
     /// # Panics
@@ -123,7 +124,7 @@ pub trait ReserveStorage: SlotStorage {
 // panics on capacity overflow and aborts on allocation failure, so both
 // `ensure_room` and `try_push` go through `try_reserve`, which reports the
 // two as errors.
-unsafe impl<S> SlotStorage for Vec<S> {
+unsafe impl<S> GenSlotStorage for Vec<S> {
     type Item = S;
     type Error = TryReserveError;
 
@@ -194,7 +195,7 @@ impl<S> ReserveStorage for Vec<S> {
 ///
 /// ```
 /// use arrayvec::ArrayVec;
-/// use gen_map::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
 ///
 /// /// Room for sixteen slots, without any allocation.
 /// struct Inline;
@@ -205,8 +206,11 @@ impl<S> ReserveStorage for Vec<S> {
 ///     type Layout = Split;
 /// }
 ///
-/// impl<S: SlotItem> MapConfig<S> for Inline {
+/// impl<T> MapConfig<T> for Inline {
 ///     type KeyConfig = Self;
+/// }
+///
+/// impl<S: GenSlotItem> GenMapConfig<S> for Inline {
 ///     type Storage = ArrayVec<S, 16>;
 /// }
 ///
@@ -220,7 +224,7 @@ impl<S> ReserveStorage for Vec<S> {
 // SAFETY: an `ArrayVec` keeps its items in order and in place, like a
 // `Vec`. Its `try_push` only fails when it is full, and `ensure_room`
 // returns `Ok` only when it is not.
-unsafe impl<S, const CAP: usize> SlotStorage for arrayvec::ArrayVec<S, CAP> {
+unsafe impl<S, const CAP: usize> GenSlotStorage for arrayvec::ArrayVec<S, CAP> {
     type Item = S;
     type Error = arrayvec::CapacityError;
 
@@ -275,7 +279,7 @@ unsafe impl<S, const CAP: usize> SlotStorage for arrayvec::ArrayVec<S, CAP> {
 /// `gen_map` may break this feature, so it is not covered by semver.
 ///
 /// ```
-/// use gen_map::{GenMap, KeyConfig, MapConfig, SlotItem, Split};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
 /// use smallvec::SmallVec;
 ///
 /// /// Room for eight slots before the map allocates.
@@ -287,8 +291,11 @@ unsafe impl<S, const CAP: usize> SlotStorage for arrayvec::ArrayVec<S, CAP> {
 ///     type Layout = Split;
 /// }
 ///
-/// impl<S: SlotItem> MapConfig<S> for Small {
+/// impl<T> MapConfig<T> for Small {
 ///     type KeyConfig = Self;
+/// }
+///
+/// impl<S: GenSlotItem> GenMapConfig<S> for Small {
 ///     type Storage = SmallVec<S, 8>;
 /// }
 ///
@@ -302,7 +309,7 @@ unsafe impl<S, const CAP: usize> SlotStorage for arrayvec::ArrayVec<S, CAP> {
 // on the heap. `SmallVec::push` panics or aborts when it cannot grow, so
 // both `ensure_room` and `try_push` go through `try_reserve`, which returns
 // an error instead.
-unsafe impl<S, const N: usize> SlotStorage for smallvec::SmallVec<S, N> {
+unsafe impl<S, const N: usize> GenSlotStorage for smallvec::SmallVec<S, N> {
     type Item = S;
     type Error = smallvec::CollectionAllocErr;
 

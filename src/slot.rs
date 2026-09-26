@@ -399,44 +399,48 @@ impl<G: KeyPiece, T: fmt::Debug, U: fmt::Debug> fmt::Debug for Slot<G, T, U> {
 }
 
 mod sealed {
-    /// Keeps [`SlotItem`](super::SlotItem) from being implemented outside
-    /// this crate.
+    /// Keeps [`GenSlotItem`](super::GenSlotItem) and
+    /// [`SecondarySlotItem`](super::SecondarySlotItem) from being implemented
+    /// outside this crate.
     pub trait Sealed {}
 }
 
 /// The slot a [`GenMap`](crate::GenMap) keeps each of its values in, as a
-/// [`MapConfig`](crate::MapConfig) sees it.
+/// [`GenMapConfig`](crate::GenMapConfig) sees it.
 ///
 /// Every value in a map sits in a slot, together with the slot's
 /// generation. The slots of a `GenMap<T, C>` are
-/// [`MapSlot<T, C>`](crate::MapSlot). A config implements `MapConfig<S>` for
-/// the slot types `S` it supports, usually for all of them at once with
-/// `impl<S: SlotItem> MapConfig<S> for YourConfig`. Inside that impl, `S` is
-/// the slot and `S::Value` is the type of the value in it, so for a
+/// [`MapSlot<T, C>`](crate::MapSlot). A config implements `GenMapConfig<S>`
+/// for the slot types `S` it supports, usually for all of them at once with
+/// `impl<S: GenSlotItem> GenMapConfig<S> for YourConfig`. Inside that impl, `S`
+/// is the slot and `S::Value` is the type of the value in it, so for a
 /// `GenMap<T, C>` it is `T`.
 ///
-/// Only [`Slot`] implements `SlotItem`, and it cannot be implemented outside
+/// Only [`Slot`] implements `GenSlotItem`, and it cannot be implemented outside
 /// this crate.
 ///
 /// # Bounds on the value and the slot
 ///
-/// A config can limit which maps can use it with bounds on the value type,
-/// `S::Value`, or on the slot type, `S`. A map whose values or slots do not
-/// meet the bounds fails to compile.
+/// A config can limit which maps can use it with bounds on the value type
+/// or on the slot type. A map whose values or slots do not meet the bounds
+/// fails to compile.
 ///
-/// A bound on `S::Value` limits the value types:
+/// A bound on the value limits the value types:
 ///
 /// ```
-/// use gen_map::{DefaultKeyConfig, GenMap, MapConfig, SlotItem};
+/// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, MapConfig};
 ///
 /// /// Only for values that are `Copy`.
 /// struct CopyValues;
 ///
-/// impl<S: SlotItem> MapConfig<S> for CopyValues
+/// impl<T: Copy> MapConfig<T> for CopyValues {
+///     type KeyConfig = DefaultKeyConfig;
+/// }
+///
+/// impl<S: GenSlotItem> GenMapConfig<S> for CopyValues
 /// where
 ///     S::Value: Copy,
 /// {
-///     type KeyConfig = DefaultKeyConfig;
 ///     type Storage = Vec<S>;
 /// }
 ///
@@ -448,16 +452,20 @@ mod sealed {
 /// // let map = GenMap::<String, CopyValues>::new_with_config();
 /// ```
 ///
-/// Setting `Value` allows a single value type:
+/// To allow only `u32` values, implement `MapConfig<u32>` instead of
+/// `MapConfig<T>`, and `GenMapConfig` only for slots whose `Value` is `u32`:
 ///
 /// ```
-/// use gen_map::{DefaultKeyConfig, GenMap, MapConfig, SlotItem};
+/// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, MapConfig};
 ///
 /// /// Only for values that are `u32`.
 /// struct U32Values;
 ///
-/// impl<S: SlotItem<Value = u32>> MapConfig<S> for U32Values {
+/// impl MapConfig<u32> for U32Values {
 ///     type KeyConfig = DefaultKeyConfig;
+/// }
+///
+/// impl<S: GenSlotItem<Value = u32>> GenMapConfig<S> for U32Values {
 ///     type Storage = Vec<S>;
 /// }
 ///
@@ -475,13 +483,13 @@ mod sealed {
 /// `Sync` when its value is, and it is never `Copy`.
 ///
 /// ```
-/// use gen_map::{DefaultKeyConfig, GenMap, MapConfig, SlotItem, SlotStorage};
+/// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, GenSlotStorage, MapConfig};
 ///
-/// /// A storage that only holds items that can be cloned. Its `SlotStorage`
+/// /// A storage that only holds items that can be cloned. Its `GenSlotStorage`
 /// /// impl, which forwards every method to the `Vec`, is hidden here.
 /// struct ClonePool<S: Clone>(Vec<S>);
 /// # // SAFETY: every method forwards to the `Vec`.
-/// # unsafe impl<S: Clone> SlotStorage for ClonePool<S> {
+/// # unsafe impl<S: Clone> GenSlotStorage for ClonePool<S> {
 /// #     type Item = S;
 /// #     type Error = ();
 /// #     const EMPTY: Self = ClonePool(Vec::new());
@@ -513,8 +521,11 @@ mod sealed {
 /// /// `S: Clone`.
 /// struct Cloneable;
 ///
-/// impl<S: SlotItem + Clone> MapConfig<S> for Cloneable {
+/// impl<T> MapConfig<T> for Cloneable {
 ///     type KeyConfig = DefaultKeyConfig;
+/// }
+///
+/// impl<S: GenSlotItem + Clone> GenMapConfig<S> for Cloneable {
 ///     type Storage = ClonePool<S>;
 /// }
 ///
@@ -527,7 +538,7 @@ mod sealed {
 /// // does not compile:
 /// // let map = GenMap::<std::sync::Mutex<u32>, Cloneable>::new_with_config();
 /// ```
-pub trait SlotItem: sealed::Sealed {
+pub trait GenSlotItem: sealed::Sealed {
     /// The type of the value in the slot. For the slots of a
     /// `GenMap<T, C>`, it is `T`.
     type Value;
@@ -535,6 +546,16 @@ pub trait SlotItem: sealed::Sealed {
 
 impl<G: KeyPiece, T, U> sealed::Sealed for Slot<G, T, U> {}
 
-impl<G: KeyPiece, T, U> SlotItem for Slot<G, T, U> {
+impl<G: KeyPiece, T, U> GenSlotItem for Slot<G, T, U> {
     type Value = T;
+}
+
+/// A slot type that a [`SecondaryMapConfig`](crate::SecondaryMapConfig) is
+/// implemented for. [`Value`](Self::Value) is the type of the value in the
+/// slot.
+///
+/// No type implements it, and it cannot be implemented outside this crate.
+pub trait SecondarySlotItem: sealed::Sealed {
+    /// The type of the value in the slot.
+    type Value;
 }
