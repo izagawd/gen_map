@@ -9,7 +9,7 @@ use crate::key_layout::KeyLayout;
 use crate::key_piece::KeyPiece;
 use crate::parity::{Even, Odd};
 use crate::slot::{Parity, Slot};
-use crate::storage::{GenSlotStorage, ReserveStorage};
+use crate::storage::{ReserveStorage, SlotStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -40,14 +40,14 @@ pub type MapSlot<T, C> = Slot<MapGen<T, C>, T, Option<MapIdx<T, C>>>;
 /// # Safety
 ///
 /// `idx` must be the position of a slot in the storage, and `generation`
-/// should refer to that slot's generation.
+/// must be the generation of that slot while it holds a value.
 #[inline]
 unsafe fn slot_key<T, C: MapConfig<T>>(
     idx: Idx<T, C>,
     generation: Odd<Gen<T, C>>,
 ) -> Key<MapKeyConfig<T, C>> {
-    // SAFETY: the map never lets a slot's position or generation grow past
-    // what the layout holds.
+    // SAFETY: the map never lets a slot's position, or the generation of a
+    // slot that holds a value, grow past what the layout holds.
     Key::from_repr(unsafe {
         <Layout<T, C> as KeyLayout<Idx<T, C>, Gen<T, C>>>::pack_unchecked(idx, generation)
     })
@@ -109,11 +109,23 @@ fn next_generation<T, C: MapConfig<T>>(generation: Odd<Gen<T, C>>) -> Option<Eve
     }
 }
 
+/// The generation a slot has while it is detached from a key with
+/// `generation`. It is the one after the key's, wrapping around at the
+/// largest value of the generation type. It is even, so no key matches the
+/// slot, and [`GenMap::reattach`] can work it out again from the key.
+///
+/// With a [`Packed`](crate::Packed) layout, it can be one past the largest
+/// generation a key can hold. That does no harm, because a detached slot is
+/// never on the free list, so its generation never goes into a key.
+#[inline]
+fn detached_generation<T, C: MapConfig<T>>(generation: Odd<Gen<T, C>>) -> Even<Gen<T, C>> {
+    generation.wrapping_next()
+}
+
 /// The error the storage of a `GenMap<T, C>` gives when it cannot make room
 /// for another slot. It is `TryReserveError` for a `Vec`, `CapacityError` for
 /// an `ArrayVec` and `CollectionAllocErr` for a `SmallVec`.
-pub type StorageError<T, C> =
-    <<C as GenMapConfig<MapSlot<T, C>>>::Storage as GenSlotStorage>::Error;
+pub type StorageError<T, C> = <<C as GenMapConfig<MapSlot<T, C>>>::Storage as SlotStorage>::Error;
 
 /// Where the next inserted value will go, worked out before anything is
 /// written.
@@ -225,7 +237,7 @@ impl<T> GenMap<T> {
     /// types.
     #[inline]
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self::new_with_config()
     }
 
@@ -314,9 +326,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// ```
     #[inline]
     #[must_use]
-    pub const fn new_with_config() -> Self {
+    pub fn new_with_config() -> Self {
         Self {
-            slots: Slots::<T, C>::EMPTY,
+            slots: Slots::<T, C>::empty(),
             next_free: None,
             len: 0,
         }
@@ -893,7 +905,7 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
                 let idx = Idx::<T, C>::from_usize(position)
                     .filter(|idx| *idx <= max_idx::<T, C>())
                     .ok_or(FullError::IndexExhausted)?;
-                self.slots.ensure_room().map_err(FullError::StorageFull)?;
+                self.slots.ensure_room(1).map_err(FullError::StorageFull)?;
                 (idx, position, Even::ZERO, false)
             }
         };
@@ -928,11 +940,11 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
             self.next_free = unsafe { slot.replace_even_unchecked(target.generation, value) };
         } else {
             let slot = Slot::new_odd(target.generation, value);
-            // `next_target` made room for this slot, and `GenSlotStorage`
+            // `next_target` made room for this slot, and `SlotStorage`
             // promises `try_push` succeeds then, so a refusal is a broken
             // storage. The slot is dropped with its value in that case.
             if self.slots.try_push(slot).is_err() {
-                panic!("GenSlotStorage::try_push failed although ensure_room returned Ok");
+                panic!("SlotStorage::try_push failed although ensure_room returned Ok");
             }
         }
         self.len += 1;
@@ -1046,10 +1058,11 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// the key and [`len`](Self::len) does not count the value, but the slot
     /// is not on the free list, so no insert uses it.
     ///
-    /// Returns `None` if there is no value for `key`. It also returns `None`,
-    /// and leaves the value in the map, if the slot's generation is already
-    /// the largest one its key can hold, because a slot that is about to
-    /// retire or wrap cannot promise to give the same key back.
+    /// Returns `None` if there is no value for `key`. While the slot is
+    /// detached, its generation is the one after the key's, and it wraps
+    /// around to zero after the largest value of the generation type. No key
+    /// matches that generation, and `reattach` gives the slot the key's
+    /// generation back.
     ///
     /// [`clear`](Self::clear) and [`retain`](Self::retain) leave a detached
     /// slot as it is, since it holds no value. [`reset`](Self::reset) removes
@@ -1076,10 +1089,12 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     pub fn detach(&mut self, key: Key<MapKeyConfig<T, C>>) -> Option<T> {
         let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
         slot.get_odd(key.generation())?;
-        let next = next_generation::<T, C>(key.generation())?;
         self.len -= 1;
+        let detached = detached_generation::<T, C>(key.generation());
+        // A slot that links to itself is detached. A slot on the free list
+        // links to another slot or to nothing, and so does a retired one.
         // SAFETY: the slot's generation matched the key's, which is odd.
-        Some(unsafe { slot.replace_odd_unchecked(next, Some(key.idx())) })
+        Some(unsafe { slot.replace_odd_unchecked(detached, Some(key.idx())) })
     }
 
     /// Puts a value back under a key whose value [`detach`](Self::detach)
@@ -1097,11 +1112,10 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
             .into_usize()
             .and_then(|position| self.slots.as_mut_slice().get_mut(position))
             .filter(|slot| {
-                // Detaching added one to the generation and made the slot
-                // link to itself, so a slot still detached under this key has
-                // the generation after the key's and links to its own index.
-                next_generation::<T, C>(generation)
-                    .and_then(|next| slot.get_even(next))
+                // Detaching gave the slot the generation `detached_generation`
+                // works out from the key's, and made the slot link to itself.
+                // A slot still detached under this key has both.
+                slot.get_even(detached_generation::<T, C>(generation))
                     .is_some_and(|link| *link == Some(key.idx()))
             })
             .expect("reattach on a key that is not detached");
@@ -1258,13 +1272,12 @@ impl<T: fmt::Debug, C: MapConfigFor<T>> fmt::Debug for GenMap<T, C> {
 }
 
 /// Pushes `slot` onto a storage that is being filled with clones of another
-/// storage of the same type. The storage being cloned already holds every
-/// slot pushed here, so a refusal breaks the [`GenSlotStorage`] contract, and
-/// this panics.
-/// The slot is dropped with its value in that case.
+/// storage of the same type, and panics if the push fails. That only
+/// happens with a storage that cannot hold as many slots as another of its
+/// type. The slot is dropped with its value in that case.
 fn push_cloned<T, C: MapConfigFor<T>>(slots: &mut Slots<T, C>, slot: MapSlot<T, C>) {
     if slots.try_push(slot).is_err() {
-        panic!("GenSlotStorage::try_push failed while cloning a storage of the same type");
+        panic!("SlotStorage::try_push failed while cloning a storage of the same type");
     }
 }
 
@@ -1275,7 +1288,7 @@ struct ClearOnUnwind<'a, T, C: MapConfigFor<T>>(&'a mut Slots<T, C>);
 
 impl<T, C: MapConfigFor<T>> Drop for ClearOnUnwind<'_, T, C> {
     fn drop(&mut self) {
-        GenSlotStorage::clear(self.0);
+        SlotStorage::clear(self.0);
     }
 }
 
@@ -1301,7 +1314,7 @@ impl<T: Clone, C: MapConfigFor<T>> Clone for GenMap<T, C> {
         self.next_free = None;
         self.len = 0;
         let guard: ClearOnUnwind<'_, T, C> = ClearOnUnwind(&mut self.slots);
-        GenSlotStorage::clear(guard.0);
+        SlotStorage::clear(guard.0);
         // An allocation that is too small would grow several times while the
         // slots are pushed, so it is swapped for one of the right size.
         if guard.0.capacity() < source.slots.len() {

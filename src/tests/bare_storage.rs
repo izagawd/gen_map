@@ -1,21 +1,23 @@
-//! Storages that implement `GenSlotStorage` and little else, to check that a
+//! Storages that implement `SlotStorage` and little else, to check that a
 //! map only asks for more where a method needs it.
 
-use crate::{GenMap, GenMapConfig, GenSlotItem, GenSlotStorage, KeyConfig, MapConfig, Split};
+use crate::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, SlotStorage, Split};
 use std::vec::Vec;
 
-/// A `Vec` behind `GenSlotStorage` alone. With `ITER` it also has an owning
+/// A `Vec` behind `SlotStorage` alone. With `ITER` it also has an owning
 /// iterator, which implements `Iterator` but not `DoubleEndedIterator` or
 /// `ExactSizeIterator`.
 struct Bare<S, const ITER: bool>(Vec<S>);
 
 // SAFETY: every method forwards to the `Vec`, which is the behaviour the
 // trait describes.
-unsafe impl<S, const ITER: bool> GenSlotStorage for Bare<S, ITER> {
+unsafe impl<S, const ITER: bool> SlotStorage for Bare<S, ITER> {
     type Item = S;
     type Error = ();
 
-    const EMPTY: Self = Bare(Vec::new());
+    fn empty() -> Self {
+        Bare(Vec::new())
+    }
 
     fn with_capacity(capacity: usize) -> Self {
         Bare(Vec::with_capacity(capacity))
@@ -33,7 +35,7 @@ unsafe impl<S, const ITER: bool> GenSlotStorage for Bare<S, ITER> {
         &mut self.0
     }
 
-    fn ensure_room(&mut self) -> Result<(), ()> {
+    fn ensure_room(&mut self, _additional: usize) -> Result<(), ()> {
         Ok(())
     }
 
