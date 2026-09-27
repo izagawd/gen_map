@@ -91,8 +91,8 @@
 //!   slots in. `type Storage = Vec<S>;` keeps them in a `Vec`. The type must
 //!   implement [`SlotStorage`]. `Vec` implements it when the `alloc` feature
 //!   is on, and `alloc` is on by default. `arrayvec::ArrayVec` implements it
-//!   when the `arrayvec` feature is on, and `smallvec::SmallVec` implements it when
-//!   the `smallvec` feature is on.
+//!   when the `arrayvec` feature is on, and `smallvec::SmallVec` implements
+//!   it when the `smallvec` feature is on.
 //!
 //! A [`GenMapConfig`] is implemented for slot types, usually for all of them
 //! at once with `impl<S: GenSlotItem> GenMapConfig<S>`. A slot is what the
@@ -162,9 +162,9 @@
 //! [`retire`](GenMap::retire) removes a value and retires its slot, no matter
 //! how the map is configured. Code built on a map that wraps can call
 //! `retire` to keep the slots it chooses from wrapping.
-//! [`Key::is_max_generation`] can be used to determine whether a key has the largest generation
-//! its layout can hold, which is when removing the key's value would wrap its
-//! slot.
+//! [`Key::is_max_generation`] can be used to determine whether a key has the
+//! largest generation its layout can hold, which is when removing the key's
+//! value would wrap its slot.
 //!
 //! ## Storage
 //!

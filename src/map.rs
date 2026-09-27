@@ -109,8 +109,9 @@ fn next_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Option<Even<Gen<C>>
 /// The generation a slot has while it is detached, for a key whose generation
 /// is `generation`. It is one more than `generation`, or zero if `generation`
 /// is the largest value of the generation type. It is even, so no key matches
-/// the slot, and [`GenMap::reattach`] works out the same generation again
-/// from the key.
+/// the slot. [`GenMap::detach`] gives the slot this generation, and
+/// [`GenMap::reattach`] calls this function with the key's generation to
+/// check that the slot is still detached under that key.
 ///
 /// With a [`Packed`](crate::Packed) layout, this generation can be one past
 /// the largest generation a key can hold. That does no harm, because a
@@ -1082,8 +1083,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         slot.get_odd(key.generation())?;
         self.len -= 1;
         let detached = detached_generation::<C>(key.generation());
-        // A slot that links to itself is detached. A slot on the free list
-        // links to another slot or to nothing, and so does a retired one.
+        // A detached slot has its own index in its `U`. A slot on the free
+        // list has another slot's index or `None` in its `U`, and a retired
+        // slot has `None`, so neither looks detached.
         // SAFETY: the slot's generation matched the key's, which is odd.
         Some(unsafe { slot.replace_odd_unchecked(detached, Some(key.idx())) })
     }
@@ -1104,10 +1106,13 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
             .into_usize()
             .and_then(|position| self.slots.as_mut_slice().get_mut(position))
             .filter(|slot| {
-                // Detaching sets the slot's generation to what
-                // `detached_generation` returns for the key's generation, and
-                // made the slot link to itself. A slot that is still detached
-                // under this key has both.
+                // When the key's value was detached, the slot's generation
+                // was set to what `detached_generation` returns for the key's
+                // generation, and the slot's `U` was set to the slot's own
+                // index. A slot on the free list has another slot's index or
+                // `None` in its `U`, and a retired slot has `None`. So a slot
+                // is still detached under this key only if it has that
+                // generation and its own index in its `U`.
                 slot.get_even(detached_generation::<C>(generation))
                     .is_some_and(|link| *link == Some(key.idx()))
             })
@@ -1514,7 +1519,7 @@ impl<T, C: MapConfigFor<T>> Clone for Values<'_, T, C> {
     }
 }
 
-/// Iterator over mutable references to values. It is created by
+/// Iterator over mutable references to values. It is created using
 /// [`GenMap::values_mut`].
 pub struct ValuesMut<'a, T, C: MapConfigFor<T>> {
     inner: IterMut<'a, T, C>,

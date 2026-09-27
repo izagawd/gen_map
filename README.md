@@ -78,7 +78,7 @@ data to a `GenMap`'s values without changing their type. Its config picks a
 `ReplaceStrategy`, which decides whether an insert replaces a value that was
 inserted under a different generation. The config also picks the storage the
 slots live in, which can be any storage a `GenMap` can use. The map keeps a
-slot at every index up to the largest one inserted.
+slot at every index up to the highest index that an insert has used.
 
 ```rust
 use gen_map::{GenMap, SecondaryMap};
