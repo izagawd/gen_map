@@ -51,18 +51,18 @@ impl KeyConfig for CompactKey {
     type Layout = Packed<u32, 8>;
 }
 
-struct CompactMap;
+struct CompactConfig;
 
-impl MapConfig for CompactMap {
+impl MapConfig for CompactConfig {
     type KeyConfig = CompactKey;
 }
 
 // `S` is the slot the map keeps each value in.
-impl<S: GenSlotItem> GenMapConfig<S> for CompactMap {
+impl<S: GenSlotItem> GenMapConfig<S> for CompactConfig {
     type Storage = Vec<S>;
 }
 
-let mut map = GenMap::<&str, CompactMap>::new_with_config();
+let mut map = GenMap::<&str, CompactConfig>::new_with_config();
 let key = map.insert("a");
 assert_eq!(core::mem::size_of_val(&key), 4);
 ```
