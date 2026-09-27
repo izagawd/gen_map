@@ -25,6 +25,9 @@ mod reset;
 mod retain;
 mod retire;
 mod secondary;
+// The sizes it checks are those of 64-bit targets.
+#[cfg(target_pointer_width = "64")]
+mod size;
 mod slot;
 #[cfg(feature = "smallvec")]
 mod smallvec_storage;

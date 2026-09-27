@@ -31,15 +31,16 @@ fn try_insert_works_like_insert_while_there_is_room() {
 #[test]
 fn try_insert_hands_the_value_back_when_the_index_runs_out() {
     let mut map = GenMap::<String, Byte>::new_with_config();
-    for i in 0..256 {
+    // No slot gets the index `u8::MAX`, so the map holds 255 values.
+    for i in 0..255 {
         map.try_insert(i.to_string()).unwrap();
     }
     match map.try_insert("late".to_string()) {
         Err(InsertError::IndexExhausted(value)) => assert_eq!(value, "late"),
         other => panic!("expected IndexExhausted, got {other:?}"),
     }
-    assert_eq!(map.len(), 256);
-    assert_eq!(map.slots_len(), 256);
+    assert_eq!(map.len(), 255);
+    assert_eq!(map.slots_len(), 255);
 }
 
 #[test]
@@ -60,10 +61,10 @@ fn the_error_does_not_need_debug_from_the_value() {
 }
 
 #[test]
-#[should_panic(expected = "cannot address more than 256 slots")]
+#[should_panic(expected = "cannot address more than 255 slots")]
 fn insert_panics_when_the_index_runs_out() {
     let mut map = GenMap::<i32, Byte>::new_with_config();
-    for i in 0..257 {
+    for i in 0..256 {
         map.insert(i);
     }
 }

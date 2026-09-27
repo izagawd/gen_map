@@ -51,7 +51,10 @@
 //! [`reattach`](GenMap::reattach) change a slot's generation in other ways.
 //!
 //! Freed slots go on a free list and are reused before the map adds new
-//! ones, so the map only grows when no slot is free.
+//! ones, so the map only grows when no slot is free. No slot ever gets the
+//! largest value of the index type as its index. The free list uses that
+//! value to mean "no slot", and leaving it out keeps the number of values
+//! small enough for the map to count them in the index type.
 //!
 //! ## Slots
 //!
@@ -116,7 +119,7 @@
 //! use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
 //!
 //! /// A `u8` index and a `u8` generation, so keys are two bytes and the map
-//! /// holds at most 256 slots.
+//! /// holds at most 255 slots.
 //! struct Tiny;
 //!
 //! impl KeyConfig for Tiny {
@@ -329,7 +332,9 @@
 //! Any other type that implements [`ReplaceStrategy`] can be used instead.
 //!
 //! A `SecondaryMap` keeps a slot at every index up to the highest index that
-//! an insert has used. The config's [`Storage`](SecondaryMapConfig::Storage)
+//! an insert has used. Like a `GenMap`, it never uses the largest value of
+//! the index type, and its `insert` refuses a key with that index, which
+//! only a hand-built key can have. The config's [`Storage`](SecondaryMapConfig::Storage)
 //! is the collection the slots live in. Like a `GenMap`'s storage, it can be
 //! any [`SlotStorage`], so `Vec`, `ArrayVec` and `SmallVec` all work.
 //! [`SecondaryMapConfig`] has an example of a config.

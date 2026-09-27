@@ -31,7 +31,9 @@ use alloc::vec::Vec;
 /// assert_eq!(core::mem::size_of::<Key<SmallKeys>>(), 4);
 /// ```
 pub trait KeyConfig {
-    /// The integer type that represents the index of a slot.
+    /// The integer type that represents the index of a slot. A
+    /// [`GenMap`](crate::GenMap) never gives a slot the largest value of
+    /// this type.
     type Idx: KeyPiece;
 
     /// The integer type that represents the generation of a slot.

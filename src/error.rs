@@ -3,8 +3,9 @@ use core::fmt;
 /// Why a [`GenMap`](crate::GenMap) has no room for another value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FullError<S> {
-    /// The map has a slot at every index its keys can hold and none of
-    /// them are free.
+    /// The map has a slot at every index it can use and none of them are
+    /// free. A map uses every index its keys can hold, except the largest
+    /// value of the index type.
     IndexExhausted,
 
     /// None of the slots are free and the storage could not make room for
@@ -100,9 +101,11 @@ impl<T, S: fmt::Display> fmt::Display for InsertError<T, S> {
 /// insert. Each variant hands the value back so that the caller can keep it.
 /// `S` is the map's [`SecondaryStorageError`](crate::SecondaryStorageError).
 pub enum SecondaryInsertError<T, S> {
-    /// The slot at the key's index holds a value that was inserted under a
-    /// different generation, and the config's
-    /// [`ReplaceStrategy`](crate::ReplaceStrategy) kept that value.
+    /// The map refused the key. Either the slot at the key's index holds a
+    /// value that was inserted under a different generation and the config's
+    /// [`ReplaceStrategy`](crate::ReplaceStrategy) kept that value, or the
+    /// key's index is the largest value of the index type, which no
+    /// [`GenMap`](crate::GenMap) hands out.
     Refused(T),
 
     /// The storage could not make room for a slot at the key's index. The
@@ -134,7 +137,7 @@ impl<T, S: fmt::Display> fmt::Display for SecondaryInsertError<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Refused(_) => f.write_str(
-                "the slot holds a value from a different generation, and the replace strategy kept it",
+                "the map refused the key, because the replace strategy kept the value in its slot or its index is the largest one",
             ),
             Self::StorageFull(_, error) => {
                 write!(f, "the storage cannot make room for the slot: {error}")

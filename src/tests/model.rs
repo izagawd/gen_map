@@ -305,10 +305,15 @@ fn run<C: MapConfigFor<u32>>(seed: u64, steps: usize) {
     }
 }
 
+/// How many slots the keys of `C` let a map have. Every index a key can
+/// hold gets a slot, except the largest value of the index type.
 fn slot_count_limit<C: MapConfigFor<u32>>() -> Option<usize> {
-    <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_idx()
-        .into_usize()?
-        .checked_add(1)
+    let max_idx = <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_idx().into_usize()?;
+    if Idx::<C>::MAX.into_usize() == Some(max_idx) {
+        Some(max_idx)
+    } else {
+        max_idx.checked_add(1)
+    }
 }
 
 fn insert<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {

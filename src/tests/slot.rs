@@ -245,7 +245,7 @@ fn a_slot_can_hold_zero_sized_values() {
 
 #[test]
 fn map_slot_is_a_slot_of_the_key_types() {
-    fn same(slot: MapSlot<u8, DefaultMapConfig>) -> Slot<u32, u8, Option<u32>> {
+    fn same(slot: MapSlot<u8, DefaultMapConfig>) -> Slot<u32, u8, u32> {
         slot
     }
     let slot = same(Slot::new_odd(odd(1), 7));
