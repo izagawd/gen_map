@@ -752,8 +752,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
 
     /// Returns the number of slots in the storage, whether they hold a value
     /// or not.
-    #[cfg(all(test, feature = "alloc"))]
-    pub(crate) fn slots_len(&self) -> usize {
+    pub fn slots_len(&self) -> usize {
         self.slots.len()
     }
 }
