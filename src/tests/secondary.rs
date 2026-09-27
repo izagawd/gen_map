@@ -1161,3 +1161,26 @@ fn values_swapped_through_the_disjoint_methods_drop_exactly_once() {
     drop(map);
     tracker.assert_all_dropped_exactly_once(2);
 }
+
+#[test]
+fn reserve_makes_room_for_slots_ahead_of_time() {
+    let mut map = SecondaryMap::<u32>::new();
+    assert_eq!(map.capacity(), 0);
+    assert_eq!(map.slots_len(), 0);
+
+    map.reserve(100);
+    let capacity = map.capacity();
+    assert!(capacity >= 100);
+    // Filling the reserved slots does not grow the storage again.
+    map.insert(key_from_parts::<DefaultKeyConfig>(99, 1), 1)
+        .unwrap();
+    assert_eq!(map.slots_len(), 100);
+    assert_eq!(map.capacity(), capacity);
+
+    assert!(map.try_reserve(50).is_ok());
+    assert!(map.capacity() >= 150);
+    // No storage has room for that many, and the map stays as it was.
+    assert!(map.try_reserve(usize::MAX).is_err());
+    assert_eq!(map.slots_len(), 100);
+    assert_eq!(map.len(), 1);
+}

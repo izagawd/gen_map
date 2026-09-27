@@ -9,7 +9,7 @@ use crate::map::{Layout, MapGen, MapIdx, MapKeyConfig};
 use crate::parity::Odd;
 use crate::replace_strategy::ReplaceStrategy;
 use crate::slot::SecondarySlot;
-use crate::storage::SlotStorage;
+use crate::storage::{ReserveStorage, SlotStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -148,6 +148,13 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         }
     }
 
+    /// How many slots the storage can hold before it has to grow, or in total
+    /// if it cannot grow.
+    #[inline]
+    pub fn capacity(&self) -> usize {
+        self.slots.capacity()
+    }
+
     /// Returns the number of values in the map.
     #[inline]
     pub fn len(&self) -> usize {
@@ -158,6 +165,12 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len == 0
+    }
+
+    /// The number of slots, whether they hold a value or not.
+    #[inline]
+    pub fn slots_len(&self) -> usize {
+        self.slots.len()
     }
 
     /// Returns `true` if a value is stored under `key`.
@@ -749,11 +762,35 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
             position: 0,
         }
     }
+}
 
-    /// Returns the number of slots in the storage, whether they hold a value
-    /// or not.
-    pub fn slots_len(&self) -> usize {
-        self.slots.len()
+/// These methods need a storage that can grow on request, so a map whose
+/// storage has a fixed capacity does not have them.
+impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C>
+where
+    Slots<T, C>: ReserveStorage,
+{
+    /// Reserves room for at least `additional` more slots.
+    ///
+    /// # Panics
+    ///
+    /// Panics or aborts if the storage cannot make the room, as
+    /// `Vec::reserve` does. Use [`try_reserve`](Self::try_reserve) to get an
+    /// error instead.
+    #[inline]
+    pub fn reserve(&mut self, additional: usize) {
+        self.slots.reserve(additional);
+    }
+
+    /// The fallible form of [`reserve`](Self::reserve). After `Ok`, the map
+    /// can add `additional` more slots without running out of storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns what the storage says when it cannot make the room.
+    #[inline]
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), SecondaryStorageError<T, C>> {
+        self.slots.try_reserve(additional)
     }
 }
 

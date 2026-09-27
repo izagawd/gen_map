@@ -170,6 +170,7 @@ fn insert_panics_with_the_storages_reason() {
 #[test]
 fn a_secondary_map_hands_back_the_storages_own_error_and_adds_no_slots() {
     let mut map = SecondaryMap::<i32, Four>::new_with_config();
+    assert_eq!(map.capacity(), CAP);
     let error: SecondaryInsertError<i32, SecondaryStorageError<i32, Four>> =
         map.insert(key_from_parts::<Four>(9, 1), 9).unwrap_err();
     assert!(matches!(

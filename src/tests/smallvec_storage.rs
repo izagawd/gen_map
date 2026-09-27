@@ -133,6 +133,7 @@ fn a_small_vec_iterator_drops_every_value_once_when_a_drop_panics() {
 #[test]
 fn a_secondary_map_in_a_small_vec_keeps_working_after_it_moves_to_the_heap() {
     let mut map = SecondaryMap::<u32, Four>::new_with_config();
+    assert_eq!(map.capacity(), 4);
     // The keys use every third index, so the map holds empty slots between
     // them.
     let keys: Vec<_> = (0..20).map(|i| key_from_parts::<Four>(i * 3, 1)).collect();
@@ -147,4 +148,18 @@ fn a_secondary_map_in_a_small_vec_keeps_working_after_it_moves_to_the_heap() {
     let values: Vec<u32> = map.into_iter().map(|(_, value)| value).collect();
     assert_eq!(values.len(), 19);
     assert!(!values.contains(&7));
+}
+
+#[test]
+fn a_secondary_map_in_a_small_vec_can_make_room_ahead_of_time() {
+    let mut map = SecondaryMap::<u32, Four>::new_with_config();
+    map.reserve(64);
+    let capacity = map.capacity();
+    assert!(capacity >= 64);
+    assert!(map.try_reserve(8).is_ok());
+
+    let key = key_from_parts::<Four>(63, 1);
+    map.insert(key, 1).unwrap();
+    assert_eq!(map[key], 1);
+    assert_eq!(map.slots_len(), 64);
 }
