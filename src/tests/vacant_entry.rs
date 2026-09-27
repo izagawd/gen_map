@@ -22,8 +22,8 @@ impl<S: GenSlotItem> GenMapConfig<S> for Byte {
     type Storage = Vec<S>;
 }
 
-/// A map that uses every slot a `u8` index allows, which is 255, since no
-/// slot gets the index `u8::MAX`.
+/// A map with a value in every slot a `u8` index allows. That is 255 slots,
+/// since no slot gets the index `u8::MAX`.
 fn full_byte_map() -> GenMap<i32, Byte> {
     let mut map = GenMap::<i32, Byte>::new_with_config();
     for i in 0..255 {

@@ -25,7 +25,7 @@ mod reset;
 mod retain;
 mod retire;
 mod secondary;
-// The sizes it checks are those of 64-bit targets.
+// The `size` tests expect the sizes that types have on 64-bit targets.
 #[cfg(target_pointer_width = "64")]
 mod size;
 mod slot;

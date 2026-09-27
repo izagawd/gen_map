@@ -101,12 +101,14 @@ impl<T, S: fmt::Display> fmt::Display for InsertError<T, S> {
 /// insert. Each variant hands the value back so that the caller can keep it.
 /// `S` is the map's [`SecondaryStorageError`](crate::SecondaryStorageError).
 pub enum SecondaryInsertError<T, S> {
-    /// The map refused the key. Either the slot at the key's index holds a
-    /// value that was inserted under a different generation and the config's
-    /// [`ReplaceStrategy`](crate::ReplaceStrategy) kept that value, or the
-    /// key's index is the largest value of the index type, which no
-    /// [`GenMap`](crate::GenMap) hands out.
+    /// The slot at the key's index holds a value that was inserted under a
+    /// different generation, and the config's
+    /// [`ReplaceStrategy`](crate::ReplaceStrategy) kept that value.
     Refused(T),
+
+    /// The key's index is the largest value of the index type. No map gives
+    /// a slot that index, so only a hand-built key can have it.
+    IndexReserved(T),
 
     /// The storage could not make room for a slot at the key's index. The
     /// second field says why.
@@ -118,7 +120,9 @@ impl<T, S> SecondaryInsertError<T, S> {
     #[inline]
     pub fn into_inner(self) -> T {
         match self {
-            Self::Refused(value) | Self::StorageFull(value, _) => value,
+            Self::Refused(value) | Self::IndexReserved(value) | Self::StorageFull(value, _) => {
+                value
+            }
         }
     }
 }
@@ -128,6 +132,7 @@ impl<T, S: fmt::Debug> fmt::Debug for SecondaryInsertError<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Refused(_) => f.write_str("Refused(..)"),
+            Self::IndexReserved(_) => f.write_str("IndexReserved(..)"),
             Self::StorageFull(_, error) => write!(f, "StorageFull(.., {error:?})"),
         }
     }
@@ -137,7 +142,10 @@ impl<T, S: fmt::Display> fmt::Display for SecondaryInsertError<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Refused(_) => f.write_str(
-                "the map refused the key, because the replace strategy kept the value in its slot or its index is the largest one",
+                "the slot holds a value from a different generation, and the replace strategy kept it",
+            ),
+            Self::IndexReserved(_) => f.write_str(
+                "the key's index is the largest value of the index type, which no slot ever has",
             ),
             Self::StorageFull(_, error) => {
                 write!(f, "the storage cannot make room for the slot: {error}")

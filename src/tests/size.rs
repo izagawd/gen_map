@@ -26,17 +26,21 @@ impl<S: GenSlotItem> GenMapConfig<S> for Byte {
 
 #[test]
 fn the_map_is_a_vec_plus_two_indices() {
-    // A 24 byte `Vec`, a `u32` free list head and a `u32` count.
+    // The default map holds a 24 byte `Vec`, a `u32` free list head and a
+    // `u32` count.
     assert_eq!(size_of::<GenMap<u64>>(), 32);
-    // A 24 byte `Vec` and two bytes, padded to the `Vec`'s alignment.
+    // A map with `u8` indices holds a 24 byte `Vec` and two bytes, and
+    // padding rounds that up to the `Vec`'s alignment.
     assert_eq!(size_of::<GenMap<u64, Byte>>(), 32);
 }
 
 #[test]
 fn a_free_link_takes_no_more_room_than_the_index() {
-    // A `u32` generation next to a four byte value or a `u32` link.
+    // A default slot holds a `u32` generation next to either a value of at
+    // most four bytes or a `u32` link.
     assert_eq!(size_of::<MapSlot<u32, DefaultMapConfig>>(), 8);
     assert_eq!(size_of::<MapSlot<(), DefaultMapConfig>>(), 8);
-    // A `u8` generation next to a one byte value or a `u8` link.
+    // A slot of a map with `u8` indices holds a `u8` generation next to
+    // either a one byte value or a `u8` link.
     assert_eq!(size_of::<MapSlot<u8, Byte>>(), 2);
 }

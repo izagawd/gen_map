@@ -1275,18 +1275,29 @@ fn every_iterator_runs_from_both_ends() {
 }
 
 #[test]
-fn insert_refuses_a_key_at_the_largest_index() {
+fn insert_rejects_a_key_at_the_largest_index() {
     // No `GenMap` gives a slot the largest index, so only a hand-built key
     // can have it.
     let key = key_from_parts::<Cfg<u8, u8>>(u8::MAX, 1);
     let mut map = SecondaryMap::<&str, Cfg<u8, u8>>::new_with_config();
-    assert!(matches!(
-        map.insert(key, "x"),
-        Err(SecondaryInsertError::Refused("x"))
-    ));
+    let error = map.insert(key, "x").unwrap_err();
+    assert!(matches!(error, SecondaryInsertError::IndexReserved("x")));
+    assert_eq!(format!("{error:?}"), "IndexReserved(..)");
+    assert!(format!("{error}").contains("largest value"));
+    assert_eq!(error.into_inner(), "x");
     assert_eq!(map.len(), 0);
     assert_eq!(map.slots_len(), 0);
     assert!(map.get(key).is_none());
+}
+
+#[test]
+fn extend_drops_a_value_whose_key_has_the_largest_index() {
+    let reserved = key_from_parts::<Cfg<u8, u8>>(u8::MAX, 1);
+    let kept = key_from_parts::<Cfg<u8, u8>>(0, 1);
+    let mut map = SecondaryMap::<u32, Cfg<u8, u8>>::new_with_config();
+    map.extend([(reserved, 1), (kept, 2)]);
+    assert_eq!(map.len(), 1);
+    assert_eq!(map[kept], 2);
 }
 
 #[test]

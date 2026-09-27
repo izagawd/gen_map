@@ -31,8 +31,11 @@ pub(crate) type Gen<C> = MapGen<C>;
 pub(crate) type Layout<C> = <MapKeyConfig<C> as KeyConfig>::Layout;
 
 /// The [`Slot`] a [`GenMap<T, C>`](GenMap) keeps each value in. While a
-/// slot is on the free list, its `U` names the next free slot.
-pub type MapSlot<T, C> = Slot<MapGen<C>, T, Option<MapIdx<C>>>;
+/// slot is on the free list, its `U` is the index of the next free slot, or
+/// the largest value of the index type if it is the last free slot. No slot
+/// ever has that index, so it can't be mistaken for the index of a real
+/// slot.
+pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 
 /// The key of the value in the slot at `idx` whose generation is
 /// `generation`.
@@ -109,31 +112,32 @@ fn max_slot_idx<C: MapConfig>() -> Idx<C> {
     }
 }
 
-/// The index that names no slot, which is the largest value of the index
-/// type. The free list ends with it, `next_free` holds it while no slot is
-/// free, and a retired slot keeps it as its link.
+/// The largest value of the index type, which no slot ever has as its index.
+/// The free list ends with it, `next_free` holds it while no slot is free,
+/// and a retired slot keeps it as its link.
 #[inline]
 fn no_slot<C: MapConfig>() -> Idx<C> {
     Idx::<C>::MAX
 }
 
-/// Adds one to a map's count of values. The count is below the largest
-/// value of the index type beforehand, because every value has a slot of its
-/// own and no slot has that index.
+/// Adds one to a map's `len`, which is below the largest value of the index
+/// type beforehand, because every value has a slot of its own and no slot has
+/// that index.
 #[inline]
-pub(crate) fn count_one_more<I: KeyPiece>(count: &mut I) {
+pub(crate) fn increment_len<I: KeyPiece>(len: &mut I) {
     debug_assert!(
-        *count < I::MAX,
-        "a map holds fewer values than the largest index"
+        *len < I::MAX,
+        "a map never holds as many values as the largest value of its index type"
     );
-    *count = count.wrapping_add(I::ONE);
+    *len = len.wrapping_add(I::ONE);
 }
 
-/// Takes one off a map's count of values, for a value the map held.
+/// Takes one off a map's `len`. The map only calls this after taking out a
+/// value it held, so `len` is above zero beforehand.
 #[inline]
-pub(crate) fn count_one_fewer<I: KeyPiece>(count: &mut I) {
-    debug_assert!(*count > I::ZERO, "a map only removes a value it holds");
-    *count = count.wrapping_sub(I::ONE);
+pub(crate) fn decrement_len<I: KeyPiece>(len: &mut I) {
+    debug_assert!(*len > I::ZERO, "a map only removes a value it holds");
+    *len = len.wrapping_sub(I::ONE);
 }
 
 /// The generation after `generation`, or `None` if `generation` is the
@@ -365,8 +369,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         Self::with_slots(Slots::<T, C>::empty())
     }
 
-    /// A map without values that keeps its slots in `slots`, which holds no
-    /// slots yet.
+    /// Creates a map with no values that keeps its slots in `slots`. The
+    /// storage must be empty.
     #[inline]
     fn with_slots(slots: Slots<T, C>) -> Self {
         debug_assert!(slots.as_slice().is_empty());
@@ -986,7 +990,7 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
                 panic!("SlotStorage::try_push failed although ensure_room returned Ok");
             }
         }
-        count_one_more(&mut self.len);
+        increment_len(&mut self.len);
         key
     }
 
@@ -1050,7 +1054,7 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     pub fn retire(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
         let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
         slot.get_odd(key.generation())?;
-        count_one_fewer(&mut self.len);
+        decrement_len(&mut self.len);
         // A generation of zero and a link to no slot is what a retired slot
         // looks like, and nothing puts it back on the free list.
         // SAFETY: the slot's generation matched the key's, which is odd.
@@ -1073,7 +1077,7 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
             let generation = Odd::new_unchecked(slot.generation());
             (slot, generation)
         };
-        count_one_fewer(&mut self.len);
+        decrement_len(&mut self.len);
 
         // A slot whose generation has run out starts over at zero if the
         // config wraps, and retires otherwise. A retired slot stays off the
@@ -1128,7 +1132,7 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     pub fn detach(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
         let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
         slot.get_odd(key.generation())?;
-        count_one_fewer(&mut self.len);
+        decrement_len(&mut self.len);
         let detached = detached_generation::<C>(key.generation());
         // A detached slot has its own index in its `U`. A slot on the free
         // list has another slot's index or `no_slot` in its `U`, and a
@@ -1168,7 +1172,7 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         };
         // SAFETY: the slot's generation was just found to be even.
         unsafe { slot.replace_even_unchecked(generation, value) };
-        count_one_more(&mut self.len);
+        increment_len(&mut self.len);
         Ok(())
     }
 

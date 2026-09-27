@@ -5,7 +5,7 @@ use crate::error::{GetDisjointMutAtError, GetDisjointMutError, SecondaryInsertEr
 use crate::key::Key;
 use crate::key_layout::KeyLayout;
 use crate::key_piece::KeyPiece;
-use crate::map::{count_one_fewer, count_one_more, Layout, MapGen, MapIdx, MapKeyConfig};
+use crate::map::{decrement_len, increment_len, Layout, MapGen, MapIdx, MapKeyConfig};
 use crate::parity::Odd;
 use crate::replace_strategy::ReplaceStrategy;
 use crate::slot::SecondarySlot;
@@ -118,7 +118,7 @@ pub struct SecondaryMap<
     // same position. The map builds keys from its slots without checks because
     // of this.
     slots: Slots<T, C>,
-    // The number of values. `insert` refuses a key whose index is the largest
+    // The number of values. `insert` rejects a key whose index is the largest
     // value of the index type, so no slot has that index, there are at most
     // that many slots, and the count always fits.
     len: MapIdx<C>,
@@ -580,11 +580,10 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     ///
     /// # Errors
     ///
-    /// Hands `value` back, and leaves the map as it was, if the map refused
-    /// the key or the storage could not make room for the slots. The map
-    /// refuses a key the strategy keeps out, and a key whose index is the
-    /// largest value of the index type, which no `GenMap` hands out. The
-    /// [`SecondaryInsertError`] variant says which of the two happened.
+    /// Hands `value` back, and leaves the map as it was, if the strategy
+    /// kept the old value, the key's index is the largest value of the index
+    /// type, or the storage could not make room for the slots. The
+    /// [`SecondaryInsertError`] variant says which of the three happened.
     ///
     /// # Examples
     ///
@@ -609,10 +608,10 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// ```
     pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
         // No `GenMap` gives a slot the largest index, so only a hand-built
-        // key can have it. Refusing it keeps the slots, and so the count of
+        // key can have it. Rejecting it keeps the slots, and so the count of
         // values, within the index type.
         if key.idx() == MapIdx::<C>::MAX {
-            return Err(SecondaryInsertError::Refused(value));
+            return Err(SecondaryInsertError::IndexReserved(value));
         }
         let generation = key.generation();
         let slot = match Self::get_or_grow_slot(&mut self.slots, key.idx()) {
@@ -625,7 +624,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         match slot.get().map(|(current, _)| current) {
             None => {
                 slot.replace(generation, value);
-                count_one_more(&mut self.len);
+                increment_len(&mut self.len);
                 Ok(None)
             }
             Some(current)
@@ -696,7 +695,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         let slot = self.slots.as_mut_slice().get_mut(position)?;
         slot.get_odd(key.generation())?;
         let value = slot.take()?;
-        count_one_fewer(&mut self.len);
+        decrement_len(&mut self.len);
         Some(value)
     }
 
@@ -723,7 +722,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
                 // `generation`, so the two fit the key.
                 let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
                 if !f(key, value) {
-                    count_one_fewer(&mut self.len);
+                    decrement_len(&mut self.len);
                     drop(slot.take());
                 }
             }
@@ -739,7 +738,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
                 break;
             }
             if slot.get().is_some() {
-                count_one_fewer(&mut self.len);
+                decrement_len(&mut self.len);
                 drop(slot.take());
             }
         }
@@ -903,8 +902,9 @@ impl<T, C: SecondaryMapConfigFor<T>> IndexMut<Key<MapKeyConfig<C>>> for Secondar
 }
 
 impl<T, C: SecondaryMapConfigFor<T>> Extend<(Key<MapKeyConfig<C>>, T)> for SecondaryMap<T, C> {
-    /// Inserts each pair with [`insert`](SecondaryMap::insert). A value
-    /// whose insert is refused by the strategy is dropped.
+    /// Inserts each pair with [`insert`](SecondaryMap::insert). A value is
+    /// dropped if the strategy refuses it or its key's index is the largest
+    /// value of the index type.
     ///
     /// # Panics
     ///
@@ -912,7 +912,9 @@ impl<T, C: SecondaryMapConfigFor<T>> Extend<(Key<MapKeyConfig<C>>, T)> for Secon
     fn extend<I: IntoIterator<Item = (Key<MapKeyConfig<C>>, T)>>(&mut self, iter: I) {
         for (key, value) in iter {
             match self.insert(key, value) {
-                Ok(_) | Err(SecondaryInsertError::Refused(_)) => {}
+                Ok(_)
+                | Err(SecondaryInsertError::Refused(_) | SecondaryInsertError::IndexReserved(_)) => {
+                }
                 Err(error) => panic!("SecondaryMap cannot insert: {error:?}"),
             }
         }
@@ -1199,7 +1201,7 @@ impl<T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryDrain<'_, T, C> {
             if let Some((generation, value)) =
                 core::mem::replace(slot, SecondarySlot::empty()).into_inner()
             {
-                count_one_fewer(&mut self.map.len);
+                decrement_len(&mut self.map.len);
                 // SAFETY: the slot at `position` held this value under
                 // `generation`, so the two fit the key.
                 let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
