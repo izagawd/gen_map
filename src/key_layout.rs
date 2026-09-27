@@ -19,13 +19,13 @@ use core::marker::PhantomData;
 ///
 /// Safe code can make a key from any `Repr` it can build, with
 /// [`Key::from_repr`](crate::Key::from_repr), and read the key's parts
-/// through the safe [`idx`](Self::idx) and [`generation`](Self::generation) methods.
-/// So every `Repr` that safe code can build must unpack to an odd generation,
-/// since `generation` returns an [`Odd`]. It must also unpack to an index of
-/// at most `max_idx` and a generation of at most `max_generation`.
-/// A `Repr` whose fields are private and that only this layout makes, like
-/// [`SplitRepr`], meets these rules, because only `pack_unchecked` can make
-/// one.
+/// through the safe [`idx`](Self::idx) and [`generation`](Self::generation)
+/// methods. So every `Repr` that safe code can build must unpack to an odd
+/// generation, since `generation` returns an [`Odd`]. It must also unpack to
+/// an index of at most `max_idx` and a generation of at most
+/// `max_generation`. A `Repr` whose fields are private and that only this
+/// layout makes, like [`SplitRepr`], meets these rules, because only
+/// `pack_unchecked` can make one.
 pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
     /// The type a key stores its index and generation in.
     type Repr: Copy + Eq + Hash + Send + Sync + 'static;
