@@ -35,8 +35,8 @@ impl<Idx: crate::KeyPiece, Gen: crate::KeyPiece, S: SecondarySlotItem> Secondary
     type Storage = Vec<S>;
 }
 
-/// Keys whose generation is 4 bits, so it goes from 0 to 15, from a
-/// `GenMap` that wraps it.
+/// Keys with a 4 bit generation, which goes from 0 to 15. The `GenMap` that
+/// hands them out wraps the generation.
 struct Wrap4;
 
 impl KeyConfig for Wrap4 {
@@ -630,8 +630,8 @@ fn pick(rng: &mut Rng, live: &[Key], dead: &[Key]) -> Key {
     }
 }
 
-/// How often the model runs met each case, so the test shows it covered
-/// them.
+/// How often each case came up in the model runs, so that the test can show
+/// it covered every case.
 #[derive(Default)]
 struct Coverage {
     /// Inserts that met a value from a different generation.

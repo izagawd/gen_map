@@ -89,10 +89,10 @@
 //!   happens to a slot whose generation runs out.
 //! - [`Storage`](GenMapConfig::Storage) is the collection the map keeps its
 //!   slots in. `type Storage = Vec<S>;` keeps them in a `Vec`. The type must
-//!   implement [`SlotStorage`]. `Vec` implements it when the `alloc`
-//!   feature is on, which it is by default, `arrayvec::ArrayVec` when the
-//!   `arrayvec` feature is on, and `smallvec::SmallVec` when the `smallvec`
-//!   feature is on.
+//!   implement [`SlotStorage`]. `Vec` implements it when the `alloc` feature
+//!   is on, and `alloc` is on by default. `arrayvec::ArrayVec` implements it
+//!   when the `arrayvec` feature is on, and `smallvec::SmallVec` implements it when
+//!   the `smallvec` feature is on.
 //!
 //! A [`GenMapConfig`] is implemented for slot types, usually for all of them
 //! at once with `impl<S: GenSlotItem> GenMapConfig<S>`. A slot is what the
@@ -159,11 +159,12 @@
 //! the slot is reused. No slot is ever lost, but a key that is old enough can
 //! match a new value once the generation wraps around to it again.
 //!
-//! [`retire`](GenMap::retire) removes a value and retires its slot, no
-//! matter how the map is configured. Code built on a map that wraps can use
-//! it to keep the slots it chooses from wrapping, and
-//! [`Key::is_max_generation`] can be used to determine when a slot has
-//! reached that point.
+//! [`retire`](GenMap::retire) removes a value and retires its slot, no matter
+//! how the map is configured. Code built on a map that wraps can call
+//! `retire` to keep the slots it chooses from wrapping.
+//! [`Key::is_max_generation`] can be used to determine whether a key has the largest generation
+//! its layout can hold, which is when removing the key's value would wrap its
+//! slot.
 //!
 //! ## Storage
 //!
@@ -233,8 +234,8 @@
 //!
 //! [`detach`](GenMap::detach) moves a value out of the map but keeps its slot
 //! reserved for its key, and [`reattach`](GenMap::reattach) puts a value back
-//! under that same key. In between, the key matches with no value and no insert
-//! can take the slot. This lets code take a value out, change it while
+//! under that same key. In between, the map has no value for the key, but no
+//! insert can take the slot. This lets code take a value out, change it while
 //! borrowing the rest of the map, and put it back under the same key.
 //!
 //! ```
@@ -327,10 +328,10 @@
 //!
 //! Any other type that implements [`ReplaceStrategy`] can be used instead.
 //!
-//! A `SecondaryMap` keeps a slot at every index up to the largest one
-//! inserted. The config's [`Storage`](SecondaryMapConfig::Storage) is the
-//! collection the slots live in. Like a `GenMap`'s storage, it can be any
-//! [`SlotStorage`], so `Vec`, `ArrayVec` and `SmallVec` all work.
+//! A `SecondaryMap` keeps a slot at every index up to the highest index that
+//! an insert has used. The config's [`Storage`](SecondaryMapConfig::Storage)
+//! is the collection the slots live in. Like a `GenMap`'s storage, it can be
+//! any [`SlotStorage`], so `Vec`, `ArrayVec` and `SmallVec` all work.
 //! [`SecondaryMapConfig`] has an example of a config.
 //!
 //! # Cargo features

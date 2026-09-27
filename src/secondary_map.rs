@@ -76,15 +76,16 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 ///
 /// Each value sits in a slot at its key's index, together with the key's
 /// generation, and only a key with that index and generation matches it.
-/// Removing a value from the `GenMap` does not remove it from here. Its key
-/// keeps matching it until it is removed, or replaced by an insert under a
-/// key with the same index and a different generation, which `C`'s
-/// [`ReplaceStrategy`](crate::SecondaryMapConfig::ReplaceStrategy) allows or
-/// refuses.
+/// Removing a key's value from the `GenMap` does not remove the key's value
+/// from this map. Here the key keeps matching its value until the value is
+/// removed, or replaced by an insert under a key with the same index and a
+/// different generation. `C`'s
+/// [`ReplaceStrategy`](crate::SecondaryMapConfig::ReplaceStrategy) decides
+/// whether such an insert replaces the value.
 ///
-/// The map keeps a slot at every index up to the largest one inserted, in
-/// the [`SlotStorage`] its [`SecondaryMapConfig`] picks, the same kind of
-/// storage a `GenMap` uses.
+/// The map keeps a slot at every index up to the highest index that an insert
+/// has used, in the [`SlotStorage`] its [`SecondaryMapConfig`] picks, the
+/// same kind of storage a `GenMap` uses.
 ///
 /// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`], which
 /// keeps the slots in a `Vec` and uses
@@ -518,8 +519,8 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
             if !self.contains_key(*key) {
                 return Err(GetDisjointMutError::InvalidKey);
             }
-            // Two keys that both have a value in one slot carry the slot's
-            // generation, so the index alone says whether they overlap.
+            // Keys point at the same slot exactly when their indices are
+            // equal.
             if keys[..i].iter().any(|earlier| earlier.idx() == key.idx()) {
                 return Err(GetDisjointMutError::OverlappingKeys);
             }
@@ -551,10 +552,10 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
             .all(|(i, key)| keys[..i].iter().all(|earlier| earlier.idx() != key.idx())));
         let slots = self.slots.as_mut_slice().as_mut_ptr();
         keys.map(|key| {
-            // SAFETY: the caller promises the key has a value, so its index
-            // fits in `usize` and names a slot in bounds that holds a value,
-            // and that no other key names the same slot, so the references
-            // do not alias.
+            // SAFETY: the caller promises that the key has a value, so its
+            // index fits in `usize` and names a slot in bounds that holds a
+            // value. The caller also promises that no other key names the
+            // same slot, so the references do not alias.
             unsafe { (*slots.add(key.idx().into_usize_unchecked())).get_odd_unchecked_mut() }
         })
     }
@@ -927,7 +928,7 @@ impl<T, C: SecondaryMapConfigFor<T>> FromIterator<(Key<MapKeyConfig<C>>, T)>
     }
 }
 
-/// Iterator over `(key, &value)` pairs, in index order. Created by
+/// Iterator over `(key, &value)` pairs, in index order. It is created by
 /// [`SecondaryMap::iter`].
 pub struct SecondaryIter<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
     slots: Enumerate<slice::Iter<'a, SecondaryMapSlot<T, C>>>,
@@ -951,8 +952,9 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIter<'a, T, C> {
                 return Some((key, value));
             }
         }
-        // Only a storage that lost a value gets here. Stopping for good
-        // keeps the iterator fused.
+        // The slots ran out while `remaining` said a value was left, which
+        // only happens with a storage that broke the `SlotStorage` contract.
+        // Setting `remaining` to zero keeps the iterator fused.
         self.remaining = 0;
         None
     }
@@ -978,8 +980,9 @@ impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIter<'_, T
                 return Some((key, value));
             }
         }
-        // Only a storage that lost a value gets here. Stopping for good
-        // keeps the iterator fused.
+        // The slots ran out while `remaining` said a value was left, which
+        // only happens with a storage that broke the `SlotStorage` contract.
+        // Setting `remaining` to zero keeps the iterator fused.
         self.remaining = 0;
         None
     }
@@ -1000,7 +1003,7 @@ impl<T, C: SecondaryMapConfigFor<T>> Clone for SecondaryIter<'_, T, C> {
     }
 }
 
-/// Iterator over `(key, &mut value)` pairs, in index order. Created by
+/// Iterator over `(key, &mut value)` pairs, in index order. It is created by
 /// [`SecondaryMap::iter_mut`].
 pub struct SecondaryIterMut<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
     slots: Enumerate<slice::IterMut<'a, SecondaryMapSlot<T, C>>>,
@@ -1024,8 +1027,9 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIterMut<'a, T, C>
                 return Some((key, value));
             }
         }
-        // Only a storage that lost a value gets here. Stopping for good
-        // keeps the iterator fused.
+        // The slots ran out while `remaining` said a value was left, which
+        // only happens with a storage that broke the `SlotStorage` contract.
+        // Setting `remaining` to zero keeps the iterator fused.
         self.remaining = 0;
         None
     }
@@ -1051,8 +1055,9 @@ impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIterMut<'_
                 return Some((key, value));
             }
         }
-        // Only a storage that lost a value gets here. Stopping for good
-        // keeps the iterator fused.
+        // The slots ran out while `remaining` said a value was left, which
+        // only happens with a storage that broke the `SlotStorage` contract.
+        // Setting `remaining` to zero keeps the iterator fused.
         self.remaining = 0;
         None
     }
@@ -1061,7 +1066,8 @@ impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIterMut<'_
 impl<T, C: SecondaryMapConfigFor<T>> ExactSizeIterator for SecondaryIterMut<'_, T, C> {}
 impl<T, C: SecondaryMapConfigFor<T>> FusedIterator for SecondaryIterMut<'_, T, C> {}
 
-/// Iterator over keys, in index order. Created by [`SecondaryMap::keys`].
+/// Iterator over keys, in index order. It is created by
+/// [`SecondaryMap::keys`].
 pub struct SecondaryKeys<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
     inner: SecondaryIter<'a, T, C>,
 }
@@ -1099,7 +1105,7 @@ impl<T, C: SecondaryMapConfigFor<T>> Clone for SecondaryKeys<'_, T, C> {
     }
 }
 
-/// Iterator over references to the values, in index order. Created by
+/// Iterator over references to the values, in index order. It is created by
 /// [`SecondaryMap::values`].
 pub struct SecondaryValues<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
     inner: SecondaryIter<'a, T, C>,
@@ -1138,8 +1144,8 @@ impl<T, C: SecondaryMapConfigFor<T>> Clone for SecondaryValues<'_, T, C> {
     }
 }
 
-/// Iterator over mutable references to the values, in index order. Created
-/// by [`SecondaryMap::values_mut`].
+/// Iterator over mutable references to the values, in index order. It is
+/// created by [`SecondaryMap::values_mut`].
 pub struct SecondaryValuesMut<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
     inner: SecondaryIterMut<'a, T, C>,
 }
@@ -1168,8 +1174,8 @@ impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryValuesMut<
 impl<T, C: SecondaryMapConfigFor<T>> ExactSizeIterator for SecondaryValuesMut<'_, T, C> {}
 impl<T, C: SecondaryMapConfigFor<T>> FusedIterator for SecondaryValuesMut<'_, T, C> {}
 
-/// Iterator that takes each value out, with its key, in index order.
-/// Created by [`SecondaryMap::drain`].
+/// Iterator that takes each value out, with its key, in index order. It is
+/// created by [`SecondaryMap::drain`].
 pub struct SecondaryDrain<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
     map: &'a mut SecondaryMap<T, C>,
     /// The position of the slot the iterator checks next.
@@ -1197,8 +1203,10 @@ impl<T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryDrain<'_, T, C> {
                 return Some((key, value));
             }
         }
-        // Only a storage that lost a value gets here. The map has nothing
-        // left to take, which also keeps the iterator fused.
+        // The slots ran out while the map's length said a value was left,
+        // which only happens with a storage that broke the `SlotStorage`
+        // contract. The length becomes zero, since no value is left to take,
+        // which also keeps the iterator fused.
         self.map.len = 0;
         None
     }
@@ -1218,8 +1226,8 @@ impl<T, C: SecondaryMapConfigFor<T>> Drop for SecondaryDrain<'_, T, C> {
     }
 }
 
-/// Owning iterator over `(key, value)` pairs, in index order. Created by
-/// consuming a map with `into_iter`, which a map only has when its storage
+/// Owning iterator over `(key, value)` pairs, in index order. It is created
+/// by consuming a map with `into_iter`, which a map only has when its storage
 /// implements `IntoIterator`. It implements `DoubleEndedIterator`, which
 /// gives it `next_back` and `rev`, only when the storage's iterator
 /// implements both `DoubleEndedIterator` and `ExactSizeIterator`.
@@ -1251,8 +1259,9 @@ where
                 return Some((key, value));
             }
         }
-        // Only a storage that lost a value gets here. Stopping for good
-        // keeps the iterator fused.
+        // The slots ran out while `remaining` said a value was left, which
+        // only happens with a storage that broke the `SlotStorage` contract.
+        // Setting `remaining` to zero keeps the iterator fused.
         self.remaining = 0;
         None
     }
@@ -1285,8 +1294,9 @@ where
                 return Some((key, value));
             }
         }
-        // Only a storage that lost a value gets here. Stopping for good
-        // keeps the iterator fused.
+        // The slots ran out while `remaining` said a value was left, which
+        // only happens with a storage that broke the `SlotStorage` contract.
+        // Setting `remaining` to zero keeps the iterator fused.
         self.remaining = 0;
         None
     }

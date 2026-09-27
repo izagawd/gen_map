@@ -218,9 +218,9 @@ struct Model<C: MapConfigFor<u32>> {
     /// The value the next insert uses. Every value is different, so a value
     /// that shows up under the wrong key is caught.
     next_value: u32,
-    /// How many slots were retired with `retire`. A config that wraps can
-    /// not tell these apart from free slots by their generation, since both
-    /// have a generation of zero.
+    /// How many slots were retired with `retire`. With a config that wraps,
+    /// these slots cannot be told apart from free slots by their generation,
+    /// since both have a generation of zero.
     retired: usize,
 }
 
@@ -596,8 +596,8 @@ fn check<C: MapConfigFor<u32>>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut
     assert_eq!(map.len(), model.live.len());
     assert_eq!(map.is_empty(), model.live.is_empty());
 
-    // Iteration is in slot order, and a slot holds at most one valid key, so
-    // slot order is also key order.
+    // Iteration is in slot order, and at most one valid key points at each
+    // slot, so slot order is also key order.
     let mut expected = model.live.clone();
     expected.sort();
     let actual: Vec<_> = map.iter().map(|(key, value)| (key, *value)).collect();

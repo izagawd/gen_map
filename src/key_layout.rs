@@ -10,12 +10,12 @@ use core::marker::PhantomData;
 ///
 /// The map trusts what a layout hands back. For a `Repr` that
 /// [`pack_unchecked`](Self::pack_unchecked) made, [`idx`](Self::idx) and
-/// [`generation`](Self::generation) must return exactly what it was given,
-/// and two `Repr` values must be equal only if they unpack to the same
-/// parts.
-/// [`max_idx`](Self::max_idx) and [`max_generation`](Self::max_generation)
-/// must return the same value every time, because the maps pack parts again
-/// long after they first checked them against those limits.
+/// [`generation`](Self::generation) must return exactly the index and the
+/// generation that `pack_unchecked` was given, and two `Repr` values must be
+/// equal only if they unpack to the same parts. [`max_idx`](Self::max_idx)
+/// and [`max_generation`](Self::max_generation) must return the same value
+/// every time, because the maps pack parts again long after they first
+/// checked them against those limits.
 ///
 /// `generation` is safe to call and returns an [`Odd`], and
 /// [`Key::from_repr`](crate::Key::from_repr) accepts any `Repr`, so every
@@ -192,9 +192,10 @@ fn low_bits(bits: u32) -> u128 {
 
 // SAFETY: the two parts are put in bit fields that do not overlap and are
 // read back from the same fields. Every `Packed` layout on the same integer
-// shares `PackedRepr`, so a key can carry one that a layout with a different
-// number of generation bits made. Every `PackedRepr` has its lowest bit set,
-// so this layout still unpacks it to parts that fit, with an odd generation.
+// shares `PackedRepr`, so a key can carry a `PackedRepr` that was made by a
+// layout with a different number of generation bits. Every `PackedRepr` has
+// its lowest bit set, so this layout still unpacks it to parts that fit, with
+// an odd generation.
 unsafe impl<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32> KeyLayout<Idx, Gen>
     for Packed<R, GEN_BITS>
 {
