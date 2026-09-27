@@ -433,7 +433,7 @@ mod sealed {
 /// /// Only for values that are `Copy`.
 /// struct CopyValues;
 ///
-/// impl<T: Copy> MapConfig<T> for CopyValues {
+/// impl MapConfig for CopyValues {
 ///     type KeyConfig = DefaultKeyConfig;
 /// }
 ///
@@ -452,8 +452,8 @@ mod sealed {
 /// // let map = GenMap::<String, CopyValues>::new_with_config();
 /// ```
 ///
-/// To allow only `u32` values, implement `MapConfig<u32>` instead of
-/// `MapConfig<T>`, and `GenMapConfig` only for slots whose `Value` is `u32`.
+/// To allow only `u32` values, implement `GenMapConfig` only for slots whose
+/// `Value` is `u32`.
 ///
 /// ```
 /// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, MapConfig};
@@ -461,7 +461,7 @@ mod sealed {
 /// /// Only for values that are `u32`.
 /// struct U32Values;
 ///
-/// impl MapConfig<u32> for U32Values {
+/// impl MapConfig for U32Values {
 ///     type KeyConfig = DefaultKeyConfig;
 /// }
 ///
@@ -523,7 +523,7 @@ mod sealed {
 /// /// `S: Clone`.
 /// struct Cloneable;
 ///
-/// impl<T> MapConfig<T> for Cloneable {
+/// impl MapConfig for Cloneable {
 ///     type KeyConfig = DefaultKeyConfig;
 /// }
 ///

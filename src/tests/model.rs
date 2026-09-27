@@ -21,7 +21,7 @@ impl KeyConfig for Retiring {
     type Layout = Packed<u16, 4>;
 }
 
-impl<T> MapConfig<T> for Retiring {
+impl MapConfig for Retiring {
     type KeyConfig = Self;
 }
 
@@ -39,7 +39,7 @@ impl KeyConfig for Small {
     type Layout = Packed<u8, 4>;
 }
 
-impl<T> MapConfig<T> for Small {
+impl MapConfig for Small {
     type KeyConfig = Self;
 }
 
@@ -56,7 +56,7 @@ impl KeyConfig for SmallWrap {
     type Layout = Packed<u8, 4>;
 }
 
-impl<T> MapConfig<T> for SmallWrap {
+impl MapConfig for SmallWrap {
     type KeyConfig = Self;
 }
 
@@ -78,7 +78,7 @@ impl KeyConfig for InlineRetiring {
 }
 
 #[cfg(feature = "arrayvec")]
-impl<T> MapConfig<T> for InlineRetiring {
+impl MapConfig for InlineRetiring {
     type KeyConfig = Self;
 }
 
@@ -100,7 +100,7 @@ impl KeyConfig for InlineWrap {
 }
 
 #[cfg(feature = "arrayvec")]
-impl<T> MapConfig<T> for InlineWrap {
+impl MapConfig for InlineWrap {
     type KeyConfig = Self;
 }
 
@@ -124,7 +124,7 @@ impl KeyConfig for Spilling {
 }
 
 #[cfg(feature = "smallvec")]
-impl<T> MapConfig<T> for Spilling {
+impl MapConfig for Spilling {
     type KeyConfig = Self;
 }
 
@@ -207,14 +207,14 @@ impl Rng {
 /// What the map should hold after the operations so far.
 struct Model<C: MapConfigFor<u32>> {
     /// Every valid key and the value under it.
-    live: Vec<(Key<MapKeyConfig<u32, C>>, u32)>,
+    live: Vec<(Key<MapKeyConfig<C>>, u32)>,
     /// Keys whose value was detached and not reattached yet.
-    detached: Vec<Key<MapKeyConfig<u32, C>>>,
+    detached: Vec<Key<MapKeyConfig<C>>>,
     /// Keys whose value was removed. None of them may match anything, and a
     /// config that retires slots never hands one out again. A config that
     /// wraps can hand one out again, and that key then moves back to
     /// `live`.
-    dead: Vec<Key<MapKeyConfig<u32, C>>>,
+    dead: Vec<Key<MapKeyConfig<C>>>,
     /// The value the next insert uses. Every value is different, so a value
     /// that shows up under the wrong key is caught.
     next_value: u32,
@@ -306,7 +306,7 @@ fn run<C: MapConfigFor<u32>>(seed: u64, steps: usize) {
 }
 
 fn slot_count_limit<C: MapConfigFor<u32>>() -> Option<usize> {
-    <Layout<u32, C> as KeyLayout<Idx<u32, C>, Gen<u32, C>>>::max_idx()
+    <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_idx()
         .into_usize()?
         .checked_add(1)
 }
@@ -367,8 +367,8 @@ fn assert_no_slot_is_free<C: MapConfigFor<u32>>(map: &GenMap<u32, C>, model: &Mo
         // too, so the slots of detached keys are left out.
         (0..map.slots_len())
             .filter(|&position| {
-                let idx = Idx::<u32, C>::from_usize(position).unwrap();
-                map.generation_at(idx) == Some(Gen::<u32, C>::ZERO)
+                let idx = Idx::<C>::from_usize(position).unwrap();
+                map.generation_at(idx) == Some(Gen::<C>::ZERO)
                     && !model.detached.iter().any(|key| key.idx() == idx)
             })
             .count()
@@ -385,7 +385,7 @@ fn retire<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, 
     }
     let (key, value) = model.live.swap_remove(rng.below(model.live.len()));
     assert_eq!(map.retire(key), Some(value));
-    assert_eq!(map.generation_at(key.idx()), Some(Gen::<u32, C>::ZERO));
+    assert_eq!(map.generation_at(key.idx()), Some(Gen::<C>::ZERO));
     model.dead.push(key);
     model.retired += 1;
 }
@@ -528,7 +528,7 @@ fn get_disjoint<C: MapConfigFor<u32>>(
 /// may be past the last slot.
 fn look_up_by_index<C: MapConfigFor<u32>>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut Rng) {
     let position = rng.below(map.slots_len() + 1);
-    let Some(idx) = Idx::<u32, C>::from_usize(position) else {
+    let Some(idx) = Idx::<C>::from_usize(position) else {
         return;
     };
     let expected = model.live.iter().find(|(key, _)| key.idx() == idx);
@@ -538,7 +538,7 @@ fn look_up_by_index<C: MapConfigFor<u32>>(map: &GenMap<u32, C>, model: &Model<C>
     if let Some((key, _)) = expected {
         assert_eq!(
             map.generation_at(idx),
-            Some(Gen::<u32, C>::from_non_zero(key.generation().get()))
+            Some(Gen::<C>::from_non_zero(key.generation().get()))
         );
     }
 }

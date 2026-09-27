@@ -81,7 +81,7 @@ impl KeyConfig for Keys {
 /// Its storage has no owning iterator.
 struct NoIter;
 
-impl<T> MapConfig<T> for NoIter {
+impl MapConfig for NoIter {
     type KeyConfig = Keys;
 }
 
@@ -92,7 +92,7 @@ impl<S: GenSlotItem> GenMapConfig<S> for NoIter {
 /// Its storage's owning iterator is a `Forwards`.
 struct ForwardIter;
 
-impl<T> MapConfig<T> for ForwardIter {
+impl MapConfig for ForwardIter {
     type KeyConfig = Keys;
 }
 

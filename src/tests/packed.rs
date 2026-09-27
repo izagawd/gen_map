@@ -18,7 +18,7 @@ impl KeyConfig for Compact {
     type Layout = Packed<u32, 8>;
 }
 
-impl<T> MapConfig<T> for Compact {
+impl MapConfig for Compact {
     type KeyConfig = Self;
 }
 
@@ -36,7 +36,7 @@ impl KeyConfig for Tiny {
     type Layout = Packed<u16, 4>;
 }
 
-impl<T> MapConfig<T> for Tiny {
+impl MapConfig for Tiny {
     type KeyConfig = Self;
 }
 
@@ -53,7 +53,7 @@ impl KeyConfig for TinyWrap {
     type Layout = Packed<u16, 4>;
 }
 
-impl<T> MapConfig<T> for TinyWrap {
+impl MapConfig for TinyWrap {
     type KeyConfig = Self;
 }
 
@@ -71,7 +71,7 @@ impl KeyConfig for Byte {
     type Layout = Packed<u8, 4>;
 }
 
-impl<T> MapConfig<T> for Byte {
+impl MapConfig for Byte {
     type KeyConfig = Self;
 }
 
@@ -89,7 +89,7 @@ impl KeyConfig for Huge {
     type Layout = Packed<u128, 64>;
 }
 
-impl<T> MapConfig<T> for Huge {
+impl MapConfig for Huge {
     type KeyConfig = Self;
 }
 
@@ -106,7 +106,7 @@ impl KeyConfig for Native {
     type Layout = Packed<usize, 8>;
 }
 
-impl<T> MapConfig<T> for Native {
+impl MapConfig for Native {
     type KeyConfig = Self;
 }
 
@@ -327,10 +327,10 @@ fn debug_prints_both_parts_of_a_packed_key() {
 
 /// Inserts and removes on one slot until its generation is the largest one
 /// the layout holds, and returns the keys handed out along the way.
-fn use_up_one_slot<C>(map: &mut GenMap<u32, C>) -> Vec<Key<MapKeyConfig<u32, C>>>
+fn use_up_one_slot<C>(map: &mut GenMap<u32, C>) -> Vec<Key<MapKeyConfig<C>>>
 where
     C: MapConfigFor<u32>,
-    MapKeyConfig<u32, C>: KeyConfig<Idx = u16, Gen = u8>,
+    MapKeyConfig<C>: KeyConfig<Idx = u16, Gen = u8>,
 {
     let mut keys = Vec::new();
     for i in 0..8u32 {
@@ -498,7 +498,7 @@ impl KeyConfig for Wide8 {
     type Layout = Packed<u16, 8>;
 }
 
-impl<T> MapConfig<T> for Wide8 {
+impl MapConfig for Wide8 {
     type KeyConfig = Self;
 }
 

@@ -13,7 +13,7 @@ impl KeyConfig for Retire {
     type Layout = Split;
 }
 
-impl<T> MapConfig<T> for Retire {
+impl MapConfig for Retire {
     type KeyConfig = Self;
 }
 
@@ -31,7 +31,7 @@ impl KeyConfig for Wrap {
     type Layout = Split;
 }
 
-impl<T> MapConfig<T> for Wrap {
+impl MapConfig for Wrap {
     type KeyConfig = Self;
 }
 

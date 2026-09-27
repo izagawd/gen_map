@@ -17,7 +17,7 @@ use std::vec::Vec;
 /// insert under a different generation.
 struct Keep;
 
-impl<T> MapConfig<T> for Keep {
+impl MapConfig for Keep {
     type KeyConfig = DefaultKeyConfig;
 }
 
@@ -45,7 +45,7 @@ impl KeyConfig for Wrap4 {
     type Layout = Packed<u16, 4>;
 }
 
-impl<T> MapConfig<T> for Wrap4 {
+impl MapConfig for Wrap4 {
     type KeyConfig = Self;
 }
 
@@ -57,7 +57,7 @@ impl<S: GenSlotItem> GenMapConfig<S> for Wrap4 {
 /// [`Wrap4`] keys with the strategy `R`.
 struct With<R>(PhantomData<R>);
 
-impl<R, T> MapConfig<T> for With<R> {
+impl<R> MapConfig for With<R> {
     type KeyConfig = Wrap4;
 }
 
@@ -594,7 +594,7 @@ fn model_insert(
 struct InSmallVec;
 
 #[cfg(feature = "smallvec")]
-impl<T> MapConfig<T> for InSmallVec {
+impl MapConfig for InSmallVec {
     type KeyConfig = DefaultKeyConfig;
 }
 
@@ -610,7 +610,7 @@ impl<S: SecondarySlotItem> SecondaryMapConfig<S> for InSmallVec {
 struct InArrayVec;
 
 #[cfg(feature = "arrayvec")]
-impl<T> MapConfig<T> for InArrayVec {
+impl MapConfig for InArrayVec {
     type KeyConfig = DefaultKeyConfig;
 }
 
@@ -647,7 +647,7 @@ struct Coverage {
 /// are too short to be sure of meeting every case.
 fn follow_the_model<C>(capacity: Option<usize>)
 where
-    C: SecondaryMapConfigFor<u32> + MapConfig<u32, KeyConfig = DefaultKeyConfig>,
+    C: SecondaryMapConfigFor<u32> + MapConfig<KeyConfig = DefaultKeyConfig>,
 {
     let (seeds, steps) = if cfg!(miri) { (2, 300) } else { (8, 2000) };
     let mut coverage = Coverage::default();
@@ -666,7 +666,7 @@ where
 /// index or past it must fail with `StorageFull` and leave the map as it was.
 fn run_model<C>(seed: u64, steps: u32, capacity: Option<usize>, coverage: &mut Coverage)
 where
-    C: SecondaryMapConfigFor<u32> + MapConfig<u32, KeyConfig = DefaultKeyConfig>,
+    C: SecondaryMapConfigFor<u32> + MapConfig<KeyConfig = DefaultKeyConfig>,
 {
     let mut rng = Rng(seed);
     let mut keys = GenMap::new();

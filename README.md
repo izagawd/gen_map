@@ -53,8 +53,7 @@ impl KeyConfig for CompactKey {
 
 struct CompactMap;
 
-// `T` is the type of the values in the map.
-impl<T> MapConfig<T> for CompactMap {
+impl MapConfig for CompactMap {
     type KeyConfig = CompactKey;
 }
 

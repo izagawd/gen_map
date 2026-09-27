@@ -45,13 +45,6 @@ pub trait KeyConfig {
 
 /// Chooses the [`KeyConfig`] of the keys a map works with.
 ///
-/// `T` is the type of the values in the map. A config is usually
-/// implemented for every value type at once, with `impl<T> MapConfig<T> for
-/// YourConfig`, as in the example below. The impl can put bounds on `T` to
-/// limit which maps can use the config.
-/// [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) has two
-/// examples of bounds on `T`.
-///
 /// The config of a [`GenMap`](crate::GenMap) also implements
 /// [`GenMapConfig`], which has `MapConfig` as a supertrait.
 ///
@@ -73,7 +66,7 @@ pub trait KeyConfig {
 /// /// of retiring.
 /// struct Small;
 ///
-/// impl<T> MapConfig<T> for Small {
+/// impl MapConfig for Small {
 ///     type KeyConfig = SmallKeys;
 /// }
 ///
@@ -88,10 +81,9 @@ pub trait KeyConfig {
 /// assert_eq!(core::mem::size_of_val(&key), 4);
 /// assert_eq!(map[key], "hello");
 /// ```
-pub trait MapConfig<T> {
-    /// The config of the keys the map hands out. It can depend on the value
-    /// type, `T`. Maps whose configs use the same key config share a key
-    /// type.
+pub trait MapConfig {
+    /// The config of the keys the map hands out. Maps whose configs use the
+    /// same key config share a key type.
     type KeyConfig: KeyConfig;
 }
 
@@ -105,12 +97,12 @@ pub trait MapConfig<T> {
 /// `GenMap<T, C>` then uses the impl for its own slots,
 /// [`MapSlot<T, C>`](crate::MapSlot).
 ///
-/// [`MapConfig<S::Value>`](MapConfig) is a supertrait, so the impl can only
-/// cover slots whose values the [`MapConfig`] impl covers. The impl can put
-/// bounds on `S::Value` or on `S` to limit which maps can use the config.
+/// [`MapConfig`] is a supertrait, and its key config is the key config of
+/// the keys the map hands out. The impl can put bounds on `S::Value` or on
+/// `S` to limit which maps can use the config.
 /// [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) has three
 /// examples of these bounds.
-pub trait GenMapConfig<S: GenSlotItem>: MapConfig<S::Value> {
+pub trait GenMapConfig<S: GenSlotItem>: MapConfig {
     /// What happens when a slot's generation runs out, meaning it reaches
     /// the largest one its key can hold.
     ///
@@ -136,8 +128,8 @@ pub trait GenMapConfig<S: GenSlotItem>: MapConfig<S::Value> {
 /// the example below. A `SecondaryMap<T, C>` then uses the impl for its own
 /// slots, [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot).
 ///
-/// [`MapConfig<S::Value>`](MapConfig) is a supertrait, and its key config is
-/// the key config of the keys the map works with.
+/// [`MapConfig`] is a supertrait, and its key config is the key config of
+/// the keys the map works with.
 ///
 /// # Examples
 ///
@@ -152,7 +144,7 @@ pub trait GenMapConfig<S: GenSlotItem>: MapConfig<S::Value> {
 ///
 /// struct Keep;
 ///
-/// impl<T> MapConfig<T> for Keep {
+/// impl MapConfig for Keep {
 ///     type KeyConfig = DefaultKeyConfig;
 /// }
 ///
@@ -172,14 +164,14 @@ pub trait GenMapConfig<S: GenSlotItem>: MapConfig<S::Value> {
 /// assert!(ages.insert(bob, 25).is_err());
 /// assert_eq!(ages[alice], 30);
 /// ```
-pub trait SecondaryMapConfig<S: SecondarySlotItem>: MapConfig<S::Value> {
+pub trait SecondaryMapConfig<S: SecondarySlotItem>: MapConfig {
     /// Decides whether a value inserted under a key replaces the value in
     /// the slot at the key's index, when that value was inserted under a
     /// different generation. The built-in strategies are
     /// [`NewerWinsWrapping`](crate::NewerWinsWrapping),
     /// [`NewerWins`](crate::NewerWins) and
     /// [`ExistingWins`](crate::ExistingWins).
-    type ReplaceStrategy: ReplaceStrategy<<Self as MapConfig<S::Value>>::KeyConfig>;
+    type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
 
     /// The collection the map keeps its slots in. The map keeps a slot at
     /// every index up to the largest one inserted. `type Storage = Vec<S>;`
@@ -189,8 +181,8 @@ pub trait SecondaryMapConfig<S: SecondarySlotItem>: MapConfig<S::Value> {
 }
 
 /// What a [`GenMap<T, C>`](crate::GenMap) needs from its config `C`. `C`
-/// must implement [`MapConfig<T>`](MapConfig), and [`GenMapConfig`] for the
-/// map's [`MapSlot<T, C>`](crate::MapSlot).
+/// must implement [`MapConfig`], and [`GenMapConfig`] for the map's
+/// [`MapSlot<T, C>`](crate::MapSlot).
 ///
 /// It is implemented for every such `C`, and it is sealed, so it cannot be
 /// implemented outside this crate. It is the bound to use in code that is
@@ -208,10 +200,7 @@ pub trait SecondaryMapConfig<S: SecondarySlotItem>: MapConfig<S::Value> {
 /// map.insert(2);
 /// assert_eq!(total(&map), 3);
 /// ```
-pub trait MapConfigFor<T>:
-    sealed::Sealed<T> + MapConfig<T> + GenMapConfig<MapSlot<T, Self>>
-{
-}
+pub trait MapConfigFor<T>: sealed::Sealed<T> + MapConfig + GenMapConfig<MapSlot<T, Self>> {}
 
 mod sealed {
     /// Keeps [`MapConfigFor`](super::MapConfigFor) from being implemented
@@ -223,14 +212,13 @@ mod sealed {
     pub trait SecondarySealed<T> {}
 }
 
-impl<T, C> sealed::Sealed<T> for C where C: MapConfig<T> + GenMapConfig<MapSlot<T, C>> {}
+impl<T, C> sealed::Sealed<T> for C where C: MapConfig + GenMapConfig<MapSlot<T, C>> {}
 
-impl<T, C> MapConfigFor<T> for C where C: MapConfig<T> + GenMapConfig<MapSlot<T, C>> {}
+impl<T, C> MapConfigFor<T> for C where C: MapConfig + GenMapConfig<MapSlot<T, C>> {}
 
 /// What a [`SecondaryMap<T, C>`](crate::SecondaryMap) needs from its config
-/// `C`. `C` must implement [`MapConfig<T>`](MapConfig), and
-/// [`SecondaryMapConfig`] for the map's
-/// [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot).
+/// `C`. `C` must implement [`MapConfig`], and [`SecondaryMapConfig`] for the
+/// map's [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot).
 ///
 /// It is implemented for every such `C`, and it is sealed, so it cannot be
 /// implemented outside this crate. It is the bound to use in code that is
@@ -250,17 +238,17 @@ impl<T, C> MapConfigFor<T> for C where C: MapConfig<T> + GenMapConfig<MapSlot<T,
 /// assert_eq!(total(&map), 3);
 /// ```
 pub trait SecondaryMapConfigFor<T>:
-    sealed::SecondarySealed<T> + MapConfig<T> + SecondaryMapConfig<SecondaryMapSlot<T, Self>>
+    sealed::SecondarySealed<T> + MapConfig + SecondaryMapConfig<SecondaryMapSlot<T, Self>>
 {
 }
 
 impl<T, C> sealed::SecondarySealed<T> for C where
-    C: MapConfig<T> + SecondaryMapConfig<SecondaryMapSlot<T, C>>
+    C: MapConfig + SecondaryMapConfig<SecondaryMapSlot<T, C>>
 {
 }
 
 impl<T, C> SecondaryMapConfigFor<T> for C where
-    C: MapConfig<T> + SecondaryMapConfig<SecondaryMapSlot<T, C>>
+    C: MapConfig + SecondaryMapConfig<SecondaryMapSlot<T, C>>
 {
 }
 
@@ -291,7 +279,7 @@ impl KeyConfig for DefaultKeyConfig {
 pub struct DefaultMapConfig;
 
 #[cfg(feature = "alloc")]
-impl<T> MapConfig<T> for DefaultMapConfig {
+impl MapConfig for DefaultMapConfig {
     type KeyConfig = DefaultKeyConfig;
 }
 

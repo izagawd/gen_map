@@ -1,9 +1,7 @@
 //! Configs that put bounds on the slots they support, through the value
 //! type the slots hold.
 
-use crate::{
-    DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, Key, KeyConfig, MapConfig, Split,
-};
+use crate::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, Key, MapConfig};
 use std::vec::Vec;
 
 /// A trait only these tests implement.
@@ -17,7 +15,7 @@ impl Component for Position {}
 /// Only supports values that implement `Component`.
 struct Components;
 
-impl<T: Component> MapConfig<T> for Components {
+impl MapConfig for Components {
     type KeyConfig = DefaultKeyConfig;
 }
 
@@ -38,7 +36,7 @@ fn a_config_can_bound_the_value_by_any_trait() {
 /// Only supports `u32` values.
 struct OnlyU32;
 
-impl MapConfig<u32> for OnlyU32 {
+impl MapConfig for OnlyU32 {
     type KeyConfig = DefaultKeyConfig;
 }
 
@@ -56,50 +54,4 @@ fn a_config_can_support_a_single_value_type() {
     let mut other = GenMap::<Position, Components>::new_with_config();
     let keys: [Key; 2] = [key, other.insert(Position(1))];
     assert_eq!(keys[0], keys[1]);
-}
-
-/// Names the key config for a value type.
-trait KeysFor {
-    type Keys: KeyConfig;
-}
-
-struct ByteKeys;
-
-impl KeyConfig for ByteKeys {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Split;
-}
-
-impl KeysFor for u8 {
-    type Keys = ByteKeys;
-}
-
-impl KeysFor for u64 {
-    type Keys = DefaultKeyConfig;
-}
-
-/// Takes its key config from the value type.
-struct PerValue;
-
-impl<T: KeysFor> MapConfig<T> for PerValue {
-    type KeyConfig = T::Keys;
-}
-
-impl<S: GenSlotItem> GenMapConfig<S> for PerValue
-where
-    S::Value: KeysFor,
-{
-    type Storage = Vec<S>;
-}
-
-#[test]
-fn a_key_config_can_depend_on_the_value_type() {
-    let mut small = GenMap::<u8, PerValue>::new_with_config();
-    let mut large = GenMap::<u64, PerValue>::new_with_config();
-    let small_key: Key<ByteKeys> = small.insert(1);
-    let large_key: Key = large.insert(2);
-    assert_eq!(core::mem::size_of_val(&small_key), 2);
-    assert_eq!(core::mem::size_of_val(&large_key), 8);
-    assert_eq!((small[small_key], large[large_key]), (1, 2));
 }

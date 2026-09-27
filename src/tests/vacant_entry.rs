@@ -14,7 +14,7 @@ impl KeyConfig for Byte {
     type Layout = Split;
 }
 
-impl<T> MapConfig<T> for Byte {
+impl MapConfig for Byte {
     type KeyConfig = Self;
 }
 

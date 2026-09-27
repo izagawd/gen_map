@@ -137,7 +137,7 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 ///     type Layout = Packed<u32, 8>;
 /// }
 ///
-/// impl<T> MapConfig<T> for Compact {
+/// impl MapConfig for Compact {
 ///     type KeyConfig = Self;
 /// }
 ///
