@@ -193,6 +193,7 @@ fn an_array_vec_drops_every_value_once_when_a_drop_panics() {
 #[test]
 fn a_secondary_map_in_an_array_vec_holds_the_first_four_indices() {
     let mut map = SecondaryMap::<u32, Four>::new_with_config();
+    assert_eq!(map.capacity(), 4);
     for i in 0..4 {
         let key = key_from_parts::<Four>(i, 1);
         assert_eq!(map.insert(key, u32::from(i)).unwrap(), None);

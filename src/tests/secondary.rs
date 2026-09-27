@@ -383,24 +383,33 @@ fn a_secondary_map_iterates_in_index_order() {
 }
 
 #[test]
-fn a_secondary_map_keeps_a_slot_up_to_the_largest_index_until_it_is_cleared() {
+fn a_secondary_map_keeps_its_slots_until_it_is_reset() {
     let mut map = SecondaryMap::<u32, Cfg<u8, u8>>::new_with_config();
     let last = key_from_parts::<Cfg<u8, u8>>(255, 1);
     assert_eq!(map.insert(last, 7).unwrap(), None);
     assert_eq!(map.slots_len(), 256);
     assert_eq!(map.iter().collect::<Vec<_>>(), [(last, &7)]);
 
-    // Removing leaves the slot, and clearing removes every slot.
+    // Removing, clearing and draining take the values out and leave the
+    // slots, as they do in a `GenMap`.
     assert_eq!(map.remove(last), Some(7));
     assert_eq!(map.slots_len(), 256);
-    map.clear();
-    assert_eq!(map.slots_len(), 0);
-
-    // A drain removes every slot too, even when it is dropped early.
     map.insert(last, 8).unwrap();
-    drop(map.drain());
-    assert_eq!(map.slots_len(), 0);
+    map.clear();
     assert!(map.is_empty());
+    assert_eq!(map.slots_len(), 256);
+    map.insert(last, 9).unwrap();
+    drop(map.drain());
+    assert!(map.is_empty());
+    assert_eq!(map.slots_len(), 256);
+
+    // Resetting removes the slots as well, and keeps the allocation.
+    let capacity = map.capacity();
+    map.reset();
+    assert_eq!(map.slots_len(), 0);
+    assert_eq!(map.capacity(), capacity);
+    map.insert(last, 10).unwrap();
+    assert_eq!(map[last], 10);
 }
 
 #[test]
@@ -810,20 +819,23 @@ fn retain_stays_consistent_when_a_drop_panics() {
 }
 
 #[test]
-fn clear_and_drain_empty_the_map_when_a_drop_panics() {
+fn clear_and_drain_stay_consistent_when_a_drop_panics() {
     for drain in [false, true] {
         let tracker = DropTracker::new();
         let mut keys = GenMap::new();
         let mut map = SecondaryMap::<Bomb>::new();
-        for i in 0..4 {
-            map.insert(keys.insert(()), Bomb::new(&tracker, i == 2))
-                .unwrap();
-        }
+        let all: Vec<Key> = (0..5)
+            .map(|i| {
+                let key = keys.insert(());
+                map.insert(key, Bomb::new(&tracker, i == 2)).unwrap();
+                key
+            })
+            .collect();
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             if drain {
-                // The drain takes the first value, and dropping it drops the
-                // other three, one of which panics.
+                // The drain takes the first value, and dropping it takes the
+                // rest, until the value at 2 panics.
                 let mut iter = map.drain();
                 drop(iter.next());
                 drop(iter);
@@ -832,11 +844,34 @@ fn clear_and_drain_empty_the_map_when_a_drop_panics() {
             }
         }));
         assert!(result.is_err());
-        assert!(map.is_empty());
-        assert_eq!(map.slots_len(), 0);
-        assert_eq!(map.iter().count(), 0);
-        tracker.assert_all_dropped_exactly_once(4);
+
+        // The panic stopped right after the value at 2 was taken out, so the
+        // last two stay in the map, as they would in a `GenMap`.
+        assert_eq!(map.len(), 2);
+        assert!(all[..3].iter().all(|&key| !map.contains_key(key)));
+        assert!(all[3..].iter().all(|&key| map.contains_key(key)));
+        assert_eq!(map.slots_len(), 5);
+
+        drop(map);
+        tracker.assert_all_dropped_exactly_once(5);
     }
+}
+
+#[test]
+fn reset_empties_the_map_when_a_drop_panics() {
+    let tracker = DropTracker::new();
+    let mut keys = GenMap::new();
+    let mut map = SecondaryMap::<Bomb>::new();
+    for i in 0..4 {
+        map.insert(keys.insert(()), Bomb::new(&tracker, i == 2))
+            .unwrap();
+    }
+
+    assert!(catch_unwind(AssertUnwindSafe(|| map.reset())).is_err());
+    assert!(map.is_empty());
+    assert_eq!(map.slots_len(), 0);
+    assert_eq!(map.iter().count(), 0);
+    tracker.assert_all_dropped_exactly_once(4);
 }
 
 #[test]
@@ -1160,4 +1195,27 @@ fn values_swapped_through_the_disjoint_methods_drop_exactly_once() {
     tracker.assert_none_dropped();
     drop(map);
     tracker.assert_all_dropped_exactly_once(2);
+}
+
+#[test]
+fn reserve_makes_room_for_slots_ahead_of_time() {
+    let mut map = SecondaryMap::<u32>::new();
+    assert_eq!(map.capacity(), 0);
+    assert_eq!(map.slots_len(), 0);
+
+    map.reserve(100);
+    let capacity = map.capacity();
+    assert!(capacity >= 100);
+    // Filling the reserved slots does not grow the storage again.
+    map.insert(key_from_parts::<DefaultKeyConfig>(99, 1), 1)
+        .unwrap();
+    assert_eq!(map.slots_len(), 100);
+    assert_eq!(map.capacity(), capacity);
+
+    assert!(map.try_reserve(50).is_ok());
+    assert!(map.capacity() >= 150);
+    // No storage has room for that many, and the map stays as it was.
+    assert!(map.try_reserve(usize::MAX).is_err());
+    assert_eq!(map.slots_len(), 100);
+    assert_eq!(map.len(), 1);
 }
