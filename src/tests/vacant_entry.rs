@@ -22,9 +22,11 @@ impl<S: GenSlotItem> GenMapConfig<S> for Byte {
     type Storage = Vec<S>;
 }
 
+/// A map with a value in every slot a `u8` index allows. That is 255 slots,
+/// since no slot gets the index `u8::MAX`.
 fn full_byte_map() -> GenMap<i32, Byte> {
     let mut map = GenMap::<i32, Byte>::new_with_config();
-    for i in 0..256 {
+    for i in 0..255 {
         map.insert(i);
     }
     map
@@ -78,7 +80,7 @@ fn dropped_vacant_entry_keeps_a_freed_slot_on_the_free_list() {
 fn vacant_entry_reports_index_exhausted() {
     let mut map = full_byte_map();
     assert_eq!(map.vacant_entry().err(), Some(FullError::IndexExhausted));
-    assert_eq!(map.len(), 256);
+    assert_eq!(map.len(), 255);
 }
 
 #[test]
@@ -102,7 +104,7 @@ fn try_insert_with_key_reports_full_without_calling_the_closure() {
         Err(InsertWithError::Full(FullError::IndexExhausted))
     );
     assert!(!called);
-    assert_eq!(map.len(), 256);
+    assert_eq!(map.len(), 255);
 }
 
 #[test]

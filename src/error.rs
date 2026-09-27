@@ -3,8 +3,9 @@ use core::fmt;
 /// Why a [`GenMap`](crate::GenMap) has no room for another value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FullError<S> {
-    /// The map has a slot at every index its keys can hold and none of
-    /// them are free.
+    /// The map has a slot at every index it can use and none of them are
+    /// free. A map uses every index its keys can hold, except the largest
+    /// value of the index type.
     IndexExhausted,
 
     /// None of the slots are free and the storage could not make room for
@@ -105,6 +106,10 @@ pub enum SecondaryInsertError<T, S> {
     /// [`ReplaceStrategy`](crate::ReplaceStrategy) kept that value.
     Refused(T),
 
+    /// The key's index is the largest value of the index type. No map gives
+    /// a slot that index, so only a hand-built key can have it.
+    IndexReserved(T),
+
     /// The storage could not make room for a slot at the key's index. The
     /// second field says why.
     StorageFull(T, S),
@@ -115,7 +120,9 @@ impl<T, S> SecondaryInsertError<T, S> {
     #[inline]
     pub fn into_inner(self) -> T {
         match self {
-            Self::Refused(value) | Self::StorageFull(value, _) => value,
+            Self::Refused(value) | Self::IndexReserved(value) | Self::StorageFull(value, _) => {
+                value
+            }
         }
     }
 }
@@ -125,6 +132,7 @@ impl<T, S: fmt::Debug> fmt::Debug for SecondaryInsertError<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Refused(_) => f.write_str("Refused(..)"),
+            Self::IndexReserved(_) => f.write_str("IndexReserved(..)"),
             Self::StorageFull(_, error) => write!(f, "StorageFull(.., {error:?})"),
         }
     }
@@ -135,6 +143,9 @@ impl<T, S: fmt::Display> fmt::Display for SecondaryInsertError<T, S> {
         match self {
             Self::Refused(_) => f.write_str(
                 "the slot holds a value from a different generation, and the replace strategy kept it",
+            ),
+            Self::IndexReserved(_) => f.write_str(
+                "the key's index is the largest value of the index type, which no slot ever has",
             ),
             Self::StorageFull(_, error) => {
                 write!(f, "the storage cannot make room for the slot: {error}")

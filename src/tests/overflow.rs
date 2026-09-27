@@ -162,21 +162,24 @@ fn retired_slots_survive_clear_and_clone() {
 }
 
 #[test]
-fn map_holds_exactly_idx_max_plus_one_slots() {
+fn map_holds_exactly_idx_max_slots() {
+    // Every index but `u8::MAX` gets a slot.
     let mut map = GenMap::<u16, Retire>::new_with_config();
-    for i in 0..256u16 {
+    for i in 0..255u16 {
         let key = map.insert(i);
         assert_eq!(key.idx() as u16, i);
     }
-    assert_eq!(map.len(), 256);
-    assert_eq!(map.slots_len(), 256);
+    assert_eq!(map.len(), 255);
+    assert_eq!(map.slots_len(), 255);
+    assert!(map.try_insert(255).is_err());
+    assert_eq!(map.key_at(u8::MAX), None);
 }
 
 #[test]
 #[should_panic(expected = "GenMap is full")]
 fn inserting_into_a_full_map_panics() {
     let mut map = GenMap::<u16, Retire>::new_with_config();
-    for i in 0..=256u16 {
+    for i in 0..=255u16 {
         map.insert(i);
     }
 }
@@ -184,7 +187,7 @@ fn inserting_into_a_full_map_panics() {
 #[test]
 fn full_map_still_accepts_inserts_after_a_remove() {
     let mut map = GenMap::<u16, Retire>::new_with_config();
-    let keys: std::vec::Vec<_> = (0..256u16).map(|i| map.insert(i)).collect();
+    let keys: std::vec::Vec<_> = (0..255u16).map(|i| map.insert(i)).collect();
     map.remove(keys[100]);
     let key = map.insert(1234);
     assert_eq!(key.idx(), 100);

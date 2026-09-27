@@ -341,23 +341,15 @@ fn every_value_is_dropped_once() {
 }
 
 #[test]
-fn clone_debug_default_and_collect() {
+fn clone_debug_and_default() {
     let mut keys = GenMap::new();
     let a = keys.insert(());
-    let map: SecondaryMap<u32> = [(a, 1)].into_iter().collect();
+    let mut map = SecondaryMap::<u32>::new();
+    map.insert(a, 1).unwrap();
     let copy = map.clone();
     assert_eq!(copy[a], 1);
     assert_eq!(format!("{map:?}"), format!("{{{a:?}: 1}}"));
     assert!(SecondaryMap::<u32>::default().is_empty());
-}
-
-#[test]
-fn extend_drops_the_values_whose_insert_is_refused() {
-    let (old, new) = reused_keys();
-    let mut map = SecondaryMap::<u32>::new();
-    map.extend([(new, 1), (old, 2)]);
-    assert_eq!(map.len(), 1);
-    assert_eq!(map[new], 1);
 }
 
 #[should_panic(expected = "SecondaryMap key")]
@@ -385,23 +377,25 @@ fn a_secondary_map_iterates_in_index_order() {
 #[test]
 fn a_secondary_map_keeps_its_slots() {
     let mut map = SecondaryMap::<u32, Cfg<u8, u8>>::new_with_config();
-    let last = key_from_parts::<Cfg<u8, u8>>(255, 1);
+    // 254 is the largest index a slot can have, since `u8::MAX` is never
+    // used.
+    let last = key_from_parts::<Cfg<u8, u8>>(254, 1);
     assert_eq!(map.insert(last, 7).unwrap(), None);
-    assert_eq!(map.slots_len(), 256);
+    assert_eq!(map.slots_len(), 255);
     assert_eq!(map.iter().collect::<Vec<_>>(), [(last, &7)]);
 
     // Removing, clearing and draining take the values out and leave the
     // slots, as they do in a `GenMap`.
     assert_eq!(map.remove(last), Some(7));
-    assert_eq!(map.slots_len(), 256);
+    assert_eq!(map.slots_len(), 255);
     map.insert(last, 8).unwrap();
     map.clear();
     assert!(map.is_empty());
-    assert_eq!(map.slots_len(), 256);
+    assert_eq!(map.slots_len(), 255);
     map.insert(last, 9).unwrap();
     drop(map.drain());
     assert!(map.is_empty());
-    assert_eq!(map.slots_len(), 256);
+    assert_eq!(map.slots_len(), 255);
 }
 
 #[test]
@@ -439,7 +433,9 @@ fn a_clone_has_the_same_values_and_keys() {
 fn an_index_past_usize_fails_in_a_secondary_map_before_adding_a_slot() {
     type Wide = Cfg<u128, u32>;
 
-    let key = key_from_parts::<Wide>(u128::MAX, 1);
+    // `u128::MAX` itself is refused before the storage is asked, so the key
+    // uses the index just below it.
+    let key = key_from_parts::<Wide>(u128::MAX - 1, 1);
     let mut map = SecondaryMap::<u8, Wide>::new_with_config();
     assert!(matches!(
         map.insert(key, 5),
@@ -1268,4 +1264,34 @@ fn every_iterator_runs_from_both_ends() {
     assert_eq!(owned.next_back(), Some((all[2], 2)));
     assert_eq!(owned.next(), None);
     assert_eq!(owned.next_back(), None);
+}
+
+#[test]
+fn insert_rejects_a_key_at_the_largest_index() {
+    // No `GenMap` gives a slot the largest index, so only a hand-built key
+    // can have it.
+    let key = key_from_parts::<Cfg<u8, u8>>(u8::MAX, 1);
+    let mut map = SecondaryMap::<&str, Cfg<u8, u8>>::new_with_config();
+    let error = map.insert(key, "x").unwrap_err();
+    assert!(matches!(error, SecondaryInsertError::IndexReserved("x")));
+    assert_eq!(format!("{error:?}"), "IndexReserved(..)");
+    assert!(format!("{error}").contains("largest value"));
+    assert_eq!(error.into_inner(), "x");
+    assert_eq!(map.len(), 0);
+    assert_eq!(map.slots_len(), 0);
+    assert!(map.get(key).is_none());
+}
+
+#[test]
+fn a_value_under_every_key_a_byte_map_hands_out_fits_the_count() {
+    let mut keys = GenMap::<(), Cfg<u8, u8>>::new_with_config();
+    let mut map = SecondaryMap::<u32, Cfg<u8, u8>>::new_with_config();
+    for i in 0..255 {
+        assert_eq!(map.insert(keys.insert(()), i).unwrap(), None);
+    }
+    assert!(keys.try_insert(()).is_err());
+    assert_eq!(map.len(), 255);
+    assert_eq!(map.iter().len(), 255);
+    assert_eq!(map.drain().count(), 255);
+    assert!(map.is_empty());
 }
