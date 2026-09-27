@@ -901,38 +901,6 @@ impl<T, C: SecondaryMapConfigFor<T>> IndexMut<Key<MapKeyConfig<C>>> for Secondar
     }
 }
 
-impl<T, C: SecondaryMapConfigFor<T>> Extend<(Key<MapKeyConfig<C>>, T)> for SecondaryMap<T, C> {
-    /// Inserts each pair with [`insert`](SecondaryMap::insert). A value is
-    /// dropped if the strategy refuses it or its key's index is the largest
-    /// value of the index type.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the storage cannot make room for a slot.
-    fn extend<I: IntoIterator<Item = (Key<MapKeyConfig<C>>, T)>>(&mut self, iter: I) {
-        for (key, value) in iter {
-            match self.insert(key, value) {
-                Ok(_)
-                | Err(SecondaryInsertError::Refused(_) | SecondaryInsertError::IndexReserved(_)) => {
-                }
-                Err(error) => panic!("SecondaryMap cannot insert: {error:?}"),
-            }
-        }
-    }
-}
-
-impl<T, C: SecondaryMapConfigFor<T>> FromIterator<(Key<MapKeyConfig<C>>, T)>
-    for SecondaryMap<T, C>
-{
-    /// Creates a map with config `C` and fills it the way
-    /// [`extend`](Extend::extend) does, with the same panics.
-    fn from_iter<I: IntoIterator<Item = (Key<MapKeyConfig<C>>, T)>>(iter: I) -> Self {
-        let mut map = Self::new_with_config();
-        map.extend(iter);
-        map
-    }
-}
-
 /// Iterator over `(key, &value)` pairs, in index order. It is created using
 /// [`SecondaryMap::iter`].
 pub struct SecondaryIter<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
