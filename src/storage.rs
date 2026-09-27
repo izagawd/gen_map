@@ -208,7 +208,9 @@ impl<S> ReserveStorage for Vec<S> {
 /// [`FullError::StorageFull`](crate::FullError::StorageFull). In a
 /// [`SecondaryMap`](crate::SecondaryMap), inserting under a key whose index
 /// is `CAP` or more fails with
-/// [`SecondaryInsertError::StorageFull`](crate::SecondaryInsertError::StorageFull).
+/// [`SecondaryInsertError::StorageFull`](crate::SecondaryInsertError::StorageFull),
+/// unless the index is the largest value of the index type, which fails with
+/// [`SecondaryInsertError::IndexReserved`](crate::SecondaryInsertError::IndexReserved).
 ///
 /// ```
 /// use arrayvec::ArrayVec;
