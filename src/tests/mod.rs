@@ -54,7 +54,7 @@ impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Cfg<Idx, Gen> {
     type Layout = Split;
 }
 
-impl<Idx: KeyPiece, Gen: KeyPiece, T> MapConfig<T> for Cfg<Idx, Gen> {
+impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for Cfg<Idx, Gen> {
     type KeyConfig = Self;
 }
 

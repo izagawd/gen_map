@@ -223,7 +223,7 @@ impl<S> ReserveStorage for Vec<S> {
 ///     type Layout = Split;
 /// }
 ///
-/// impl<T> MapConfig<T> for Inline {
+/// impl MapConfig for Inline {
 ///     type KeyConfig = Self;
 /// }
 ///
@@ -311,7 +311,7 @@ unsafe impl<S, const CAP: usize> SlotStorage for arrayvec::ArrayVec<S, CAP> {
 ///     type Layout = Split;
 /// }
 ///
-/// impl<T> MapConfig<T> for Small {
+/// impl MapConfig for Small {
 ///     type KeyConfig = Self;
 /// }
 ///

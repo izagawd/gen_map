@@ -82,7 +82,7 @@ impl KeyConfig for Four {
     type Layout = Split;
 }
 
-impl<T> MapConfig<T> for Four {
+impl MapConfig for Four {
     type KeyConfig = Self;
 }
 

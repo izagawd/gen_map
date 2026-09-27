@@ -15,7 +15,7 @@ impl KeyConfig for Wrapping {
     type Layout = Packed<u8, 4>;
 }
 
-impl<T> MapConfig<T> for Wrapping {
+impl MapConfig for Wrapping {
     type KeyConfig = Self;
 }
 

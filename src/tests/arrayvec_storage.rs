@@ -20,7 +20,7 @@ impl KeyConfig for Four {
     type Layout = Split;
 }
 
-impl<T> MapConfig<T> for Four {
+impl MapConfig for Four {
     type KeyConfig = Self;
 }
 
@@ -43,7 +43,7 @@ impl KeyConfig for Sixteen {
     type Layout = Packed<u8, 4>;
 }
 
-impl<T> MapConfig<T> for Sixteen {
+impl MapConfig for Sixteen {
     type KeyConfig = Self;
 }
 

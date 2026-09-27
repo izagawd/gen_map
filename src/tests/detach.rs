@@ -12,7 +12,7 @@ impl KeyConfig for Wrap4 {
     type Layout = Packed<u16, 4>;
 }
 
-impl<T> MapConfig<T> for Wrap4 {
+impl MapConfig for Wrap4 {
     type KeyConfig = Self;
 }
 
@@ -31,7 +31,7 @@ impl KeyConfig for WrapU8 {
     type Layout = crate::Split;
 }
 
-impl<T> MapConfig<T> for WrapU8 {
+impl MapConfig for WrapU8 {
     type KeyConfig = Self;
 }
 
@@ -44,7 +44,7 @@ impl<S: GenSlotItem> GenMapConfig<S> for WrapU8 {
 /// can hold, and the key of that value.
 fn at_the_largest_generation<K>() -> (GenMap<i32, K>, Key<K>)
 where
-    K: KeyConfig + MapConfig<i32, KeyConfig = K> + GenMapConfig<crate::MapSlot<i32, K>>,
+    K: KeyConfig + MapConfig<KeyConfig = K> + GenMapConfig<crate::MapSlot<i32, K>>,
 {
     let mut map = GenMap::<i32, K>::new_with_config();
     let mut key = map.insert(0);

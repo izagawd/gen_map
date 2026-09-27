@@ -73,7 +73,7 @@ fn key_at_with_an_index_that_does_not_fit_in_usize_is_none() {
         type Layout = Split;
     }
 
-    impl<T> MapConfig<T> for Wide {
+    impl MapConfig for Wide {
         type KeyConfig = Self;
     }
 

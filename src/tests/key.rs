@@ -18,7 +18,7 @@ fn default_key_matches_default_config() {
 fn maps_whose_configs_share_a_key_config_share_a_key_type() {
     struct Wrapping;
 
-    impl<T> MapConfig<T> for Wrapping {
+    impl MapConfig for Wrapping {
         type KeyConfig = DefaultKeyConfig;
     }
 
@@ -82,7 +82,7 @@ fn every_integer_type_works_as_a_config() {
         type Layout = Split;
     }
 
-    impl<T> MapConfig<T> for Mixed {
+    impl MapConfig for Mixed {
         type KeyConfig = Self;
     }
 
@@ -97,7 +97,7 @@ fn every_integer_type_works_as_a_config() {
         type Layout = Split;
     }
 
-    impl<T> MapConfig<T> for Wide {
+    impl MapConfig for Wide {
         type KeyConfig = Self;
     }
 
@@ -133,7 +133,7 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
         type Layout = Split;
     }
 
-    impl<T> MapConfig<T> for Wide {
+    impl MapConfig for Wide {
         type KeyConfig = Self;
     }
 

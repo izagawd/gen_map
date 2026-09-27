@@ -17,7 +17,7 @@ use core::slice;
 
 /// The [`SecondarySlot`] a [`SecondaryMap<T, C>`](SecondaryMap) keeps each
 /// value in.
-pub type SecondaryMapSlot<T, C> = SecondarySlot<MapKeyConfig<T, C>, T>;
+pub type SecondaryMapSlot<T, C> = SecondarySlot<MapKeyConfig<C>, T>;
 
 /// The storage a config gives the map for its slots.
 type Slots<T, C> = <C as SecondaryMapConfig<SecondaryMapSlot<T, C>>>::Storage;
@@ -43,14 +43,14 @@ type InsertResult<T, C> = Result<Option<T>, SecondaryInsertError<T, SecondarySto
 /// position and generation of a slot that holds a value, as the comment on
 /// the map's `slots` field explains.
 #[inline]
-unsafe fn key_from_parts_unchecked<T, C: MapConfig<T>>(
+unsafe fn key_from_parts_unchecked<C: MapConfig>(
     position: usize,
-    generation: Odd<MapGen<T, C>>,
-) -> Key<MapKeyConfig<T, C>> {
+    generation: Odd<MapGen<C>>,
+) -> Key<MapKeyConfig<C>> {
     debug_assert!(
-        MapIdx::<T, C>::from_usize(position)
+        MapIdx::<C>::from_usize(position)
             .and_then(|idx| {
-                <Layout<T, C> as KeyLayout<MapIdx<T, C>, MapGen<T, C>>>::pack(idx, generation)
+                <Layout<C> as KeyLayout<MapIdx<C>, MapGen<C>>>::pack(idx, generation)
             })
             .is_some(),
         "the index and the generation fit the key"
@@ -58,11 +58,9 @@ unsafe fn key_from_parts_unchecked<T, C: MapConfig<T>>(
     // SAFETY: the caller promises that `position` fits in the index type,
     // and that the index and `generation` fit the layout.
     unsafe {
-        let idx = MapIdx::<T, C>::from_usize_unchecked(position);
+        let idx = MapIdx::<C>::from_usize_unchecked(position);
         Key::from_repr(
-            <Layout<T, C> as KeyLayout<MapIdx<T, C>, MapGen<T, C>>>::pack_unchecked(
-                idx, generation,
-            ),
+            <Layout<C> as KeyLayout<MapIdx<C>, MapGen<C>>>::pack_unchecked(idx, generation),
         )
     }
 }
@@ -189,14 +187,14 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
 
     /// Returns `true` if a value is stored under `key`.
     #[inline]
-    pub fn contains_key(&self, key: Key<MapKeyConfig<T, C>>) -> bool {
+    pub fn contains_key(&self, key: Key<MapKeyConfig<C>>) -> bool {
         self.get(key).is_some()
     }
 
     /// Returns a reference to the value stored under `key`, or `None` if
     /// there is none.
     #[inline]
-    pub fn get(&self, key: Key<MapKeyConfig<T, C>>) -> Option<&T> {
+    pub fn get(&self, key: Key<MapKeyConfig<C>>) -> Option<&T> {
         let position = key.idx().into_usize()?;
         self.slots
             .as_slice()
@@ -207,7 +205,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// Returns a mutable reference to the value stored under `key`, or
     /// `None` if there is none.
     #[inline]
-    pub fn get_mut(&mut self, key: Key<MapKeyConfig<T, C>>) -> Option<&mut T> {
+    pub fn get_mut(&mut self, key: Key<MapKeyConfig<C>>) -> Option<&mut T> {
         let position = key.idx().into_usize()?;
         self.slots
             .as_mut_slice()
@@ -222,7 +220,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// The map must have a value for `key`, meaning
     /// [`contains_key`](Self::contains_key) returns `true` for it.
     #[inline]
-    pub unsafe fn get_unchecked(&self, key: Key<MapKeyConfig<T, C>>) -> &T {
+    pub unsafe fn get_unchecked(&self, key: Key<MapKeyConfig<C>>) -> &T {
         debug_assert!(self.contains_key(key));
         // SAFETY: the caller promises the map has a value for `key`, so the
         // key's index is the position of a slot in the storage. That
@@ -242,7 +240,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// The map must have a value for `key`, meaning
     /// [`contains_key`](Self::contains_key) returns `true` for it.
     #[inline]
-    pub unsafe fn get_unchecked_mut(&mut self, key: Key<MapKeyConfig<T, C>>) -> &mut T {
+    pub unsafe fn get_unchecked_mut(&mut self, key: Key<MapKeyConfig<C>>) -> &mut T {
         debug_assert!(self.contains_key(key));
         // SAFETY: the same as in `get_unchecked`.
         unsafe {
@@ -256,12 +254,12 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// Returns the key of the value in the slot at `idx`, or `None` if there
     /// is no slot at `idx` or the slot holds no value.
     #[inline]
-    pub fn key_at(&self, idx: MapIdx<T, C>) -> Option<Key<MapKeyConfig<T, C>>> {
+    pub fn key_at(&self, idx: MapIdx<C>) -> Option<Key<MapKeyConfig<C>>> {
         let position = idx.into_usize()?;
         let (generation, _) = self.slots.as_slice().get(position)?.get()?;
         // SAFETY: the slot at `position` holds a value under `generation`, so
         // the two fit the key.
-        Some(unsafe { key_from_parts_unchecked::<T, C>(position, generation) })
+        Some(unsafe { key_from_parts_unchecked::<C>(position, generation) })
     }
 
     /// [`key_at`](Self::key_at) without the bounds and occupancy checks.
@@ -273,7 +271,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// value has generation zero, and a key's generation is an
     /// [`Odd`](crate::Odd), so building the key is undefined behavior.
     #[inline]
-    pub unsafe fn key_at_unchecked(&self, idx: MapIdx<T, C>) -> Key<MapKeyConfig<T, C>> {
+    pub unsafe fn key_at_unchecked(&self, idx: MapIdx<C>) -> Key<MapKeyConfig<C>> {
         debug_assert!(self.key_at(idx).is_some());
         // SAFETY: the caller promises a slot at `idx` that holds a value. So
         // `idx` fits in `usize` and names a slot in bounds, the slot's
@@ -281,19 +279,19 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         unsafe {
             let position = idx.into_usize_unchecked();
             let slot = self.slots.as_slice().get_unchecked(position);
-            key_from_parts_unchecked::<T, C>(position, Odd::new_unchecked(slot.generation()))
+            key_from_parts_unchecked::<C>(position, Odd::new_unchecked(slot.generation()))
         }
     }
 
     /// Returns the key and a reference to the value in the slot at `idx`, or
     /// `None` if there is no slot at `idx` or the slot holds no value.
     #[inline]
-    pub fn get_at(&self, idx: MapIdx<T, C>) -> Option<(Key<MapKeyConfig<T, C>>, &T)> {
+    pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &T)> {
         let position = idx.into_usize()?;
         let (generation, value) = self.slots.as_slice().get(position)?.get()?;
         // SAFETY: the slot at `position` holds a value under `generation`, so
         // the two fit the key.
-        let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+        let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
         Some((key, value))
     }
 
@@ -301,12 +299,12 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// `idx`, or `None` if there is no slot at `idx` or the slot holds no
     /// value. See [`get_at`](Self::get_at).
     #[inline]
-    pub fn get_at_mut(&mut self, idx: MapIdx<T, C>) -> Option<(Key<MapKeyConfig<T, C>>, &mut T)> {
+    pub fn get_at_mut(&mut self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &mut T)> {
         let position = idx.into_usize()?;
         let (generation, value) = self.slots.as_mut_slice().get_mut(position)?.get_mut()?;
         // SAFETY: the slot at `position` holds a value under `generation`, so
         // the two fit the key.
-        let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+        let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
         Some((key, value))
     }
 
@@ -319,7 +317,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// read as if it held a value and the key gets built using generation
     /// zero, both of which are undefined behavior.
     #[inline]
-    pub unsafe fn get_at_unchecked(&self, idx: MapIdx<T, C>) -> (Key<MapKeyConfig<T, C>>, &T) {
+    pub unsafe fn get_at_unchecked(&self, idx: MapIdx<C>) -> (Key<MapKeyConfig<C>>, &T) {
         debug_assert!(self.key_at(idx).is_some());
         // SAFETY: the same as in `key_at_unchecked`. The slot holds a value,
         // so reading it as one is sound.
@@ -327,7 +325,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
             let position = idx.into_usize_unchecked();
             let slot = self.slots.as_slice().get_unchecked(position);
             let generation = Odd::new_unchecked(slot.generation());
-            let key = key_from_parts_unchecked::<T, C>(position, generation);
+            let key = key_from_parts_unchecked::<C>(position, generation);
             (key, slot.get_odd_unchecked())
         }
     }
@@ -341,15 +339,15 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     #[inline]
     pub unsafe fn get_at_unchecked_mut(
         &mut self,
-        idx: MapIdx<T, C>,
-    ) -> (Key<MapKeyConfig<T, C>>, &mut T) {
+        idx: MapIdx<C>,
+    ) -> (Key<MapKeyConfig<C>>, &mut T) {
         debug_assert!(self.key_at(idx).is_some());
         // SAFETY: the same as in `get_at_unchecked`.
         unsafe {
             let position = idx.into_usize_unchecked();
             let slot = self.slots.as_mut_slice().get_unchecked_mut(position);
             let generation = Odd::new_unchecked(slot.generation());
-            let key = key_from_parts_unchecked::<T, C>(position, generation);
+            let key = key_from_parts_unchecked::<C>(position, generation);
             (key, slot.get_odd_unchecked_mut())
         }
     }
@@ -360,7 +358,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// A slot that holds a value has the generation of the value's key, which
     /// is odd. A slot that holds no value has generation zero.
     #[inline]
-    pub fn generation_at(&self, idx: MapIdx<T, C>) -> Option<MapGen<T, C>> {
+    pub fn generation_at(&self, idx: MapIdx<C>) -> Option<MapGen<C>> {
         Some(self.slots.as_slice().get(idx.into_usize()?)?.generation())
     }
 
@@ -372,7 +370,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// [`generation_at`](Self::generation_at) returns `Some` for it. The
     /// slot does not have to hold a value.
     #[inline]
-    pub unsafe fn generation_at_unchecked(&self, idx: MapIdx<T, C>) -> MapGen<T, C> {
+    pub unsafe fn generation_at_unchecked(&self, idx: MapIdx<C>) -> MapGen<C> {
         debug_assert!(self.generation_at(idx).is_some());
         // SAFETY: the caller promises a slot at `idx`, so `idx` fits in
         // `usize` and names a slot in bounds.
@@ -428,8 +426,8 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     #[allow(clippy::type_complexity)]
     pub fn get_disjoint_mut_at<const N: usize>(
         &mut self,
-        idxs: [MapIdx<T, C>; N],
-    ) -> Result<[(Key<MapKeyConfig<T, C>>, &mut T); N], GetDisjointMutAtError> {
+        idxs: [MapIdx<C>; N],
+    ) -> Result<[(Key<MapKeyConfig<C>>, &mut T); N], GetDisjointMutAtError> {
         for (i, idx) in idxs.iter().enumerate() {
             if self.key_at(*idx).is_none() {
                 return Err(GetDisjointMutAtError::NoValue);
@@ -454,8 +452,8 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     #[inline]
     pub unsafe fn get_disjoint_mut_at_unchecked<const N: usize>(
         &mut self,
-        idxs: [MapIdx<T, C>; N],
-    ) -> [(Key<MapKeyConfig<T, C>>, &mut T); N] {
+        idxs: [MapIdx<C>; N],
+    ) -> [(Key<MapKeyConfig<C>>, &mut T); N] {
         debug_assert!(idxs.iter().all(|idx| self.key_at(*idx).is_some()));
         debug_assert!(idxs
             .iter()
@@ -471,7 +469,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
                 let position = idx.into_usize_unchecked();
                 let slot = &mut *slots.add(position);
                 let generation = Odd::new_unchecked(slot.generation());
-                let key = key_from_parts_unchecked::<T, C>(position, generation);
+                let key = key_from_parts_unchecked::<C>(position, generation);
                 (key, slot.get_odd_unchecked_mut())
             }
         })
@@ -514,7 +512,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     #[inline]
     pub fn get_disjoint_mut<const N: usize>(
         &mut self,
-        keys: [Key<MapKeyConfig<T, C>>; N],
+        keys: [Key<MapKeyConfig<C>>; N],
     ) -> Result<[&mut T; N], GetDisjointMutError> {
         for (i, key) in keys.iter().enumerate() {
             if !self.contains_key(*key) {
@@ -544,7 +542,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     #[inline]
     pub unsafe fn get_disjoint_mut_unchecked<const N: usize>(
         &mut self,
-        keys: [Key<MapKeyConfig<T, C>>; N],
+        keys: [Key<MapKeyConfig<C>>; N],
     ) -> [&mut T; N] {
         debug_assert!(keys.iter().all(|key| self.contains_key(*key)));
         debug_assert!(keys
@@ -601,7 +599,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// assert!(matches!(ages.insert(alice, 32), Err(SecondaryInsertError::Refused(32))));
     /// assert_eq!(ages[bob], 25);
     /// ```
-    pub fn insert(&mut self, key: Key<MapKeyConfig<T, C>>, value: T) -> InsertResult<T, C> {
+    pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
         let generation = key.generation();
         let slot = match Self::get_or_grow_slot(&mut self.slots, key.idx()) {
             Ok(slot) => slot,
@@ -617,7 +615,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
                 Ok(None)
             }
             Some(current)
-                if <Strategy<T, C> as ReplaceStrategy<MapKeyConfig<T, C>>>::replaces(
+                if <Strategy<T, C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
                     current, generation,
                 ) =>
             {
@@ -640,7 +638,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// make room for all of them.
     fn get_or_grow_slot(
         slots: &mut Slots<T, C>,
-        idx: MapIdx<T, C>,
+        idx: MapIdx<C>,
     ) -> Result<&mut SecondaryMapSlot<T, C>, SecondaryStorageError<T, C>> {
         let Some(position) = idx.into_usize() else {
             // No storage can hold a slot past `usize::MAX`. Asking for
@@ -679,7 +677,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// `None` if there is none. The slot stays in the storage without a
     /// value.
     #[inline]
-    pub fn remove(&mut self, key: Key<MapKeyConfig<T, C>>) -> Option<T> {
+    pub fn remove(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
         let position = key.idx().into_usize()?;
         let slot = self.slots.as_mut_slice().get_mut(position)?;
         slot.get_odd(key.generation())?;
@@ -704,12 +702,12 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// map.retain(|_, value| *value % 2 == 0);
     /// assert_eq!(map.len(), 2);
     /// ```
-    pub fn retain<F: FnMut(Key<MapKeyConfig<T, C>>, &mut T) -> bool>(&mut self, mut f: F) {
+    pub fn retain<F: FnMut(Key<MapKeyConfig<C>>, &mut T) -> bool>(&mut self, mut f: F) {
         for (position, slot) in self.slots.as_mut_slice().iter_mut().enumerate() {
             if let Some((generation, value)) = slot.get_mut() {
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
-                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
                 if !f(key, value) {
                     self.len -= 1;
                     drop(slot.take());
@@ -874,7 +872,7 @@ impl<T: fmt::Debug, C: SecondaryMapConfigFor<T>> fmt::Debug for SecondaryMap<T, 
     }
 }
 
-impl<T, C: SecondaryMapConfigFor<T>> Index<Key<MapKeyConfig<T, C>>> for SecondaryMap<T, C> {
+impl<T, C: SecondaryMapConfigFor<T>> Index<Key<MapKeyConfig<C>>> for SecondaryMap<T, C> {
     type Output = T;
 
     /// Returns a reference to the value stored under `key`.
@@ -883,31 +881,31 @@ impl<T, C: SecondaryMapConfigFor<T>> Index<Key<MapKeyConfig<T, C>>> for Secondar
     ///
     /// Panics if no value is stored under `key`.
     #[inline]
-    fn index(&self, key: Key<MapKeyConfig<T, C>>) -> &T {
+    fn index(&self, key: Key<MapKeyConfig<C>>) -> &T {
         self.get(key).expect("invalid SecondaryMap key")
     }
 }
 
-impl<T, C: SecondaryMapConfigFor<T>> IndexMut<Key<MapKeyConfig<T, C>>> for SecondaryMap<T, C> {
+impl<T, C: SecondaryMapConfigFor<T>> IndexMut<Key<MapKeyConfig<C>>> for SecondaryMap<T, C> {
     /// Returns a mutable reference to the value stored under `key`.
     ///
     /// # Panics
     ///
     /// Panics if no value is stored under `key`.
     #[inline]
-    fn index_mut(&mut self, key: Key<MapKeyConfig<T, C>>) -> &mut T {
+    fn index_mut(&mut self, key: Key<MapKeyConfig<C>>) -> &mut T {
         self.get_mut(key).expect("invalid SecondaryMap key")
     }
 }
 
-impl<T, C: SecondaryMapConfigFor<T>> Extend<(Key<MapKeyConfig<T, C>>, T)> for SecondaryMap<T, C> {
+impl<T, C: SecondaryMapConfigFor<T>> Extend<(Key<MapKeyConfig<C>>, T)> for SecondaryMap<T, C> {
     /// Inserts each pair with [`insert`](SecondaryMap::insert). A value
     /// whose insert is refused by the strategy is dropped.
     ///
     /// # Panics
     ///
     /// Panics if the storage cannot make room for a slot.
-    fn extend<I: IntoIterator<Item = (Key<MapKeyConfig<T, C>>, T)>>(&mut self, iter: I) {
+    fn extend<I: IntoIterator<Item = (Key<MapKeyConfig<C>>, T)>>(&mut self, iter: I) {
         for (key, value) in iter {
             match self.insert(key, value) {
                 Ok(_) | Err(SecondaryInsertError::Refused(_)) => {}
@@ -917,12 +915,12 @@ impl<T, C: SecondaryMapConfigFor<T>> Extend<(Key<MapKeyConfig<T, C>>, T)> for Se
     }
 }
 
-impl<T, C: SecondaryMapConfigFor<T>> FromIterator<(Key<MapKeyConfig<T, C>>, T)>
+impl<T, C: SecondaryMapConfigFor<T>> FromIterator<(Key<MapKeyConfig<C>>, T)>
     for SecondaryMap<T, C>
 {
     /// Creates a map with config `C` and fills it the way
     /// [`extend`](Extend::extend) does, with the same panics.
-    fn from_iter<I: IntoIterator<Item = (Key<MapKeyConfig<T, C>>, T)>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = (Key<MapKeyConfig<C>>, T)>>(iter: I) -> Self {
         let mut map = Self::new_with_config();
         map.extend(iter);
         map
@@ -937,7 +935,7 @@ pub struct SecondaryIter<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
 }
 
 impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIter<'a, T, C> {
-    type Item = (Key<MapKeyConfig<T, C>>, &'a T);
+    type Item = (Key<MapKeyConfig<C>>, &'a T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -949,7 +947,7 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIter<'a, T, C> {
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
-                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
                 return Some((key, value));
             }
         }
@@ -976,7 +974,7 @@ impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIter<'_, T
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
-                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
                 return Some((key, value));
             }
         }
@@ -1010,7 +1008,7 @@ pub struct SecondaryIterMut<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
 }
 
 impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIterMut<'a, T, C> {
-    type Item = (Key<MapKeyConfig<T, C>>, &'a mut T);
+    type Item = (Key<MapKeyConfig<C>>, &'a mut T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1022,7 +1020,7 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIterMut<'a, T, C>
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
-                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
                 return Some((key, value));
             }
         }
@@ -1049,7 +1047,7 @@ impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIterMut<'_
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
-                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
                 return Some((key, value));
             }
         }
@@ -1069,7 +1067,7 @@ pub struct SecondaryKeys<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
 }
 
 impl<T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryKeys<'_, T, C> {
-    type Item = Key<MapKeyConfig<T, C>>;
+    type Item = Key<MapKeyConfig<C>>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1179,7 +1177,7 @@ pub struct SecondaryDrain<'a, T: 'a, C: SecondaryMapConfigFor<T> + 'a> {
 }
 
 impl<T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryDrain<'_, T, C> {
-    type Item = (Key<MapKeyConfig<T, C>>, T);
+    type Item = (Key<MapKeyConfig<C>>, T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1195,7 +1193,7 @@ impl<T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryDrain<'_, T, C> {
                 self.map.len -= 1;
                 // SAFETY: the slot at `position` held this value under
                 // `generation`, so the two fit the key.
-                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
                 return Some((key, value));
             }
         }
@@ -1237,7 +1235,7 @@ impl<T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIntoIter<T, C>
 where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,
 {
-    type Item = (Key<MapKeyConfig<T, C>>, T);
+    type Item = (Key<MapKeyConfig<C>>, T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1249,7 +1247,7 @@ where
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
-                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
                 return Some((key, value));
             }
         }
@@ -1283,7 +1281,7 @@ where
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` held this value under
                 // `generation`, so the two fit the key.
-                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
                 return Some((key, value));
             }
         }
@@ -1307,7 +1305,7 @@ impl<T, C: SecondaryMapConfigFor<T>> IntoIterator for SecondaryMap<T, C>
 where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,
 {
-    type Item = (Key<MapKeyConfig<T, C>>, T);
+    type Item = (Key<MapKeyConfig<C>>, T);
     type IntoIter = SecondaryIntoIter<T, C>;
 
     #[inline]
@@ -1320,7 +1318,7 @@ where
 }
 
 impl<'a, T, C: SecondaryMapConfigFor<T>> IntoIterator for &'a SecondaryMap<T, C> {
-    type Item = (Key<MapKeyConfig<T, C>>, &'a T);
+    type Item = (Key<MapKeyConfig<C>>, &'a T);
     type IntoIter = SecondaryIter<'a, T, C>;
 
     #[inline]
@@ -1330,7 +1328,7 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> IntoIterator for &'a SecondaryMap<T, C>
 }
 
 impl<'a, T, C: SecondaryMapConfigFor<T>> IntoIterator for &'a mut SecondaryMap<T, C> {
-    type Item = (Key<MapKeyConfig<T, C>>, &'a mut T);
+    type Item = (Key<MapKeyConfig<C>>, &'a mut T);
     type IntoIter = SecondaryIterMut<'a, T, C>;
 
     #[inline]

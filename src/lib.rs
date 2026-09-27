@@ -94,13 +94,11 @@
 //!   `arrayvec` feature is on, and `smallvec::SmallVec` when the `smallvec`
 //!   feature is on.
 //!
-//! A [`MapConfig`] is implemented for value types, usually for all of them
-//! at once with `impl<T> MapConfig<T>`. A [`GenMapConfig`] is implemented
-//! for slot types, usually for all of them at once with
-//! `impl<S: GenSlotItem> GenMapConfig<S>`. A slot is what the map keeps each
-//! value in, and [`GenSlotItem::Value`] is the type of that value. Either
-//! impl can put bounds on the value, and the [`GenMapConfig`] impl can put
-//! bounds on the slot, to limit which maps can use the config.
+//! A [`GenMapConfig`] is implemented for slot types, usually for all of them
+//! at once with `impl<S: GenSlotItem> GenMapConfig<S>`. A slot is what the
+//! map keeps each value in, and [`GenSlotItem::Value`] is the type of that
+//! value. The impl can put bounds on the value or on the slot to limit which
+//! maps can use the config.
 //! [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) has three
 //! examples of these bounds.
 //!
@@ -127,7 +125,7 @@
 //!     type Layout = Split;
 //! }
 //!
-//! impl<T> MapConfig<T> for Tiny {
+//! impl MapConfig for Tiny {
 //!     type KeyConfig = Self;
 //! }
 //!
