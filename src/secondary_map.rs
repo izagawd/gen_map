@@ -135,6 +135,20 @@ impl<T> SecondaryMap<T> {
     pub fn new() -> Self {
         Self::new_with_config()
     }
+
+    /// Creates an empty map with the [`DefaultMapConfig`] and room for
+    /// `capacity` slots.
+    #[inline]
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self
+    where
+        Slots<T, DefaultMapConfig>: ReserveStorage,
+    {
+        Self {
+            slots: Slots::<T, DefaultMapConfig>::with_capacity(capacity),
+            len: 0,
+        }
+    }
 }
 
 impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
@@ -790,6 +804,16 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C>
 where
     Slots<T, C>: ReserveStorage,
 {
+    /// Creates an empty map with config `C` and room for `capacity` slots.
+    #[inline]
+    #[must_use]
+    pub fn with_capacity_and_config(capacity: usize) -> Self {
+        Self {
+            slots: Slots::<T, C>::with_capacity(capacity),
+            len: 0,
+        }
+    }
+
     /// Reserves room for at least `additional` more slots.
     ///
     /// # Panics
@@ -941,6 +965,28 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIter<'a, T, C> {
     }
 }
 
+impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIter<'_, T, C> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+        while let Some((position, slot)) = self.slots.next_back() {
+            if let Some((generation, value)) = slot.get() {
+                self.remaining -= 1;
+                // SAFETY: the slot at `position` holds a value under
+                // `generation`, so the two fit the key.
+                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                return Some((key, value));
+            }
+        }
+        // Only a storage that lost a value gets here. Stopping for good
+        // keeps the iterator fused.
+        self.remaining = 0;
+        None
+    }
+}
+
 impl<T, C: SecondaryMapConfigFor<T>> ExactSizeIterator for SecondaryIter<'_, T, C> {}
 impl<T, C: SecondaryMapConfigFor<T>> FusedIterator for SecondaryIter<'_, T, C> {}
 
@@ -992,6 +1038,28 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIterMut<'a, T, C>
     }
 }
 
+impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIterMut<'_, T, C> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+        while let Some((position, slot)) = self.slots.next_back() {
+            if let Some((generation, value)) = slot.get_mut() {
+                self.remaining -= 1;
+                // SAFETY: the slot at `position` holds a value under
+                // `generation`, so the two fit the key.
+                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                return Some((key, value));
+            }
+        }
+        // Only a storage that lost a value gets here. Stopping for good
+        // keeps the iterator fused.
+        self.remaining = 0;
+        None
+    }
+}
+
 impl<T, C: SecondaryMapConfigFor<T>> ExactSizeIterator for SecondaryIterMut<'_, T, C> {}
 impl<T, C: SecondaryMapConfigFor<T>> FusedIterator for SecondaryIterMut<'_, T, C> {}
 
@@ -1011,6 +1079,13 @@ impl<T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryKeys<'_, T, C> {
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
+    }
+}
+
+impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryKeys<'_, T, C> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(|(key, _)| key)
     }
 }
 
@@ -1046,6 +1121,13 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryValues<'a, T, C> 
     }
 }
 
+impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryValues<'_, T, C> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(|(_, value)| value)
+    }
+}
+
 impl<T, C: SecondaryMapConfigFor<T>> ExactSizeIterator for SecondaryValues<'_, T, C> {}
 impl<T, C: SecondaryMapConfigFor<T>> FusedIterator for SecondaryValues<'_, T, C> {}
 
@@ -1075,6 +1157,13 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryValuesMut<'a, T, 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
+    }
+}
+
+impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryValuesMut<'_, T, C> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(|(_, value)| value)
     }
 }
 
@@ -1133,7 +1222,9 @@ impl<T, C: SecondaryMapConfigFor<T>> Drop for SecondaryDrain<'_, T, C> {
 
 /// Owning iterator over `(key, value)` pairs, in index order. Created by
 /// consuming a map with `into_iter`, which a map only has when its storage
-/// implements `IntoIterator`.
+/// implements `IntoIterator`. It implements `DoubleEndedIterator`, which
+/// gives it `next_back` and `rev`, only when the storage's iterator
+/// implements both `DoubleEndedIterator` and `ExactSizeIterator`.
 pub struct SecondaryIntoIter<T, C: SecondaryMapConfigFor<T>>
 where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,
@@ -1171,6 +1262,35 @@ where
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.remaining, Some(self.remaining))
+    }
+}
+
+// `next_back` calls `Enumerate::next_back`, which works out the position of
+// the last slot from the storage iterator's length, so that iterator has to
+// implement `ExactSizeIterator` as well as `DoubleEndedIterator`.
+impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIntoIter<T, C>
+where
+    Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,
+    <Slots<T, C> as IntoIterator>::IntoIter: DoubleEndedIterator + ExactSizeIterator,
+{
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+        while let Some((position, slot)) = self.slots.next_back() {
+            if let Some((generation, value)) = slot.into_inner() {
+                self.remaining -= 1;
+                // SAFETY: the slot at `position` held this value under
+                // `generation`, so the two fit the key.
+                let key = unsafe { key_from_parts_unchecked::<T, C>(position, generation) };
+                return Some((key, value));
+            }
+        }
+        // Only a storage that lost a value gets here. Stopping for good
+        // keeps the iterator fused.
+        self.remaining = 0;
+        None
     }
 }
 
