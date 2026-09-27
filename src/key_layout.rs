@@ -17,12 +17,15 @@ use core::marker::PhantomData;
 /// every time, because the maps pack parts again long after they first
 /// checked them against those limits.
 ///
-/// `generation` is safe to call and returns an [`Odd`], and
-/// [`Key::from_repr`](crate::Key::from_repr) accepts any `Repr`, so every
-/// `Repr` that safe code can make must unpack to an index of at most
-/// `max_idx` and a generation of at most `max_generation`. A `Repr` whose
-/// fields are private and that only this layout makes, like [`SplitRepr`],
-/// meets this rule, because only `pack_unchecked` can make one.
+/// Safe code can make a key from any `Repr` it can build, with
+/// [`Key::from_repr`](crate::Key::from_repr), and read the key's parts
+/// through the safe [`idx`](Self::idx) and [`generation`](Self::generation) methods.
+/// So every `Repr` that safe code can build must unpack to an odd generation,
+/// since `generation` returns an [`Odd`]. It must also unpack to an index of
+/// at most `max_idx` and a generation of at most `max_generation`.
+/// A `Repr` whose fields are private and that only this layout makes, like
+/// [`SplitRepr`], meets these rules, because only `pack_unchecked` can make
+/// one.
 pub unsafe trait KeyLayout<Idx: KeyPiece, Gen: KeyPiece> {
     /// The type a key stores its index and generation in.
     type Repr: Copy + Eq + Hash + Send + Sync + 'static;
@@ -157,10 +160,13 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyLayout<Idx, Gen> for Split {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct Packed<R, const GEN_BITS: u32>(PhantomData<R>);
 
-/// The type a key with the [`Packed`] layout stores its index and
-/// generation in. Only
-/// [`pack_unchecked`](KeyLayout::pack_unchecked) can make one, so its
-/// generation field is never zero.
+/// The type a key with the [`Packed`] layout stores its index and generation
+/// in. It is one integer, with the generation in the lowest bits and the
+/// index in the bits above them. Only
+/// [`pack_unchecked`](KeyLayout::pack_unchecked) can make one, and every
+/// generation it packs is odd, so the lowest bit is always set and the
+/// integer is never zero. That lets the integer be stored as a `NonZero`,
+/// which makes `Option<Key>` the same size as `Key`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PackedRepr<R: KeyPiece>(R::NonZero);
 

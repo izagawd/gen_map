@@ -732,18 +732,6 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         }
     }
 
-    /// Removes every value and every slot, keeping the allocation. Unlike
-    /// [`clear`](Self::clear), it leaves no empty slots for iterating to walk
-    /// through.
-    #[inline]
-    pub fn reset(&mut self) {
-        // Reset the length first. If a value's `drop` panics inside `clear`,
-        // the storage is already empty, and a length that still counted the
-        // old values would disagree with it.
-        self.len = 0;
-        self.slots.clear();
-    }
-
     /// Returns an iterator over the keys and references to the values, in
     /// index order.
     #[inline]

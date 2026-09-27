@@ -268,15 +268,15 @@
 //!
 //! # Iterating and removing in bulk
 //!
-//! Every iterator visits the values in slot order, which is also the order
-//! of their keys. [`iter`](GenMap::iter), [`iter_mut`](GenMap::iter_mut),
-//! [`keys`](GenMap::keys), [`values`](GenMap::values),
-//! [`values_mut`](GenMap::values_mut) and the owning `into_iter` all know
-//! their exact length and can run from both ends, meaning they implement
-//! `DoubleEndedIterator`. The exception is [`IntoIter`], the iterator
-//! `into_iter` returns, which only implements `DoubleEndedIterator` when the
-//! storage's iterator implements both `DoubleEndedIterator` and
-//! `ExactSizeIterator`.
+//! Every iterator visits the values in slot order, which is also the order of
+//! their keys, and knows its exact length, meaning it implements
+//! `ExactSizeIterator`. [`iter`](GenMap::iter),
+//! [`iter_mut`](GenMap::iter_mut), [`keys`](GenMap::keys),
+//! [`values`](GenMap::values) and [`values_mut`](GenMap::values_mut) can also
+//! run from both ends, meaning they implement `DoubleEndedIterator`.
+//! [`IntoIter`], the iterator that the owning `into_iter` returns, only
+//! implements `DoubleEndedIterator` when the storage's iterator implements
+//! both `DoubleEndedIterator` and `ExactSizeIterator`.
 //!
 //! [`retain`](GenMap::retain), [`drain`](GenMap::drain) and
 //! [`clear`](GenMap::clear) remove values the same way
