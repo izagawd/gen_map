@@ -44,8 +44,9 @@ impl<S: fmt::Display> fmt::Display for FullError<S> {
 /// When the keys' index and the storage both run out, the error is
 /// [`IndexExhausted`](Self::IndexExhausted).
 pub enum InsertError<T, S> {
-    /// The map has a slot at every index its keys can hold and none of
-    /// them are free.
+    /// The map has a slot at every index it can use and none of them are
+    /// free. A map uses every index its keys can hold, except the largest
+    /// value of the index type.
     IndexExhausted(T),
 
     /// None of the slots are free and the storage could not make room for

@@ -268,10 +268,11 @@
 //!
 //! # Looking a slot up by its index
 //!
-//! [`key_at`](GenMap::key_at) and [`get_at`](GenMap::get_at) find the value
-//! in the slot at an index along with its current key, for code that only
-//! kept the index. [`generation_at`](GenMap::generation_at) returns a slot's
-//! generation whether it holds a value or not.
+//! [`key_at`](GenMap::key_at) finds the current key of the value in the slot at
+//! an index, and [`get_at`](GenMap::get_at) finds the value along with that
+//! key, and requires only the index to use.
+//! [`generation_at`](GenMap::generation_at) returns a slot's generation whether
+//! it holds a value or not.
 //!
 //! # Iterating and removing in bulk
 //!
@@ -335,14 +336,15 @@
 //!
 //! Any other type that implements [`ReplaceStrategy`] can be used instead.
 //!
-//! A `SecondaryMap` keeps a slot at every index up to the highest index that
-//! an insert has used. Like a `GenMap`, it never uses the largest value of
-//! the index type. Its `insert` returns
-//! [`IndexReserved`](SecondaryInsertError::IndexReserved) for a key with
-//! that index, which only a hand-built key can have. The config's [`Storage`](SecondaryMapConfig::Storage)
-//! is the collection the slots live in. Like a `GenMap`'s storage, it can be
-//! any [`SlotStorage`], so `Vec`, `ArrayVec` and `SmallVec` all work.
-//! [`SecondaryMapConfig`] has an example of a config.
+//! A `SecondaryMap` keeps a slot at every index up to the highest index that an
+//! insert has used. Like a `GenMap`, it never uses the largest value of the
+//! index type. Its `insert` returns
+//! [`IndexReserved`](SecondaryInsertError::IndexReserved) for a key with that
+//! index, which only a hand-built key can have. The config's
+//! [`Storage`](SecondaryMapConfig::Storage) is the collection the slots live
+//! in. Like a `GenMap`'s storage, it can be any [`SlotStorage`], so `Vec`,
+//! `ArrayVec` and `SmallVec` all work. [`SecondaryMapConfig`] has an example of
+//! a config.
 //!
 //! # Cargo features
 //!
