@@ -446,12 +446,28 @@ fn detach<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, 
 }
 
 fn reattach<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+    // Now and then the key is a live or dead one instead. The map must hand
+    // the value back, and `check` then confirms that nothing changed.
+    if rng.chance(20) {
+        let count = model.live.len() + model.dead.len();
+        if count == 0 {
+            return;
+        }
+        let i = rng.below(count);
+        let key = match model.live.get(i) {
+            Some((key, _)) => *key,
+            None => model.dead[i - model.live.len()],
+        };
+        let value = model.fresh_value();
+        assert_eq!(map.reattach(key, value), Err(value));
+        return;
+    }
     if model.detached.is_empty() {
         return;
     }
     let key = model.detached.swap_remove(rng.below(model.detached.len()));
     let value = model.fresh_value();
-    map.reattach(key, value);
+    map.reattach(key, value).unwrap();
     model.live.push((key, value));
 }
 

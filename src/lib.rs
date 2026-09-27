@@ -246,7 +246,7 @@
 //!
 //! let mut value = map.detach(a).unwrap();
 //! value += map[b];
-//! map.reattach(a, value);
+//! map.reattach(a, value).unwrap();
 //! assert_eq!(map[a], 3);
 //! ```
 //!

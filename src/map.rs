@@ -1054,8 +1054,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     ///
     /// [`clear`](Self::clear) and [`retain`](Self::retain) leave a detached
     /// slot as it is, since it holds no value. [`reset`](Self::reset) removes
-    /// every slot, detached ones included, and a later `reattach` then
-    /// panics.
+    /// every slot, detached ones included, so `reattach` fails for a key that
+    /// was detached before the reset.
     ///
     /// # Examples
     ///
@@ -1070,7 +1070,7 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// let other = map.insert(2); // Does not take the detached slot.
     /// assert_ne!(other.idx(), key.idx());
     ///
-    /// map.reattach(key, value + 10);
+    /// map.reattach(key, value + 10).unwrap();
     /// assert_eq!(map[key], 11);
     /// ```
     #[inline]
@@ -1088,14 +1088,15 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// Puts a value back under a key whose value [`detach`](Self::detach)
     /// took out. Afterwards, the map has a value for the key again.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the key was not detached, or was detached and its slot has
-    /// since been removed by [`reset`](Self::reset).
+    /// Hands `value` back, and leaves the map as it was, if the key was not
+    /// detached, or was detached and its slot has since been removed by
+    /// [`reset`](Self::reset).
     #[inline]
-    pub fn reattach(&mut self, key: Key<MapKeyConfig<C>>, value: T) {
+    pub fn reattach(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> Result<(), T> {
         let generation = key.generation();
-        let slot = key
+        let Some(slot) = key
             .idx()
             .into_usize()
             .and_then(|position| self.slots.as_mut_slice().get_mut(position))
@@ -1106,10 +1107,13 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
                 slot.get_even(detached_generation::<C>(generation))
                     .is_some_and(|link| *link == Some(key.idx()))
             })
-            .expect("reattach on a key that is not detached");
+        else {
+            return Err(value);
+        };
         // SAFETY: the slot's generation was just found to be even.
         unsafe { slot.replace_even_unchecked(generation, value) };
         self.len += 1;
+        Ok(())
     }
 
     /// Removes every value. The slots stay, and old keys stop matching just

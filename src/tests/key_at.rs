@@ -60,7 +60,7 @@ fn key_at_is_none_for_a_detached_slot() {
     let key = map.insert(1);
     let value = map.detach(key).unwrap();
     assert_eq!(map.key_at(key.idx()), None);
-    map.reattach(key, value);
+    map.reattach(key, value).unwrap();
     assert_eq!(map.key_at(key.idx()), Some(key));
 }
 
