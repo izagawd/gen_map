@@ -106,8 +106,10 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     /// Returns the generation and a reference to the value.
     #[inline]
     pub fn as_parity(&self) -> Parity<G, &T, &U> {
-        // SAFETY: the parity of the generation says which field is live, and
-        // the branch taken is the one whose wrapper the generation fits.
+        // SAFETY: the parity of the generation says which field is live. The
+        // first branch only runs for an odd generation, so it reads `odd` and
+        // wraps the generation in `Odd`, and the second branch does the same
+        // with `even` and `Even` for an even generation.
         unsafe {
             if self.is_odd() {
                 Parity::Odd(Odd::new_unchecked(self.generation), &self.value.odd)
@@ -134,9 +136,9 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     #[inline]
     pub fn into_parity(self) -> Parity<G, T, U> {
         let mut slot = ManuallyDrop::new(self);
-        // SAFETY: the parity of the generation says which field is live. It
-        // is taken out once, and the slot is never dropped, so it is not
-        // dropped a second time.
+        // SAFETY: the parity of the generation says which field is live. That
+        // field's value is taken out once, and the slot is never dropped, so
+        // the value is not dropped a second time.
         unsafe {
             if slot.is_odd() {
                 Parity::Odd(

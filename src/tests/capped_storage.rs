@@ -26,8 +26,8 @@ impl<S> IntoIterator for Capped<S> {
     }
 }
 
-// SAFETY: this is a `Vec` that refuses pushes past `CAP`, which is the
-// behaviour the trait describes.
+// SAFETY: this is a `Vec` that refuses pushes past `CAP`, and it behaves as
+// the trait describes.
 unsafe impl<S> SlotStorage for Capped<S> {
     type Item = S;
     type Error = CapReached;

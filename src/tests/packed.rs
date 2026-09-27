@@ -384,12 +384,12 @@ fn detach_works_at_the_generation_limit() {
     let mut map = GenMap::<u32, Tiny>::new_with_config();
     let keys = use_up_one_slot(&mut map);
     let last = keys[7];
-    // The generation goes to 16, one past the four bits a key has for it, so
-    // no key matches the slot.
+    // The generation goes to 16, one more than the largest generation that
+    // four bits can hold, so no key matches the slot.
     assert_eq!(map.detach(last), Some(7));
     assert_eq!(map.generation_at(0), Some(16));
     assert_eq!(map.len(), 0);
-    map.reattach(last, 7);
+    map.reattach(last, 7).unwrap();
     assert_eq!(map.generation_at(0), Some(15));
     assert_eq!(map.get(last), Some(&7));
     assert_eq!(map.len(), 1);
@@ -398,7 +398,7 @@ fn detach_works_at_the_generation_limit() {
     let fresh = map.insert(8);
     assert_eq!(fresh.generation().get().get(), 1);
     assert_eq!(map.detach(fresh), Some(8));
-    map.reattach(fresh, 9);
+    map.reattach(fresh, 9).unwrap();
     assert_eq!(map[fresh], 9);
 }
 

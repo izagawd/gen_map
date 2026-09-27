@@ -35,8 +35,8 @@ impl<Idx: crate::KeyPiece, Gen: crate::KeyPiece, S: SecondarySlotItem> Secondary
     type Storage = Vec<S>;
 }
 
-/// Keys whose generation is 4 bits, so it goes from 0 to 15, from a
-/// `GenMap` that wraps it.
+/// Keys with a 4 bit generation, which goes from 0 to 15. The `GenMap` that
+/// hands them out wraps the generation.
 struct Wrap4;
 
 impl KeyConfig for Wrap4 {
@@ -383,7 +383,7 @@ fn a_secondary_map_iterates_in_index_order() {
 }
 
 #[test]
-fn a_secondary_map_keeps_its_slots_until_it_is_reset() {
+fn a_secondary_map_keeps_its_slots() {
     let mut map = SecondaryMap::<u32, Cfg<u8, u8>>::new_with_config();
     let last = key_from_parts::<Cfg<u8, u8>>(255, 1);
     assert_eq!(map.insert(last, 7).unwrap(), None);
@@ -402,14 +402,6 @@ fn a_secondary_map_keeps_its_slots_until_it_is_reset() {
     drop(map.drain());
     assert!(map.is_empty());
     assert_eq!(map.slots_len(), 256);
-
-    // Resetting removes the slots as well, and keeps the allocation.
-    let capacity = map.capacity();
-    map.reset();
-    assert_eq!(map.slots_len(), 0);
-    assert_eq!(map.capacity(), capacity);
-    map.insert(last, 10).unwrap();
-    assert_eq!(map[last], 10);
 }
 
 #[test]
@@ -630,8 +622,8 @@ fn pick(rng: &mut Rng, live: &[Key], dead: &[Key]) -> Key {
     }
 }
 
-/// How often the model runs met each case, so the test shows it covered
-/// them.
+/// How often each case came up in the model runs, so that the test can show
+/// it covered every case.
 #[derive(Default)]
 struct Coverage {
     /// Inserts that met a value from a different generation.
@@ -865,23 +857,6 @@ fn clear_and_drain_stay_consistent_when_a_drop_panics() {
         drop(map);
         tracker.assert_all_dropped_exactly_once(5);
     }
-}
-
-#[test]
-fn reset_empties_the_map_when_a_drop_panics() {
-    let tracker = DropTracker::new();
-    let mut keys = GenMap::new();
-    let mut map = SecondaryMap::<Bomb>::new();
-    for i in 0..4 {
-        map.insert(keys.insert(()), Bomb::new(&tracker, i == 2))
-            .unwrap();
-    }
-
-    assert!(catch_unwind(AssertUnwindSafe(|| map.reset())).is_err());
-    assert!(map.is_empty());
-    assert_eq!(map.slots_len(), 0);
-    assert_eq!(map.iter().count(), 0);
-    tracker.assert_all_dropped_exactly_once(4);
 }
 
 #[test]

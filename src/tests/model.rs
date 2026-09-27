@@ -218,9 +218,9 @@ struct Model<C: MapConfigFor<u32>> {
     /// The value the next insert uses. Every value is different, so a value
     /// that shows up under the wrong key is caught.
     next_value: u32,
-    /// How many slots were retired with `retire`. A config that wraps can
-    /// not tell these apart from free slots by their generation, since both
-    /// have a generation of zero.
+    /// How many slots were retired with `retire`. With a config that wraps,
+    /// these slots cannot be told apart from free slots by their generation,
+    /// since both have a generation of zero.
     retired: usize,
 }
 
@@ -446,12 +446,28 @@ fn detach<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, 
 }
 
 fn reattach<C: MapConfigFor<u32>>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+    // Now and then the key is a live or dead one instead. The map must hand
+    // the value back, and `check` then confirms that nothing changed.
+    if rng.chance(20) {
+        let count = model.live.len() + model.dead.len();
+        if count == 0 {
+            return;
+        }
+        let i = rng.below(count);
+        let key = match model.live.get(i) {
+            Some((key, _)) => *key,
+            None => model.dead[i - model.live.len()],
+        };
+        let value = model.fresh_value();
+        assert_eq!(map.reattach(key, value), Err(value));
+        return;
+    }
     if model.detached.is_empty() {
         return;
     }
     let key = model.detached.swap_remove(rng.below(model.detached.len()));
     let value = model.fresh_value();
-    map.reattach(key, value);
+    map.reattach(key, value).unwrap();
     model.live.push((key, value));
 }
 
@@ -580,8 +596,8 @@ fn check<C: MapConfigFor<u32>>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut
     assert_eq!(map.len(), model.live.len());
     assert_eq!(map.is_empty(), model.live.is_empty());
 
-    // Iteration is in slot order, and a slot holds at most one valid key, so
-    // slot order is also key order.
+    // Iteration is in slot order, and at most one valid key points at each
+    // slot, so slot order is also key order.
     let mut expected = model.live.clone();
     expected.sort();
     let actual: Vec<_> = map.iter().map(|(key, value)| (key, *value)).collect();

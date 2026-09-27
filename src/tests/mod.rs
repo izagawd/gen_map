@@ -62,6 +62,21 @@ impl<Idx: KeyPiece, Gen: KeyPiece, S: GenSlotItem> GenMapConfig<S> for Cfg<Idx, 
     type Storage = Vec<S>;
 }
 
+/// Checks that `reattach` refuses `key` because nothing is detached under
+/// it, hands `value` back, and leaves the map's length and the generation of
+/// the key's slot as they were.
+pub(crate) fn assert_not_detached<C: crate::MapConfigFor<i32>>(
+    map: &mut crate::GenMap<i32, C>,
+    key: Key<crate::MapKeyConfig<C>>,
+    value: i32,
+) {
+    let len = map.len();
+    let generation = map.generation_at(key.idx());
+    assert_eq!(map.reattach(key, value), Err(value));
+    assert_eq!(map.len(), len);
+    assert_eq!(map.generation_at(key.idx()), generation);
+}
+
 /// The key of `K` with index `idx` and generation `generation`. Panics if
 /// the generation is even or either part does not fit the layout.
 pub(crate) fn key_from_parts<K: KeyConfig>(idx: K::Idx, generation: K::Gen) -> Key<K> {

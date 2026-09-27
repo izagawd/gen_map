@@ -1,7 +1,7 @@
 //! Retiring a slot by hand with `GenMap::retire`. The randomized model test
 //! covers it too.
 
-use super::DropTracker;
+use super::{assert_not_detached, DropTracker};
 use crate::{GenMap, GenMapConfig, GenSlotItem, InsertError, KeyConfig, MapConfig, Packed};
 use std::vec::Vec;
 
@@ -63,7 +63,7 @@ fn retire_with_an_invalid_key_is_none_and_changes_nothing() {
     assert_eq!(map[live], 2);
 
     // The detached slot was left alone, so its key still works.
-    map.reattach(detached, 30);
+    map.reattach(detached, 30).unwrap();
     assert_eq!(map[detached], 30);
 
     assert_eq!(map.retire(live), Some(2));
@@ -140,12 +140,11 @@ fn a_retired_slot_stays_retired_until_reset() {
 }
 
 #[test]
-#[should_panic(expected = "not detached")]
-fn reattach_panics_for_a_retired_key() {
+fn reattach_fails_for_a_retired_key() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     map.retire(key);
-    map.reattach(key, 2);
+    assert_not_detached(&mut map, key, 2);
 }
 
 #[test]

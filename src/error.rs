@@ -80,7 +80,7 @@ impl<T, S> InsertError<T, S> {
     }
 }
 
-// Written by hand so that it does not require `T: Debug`.
+// This impl is written by hand so that it does not require `T: Debug`.
 impl<T, S: fmt::Debug> fmt::Debug for InsertError<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -120,7 +120,7 @@ impl<T, S> SecondaryInsertError<T, S> {
     }
 }
 
-// Written by hand so that it does not require `T: Debug`.
+// This impl is written by hand so that it does not require `T: Debug`.
 impl<T, S: fmt::Debug> fmt::Debug for SecondaryInsertError<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

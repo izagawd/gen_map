@@ -130,11 +130,11 @@ pub trait ReserveStorage: SlotStorage {
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-// SAFETY: `Vec` is the behaviour the trait describes. `Vec::push` itself
+// SAFETY: a `Vec` behaves exactly as the trait describes. `Vec::push` itself
 // panics on capacity overflow and aborts on allocation failure, so both
 // `ensure_room` and `try_push` go through `try_reserve`, which reports the
-// two as errors. Once `try_reserve` has made room for `additional` items,
-// the next `additional` pushes cannot fail.
+// two as errors. Once `try_reserve` has made room for `additional` items, the
+// next `additional` pushes cannot fail.
 unsafe impl<S> SlotStorage for Vec<S> {
     type Item = S;
     type Error = TryReserveError;

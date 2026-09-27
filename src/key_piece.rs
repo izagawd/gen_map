@@ -154,7 +154,8 @@ macro_rules! impl_key_piece {
                     <$t>::try_from(v).ok()
                 }
 
-                // The same kind of cast, from a `usize` to this type.
+                // An `as` cast from a `usize` is exact here too, because the
+                // caller promises that `v` fits in this type.
                 #[inline]
                 unsafe fn from_usize_unchecked(v: usize) -> Self {
                     debug_assert!(<$t>::try_from(v).is_ok());
@@ -188,7 +189,8 @@ macro_rules! impl_key_piece {
                     <$t>::try_from(v).ok()
                 }
 
-                // The same cast as `from_usize_unchecked`, for a `u128`.
+                // An `as` cast from a `u128` is exact here too, because the
+                // caller promises that `v` fits in this type.
                 #[inline]
                 unsafe fn from_u128_unchecked(v: u128) -> Self {
                     debug_assert!(<$t>::try_from(v).is_ok());

@@ -94,7 +94,7 @@ fn get_disjoint_mut_rejects_a_detached_key() {
         map.get_disjoint_mut([a, b]),
         Err(GetDisjointMutError::InvalidKey)
     );
-    map.reattach(b, value);
+    map.reattach(b, value).unwrap();
     assert!(map.get_disjoint_mut([a, b]).is_ok());
 }
 

@@ -4,17 +4,18 @@ use crate::key_piece::KeyPiece;
 use crate::parity::Odd;
 
 /// Decides whether a value inserted into a
-/// [`SecondaryMap`](crate::SecondaryMap) replaces the value in the slot at
-/// the key's index, when that value was inserted under a different
-/// generation.
+/// [`SecondaryMap`](crate::SecondaryMap) under a key replaces the value
+/// already in the slot at the key's index, when the value in the slot was
+/// inserted under a different generation.
 ///
 /// [`SecondaryMap::insert`](crate::SecondaryMap::insert) only asks the
 /// strategy in that case. An empty slot always takes the value, and a slot
 /// whose generation is the key's always has its value replaced.
 ///
 /// `K` is the key config of the map's keys. A strategy can read the key's
-/// layout through it, as [`NewerWinsWrapping`] does to find the largest
-/// generation, or be implemented only for the key configs it supports.
+/// layout through `K`, as [`NewerWinsWrapping`] does to find the largest
+/// generation. A strategy can also be implemented only for the key configs it
+/// supports.
 ///
 /// A strategy is a type, and [`replaces`](Self::replaces) takes no `self`,
 /// so the strategy a map uses is picked at compile time and the call can be

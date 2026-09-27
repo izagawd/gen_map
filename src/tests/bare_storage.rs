@@ -9,8 +9,8 @@ use std::vec::Vec;
 /// `ExactSizeIterator`.
 struct Bare<S, const ITER: bool>(Vec<S>);
 
-// SAFETY: every method forwards to the `Vec`, which is the behaviour the
-// trait describes.
+// SAFETY: every method forwards to the `Vec`, which behaves as the trait
+// describes.
 unsafe impl<S, const ITER: bool> SlotStorage for Bare<S, ITER> {
     type Item = S;
     type Error = ();

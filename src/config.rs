@@ -165,18 +165,19 @@ pub trait GenMapConfig<S: GenSlotItem>: MapConfig {
 /// assert_eq!(ages[alice], 30);
 /// ```
 pub trait SecondaryMapConfig<S: SecondarySlotItem>: MapConfig {
-    /// Decides whether a value inserted under a key replaces the value in
-    /// the slot at the key's index, when that value was inserted under a
-    /// different generation. The built-in strategies are
+    /// Decides whether a value inserted under a key replaces the value
+    /// already in the slot at the key's index, when the value in the slot was
+    /// inserted under a different generation. The built-in strategies are
     /// [`NewerWinsWrapping`](crate::NewerWinsWrapping),
     /// [`NewerWins`](crate::NewerWins) and
     /// [`ExistingWins`](crate::ExistingWins).
     type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
 
     /// The collection the map keeps its slots in. The map keeps a slot at
-    /// every index up to the largest one inserted. `type Storage = Vec<S>;`
-    /// keeps them in a `Vec`, and any other [`SlotStorage`] works too,
-    /// such as the `ArrayVec` and `SmallVec` a [`GenMapConfig`] can use.
+    /// every index up to the highest index that an insert has used.
+    /// `type Storage = Vec<S>;` keeps them in a `Vec`, and any other
+    /// [`SlotStorage`] works too, such as the `ArrayVec` and `SmallVec` a
+    /// [`GenMapConfig`] can use.
     type Storage: SlotStorage<Item = S>;
 }
 
@@ -272,7 +273,7 @@ impl KeyConfig for DefaultKeyConfig {
 /// slot retires when its generation runs out. A `SecondaryMap` uses
 /// [`NewerWinsWrapping`](crate::NewerWinsWrapping) to decide whether an
 /// insert replaces a value that was inserted under a different generation.
-/// It needs the `alloc` feature.
+/// This config needs the `alloc` feature.
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
