@@ -12,7 +12,7 @@ use core::fmt;
 ///
 /// A storage that can also grow on request implements [`ReserveStorage`]
 /// too. A storage that implements `IntoIterator` gives either map an owning
-/// `into_iter`. A `GenMap` implements `DoubleEndedIterator` when the
+/// `into_iter`. A `GenMap`'s implements `DoubleEndedIterator` when the
 /// storage's iterator implements both `DoubleEndedIterator` and
 /// `ExactSizeIterator`.
 ///

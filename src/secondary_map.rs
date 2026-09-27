@@ -704,9 +704,29 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         }
     }
 
-    /// Removes every value and every slot.
-    #[inline]
+    /// Removes every value. The slots stay, as they do after
+    /// [`remove`](Self::remove).
     pub fn clear(&mut self) {
+        for slot in self.slots.as_mut_slice() {
+            // Once `len` reaches zero, the slots that are left hold no value.
+            if self.len == 0 {
+                break;
+            }
+            if slot.get().is_some() {
+                self.len -= 1;
+                drop(slot.take());
+            }
+        }
+    }
+
+    /// Removes every value and every slot, keeping the allocation. Unlike
+    /// [`clear`](Self::clear), it leaves no empty slots for iterating to walk
+    /// through.
+    #[inline]
+    pub fn reset(&mut self) {
+        // Reset the length first. If a value's `drop` panics inside `clear`,
+        // the storage is already empty, and a length that still counted the
+        // old values would disagree with it.
         self.len = 0;
         self.slots.clear();
     }
@@ -753,8 +773,8 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     }
 
     /// Removes every value, and returns an iterator over them and their
-    /// keys, in index order. When the iterator is dropped, it removes the
-    /// values it has not reached, and every slot.
+    /// keys, in index order. The slots stay, and dropping the iterator
+    /// removes the values it has not reached.
     #[inline]
     pub fn drain(&mut self) -> SecondaryDrain<'_, T, C> {
         SecondaryDrain {
@@ -1107,7 +1127,7 @@ impl<T, C: SecondaryMapConfigFor<T>> FusedIterator for SecondaryDrain<'_, T, C> 
 
 impl<T, C: SecondaryMapConfigFor<T>> Drop for SecondaryDrain<'_, T, C> {
     fn drop(&mut self) {
-        self.map.clear();
+        for _ in self.by_ref() {}
     }
 }
 
