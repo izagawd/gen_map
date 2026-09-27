@@ -152,6 +152,9 @@ fn a_secondary_map_in_a_small_vec_keeps_working_after_it_moves_to_the_heap() {
 
 #[test]
 fn a_secondary_map_in_a_small_vec_can_make_room_ahead_of_time() {
+    let map = SecondaryMap::<u32, Four>::with_capacity_and_config(20);
+    assert!(map.capacity() >= 20);
+
     let mut map = SecondaryMap::<u32, Four>::new_with_config();
     map.reserve(64);
     let capacity = map.capacity();
@@ -162,4 +165,9 @@ fn a_secondary_map_in_a_small_vec_can_make_room_ahead_of_time() {
     map.insert(key, 1).unwrap();
     assert_eq!(map[key], 1);
     assert_eq!(map.slots_len(), 64);
+
+    // The storage's own iterator runs from both ends, so the map's does too.
+    map.insert(key_from_parts::<Four>(2, 1), 2).unwrap();
+    let backward: Vec<u32> = map.into_iter().rev().map(|(_, value)| value).collect();
+    assert_eq!(backward, [1, 2]);
 }

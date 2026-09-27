@@ -209,6 +209,14 @@ fn a_secondary_map_in_an_array_vec_holds_the_first_four_indices() {
     assert_eq!(map.len(), 4);
     assert_eq!(map.slots_len(), 4);
 
+    // The storage's own iterator runs from both ends, so the map's does too.
+    let backward: Vec<u8> = map
+        .clone()
+        .into_iter()
+        .rev()
+        .map(|(key, _)| key.idx())
+        .collect();
+    assert_eq!(backward, [3, 2, 1, 0]);
     let pairs: Vec<(u8, u32)> = map
         .into_iter()
         .map(|(key, value)| (key.idx(), value))

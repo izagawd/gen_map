@@ -740,6 +740,16 @@ where
                 .map(|(key, &value)| (key.idx(), key.generation().get().get(), value))
                 .collect();
             assert_eq!(found, expected, "contents at step {step} of seed {seed}");
+            // Iterating from the back gives the same values in reverse.
+            let backward: Vec<(u32, u32, u32)> = map
+                .iter()
+                .rev()
+                .map(|(key, &value)| (key.idx(), key.generation().get().get(), value))
+                .collect();
+            assert!(
+                backward.iter().rev().eq(found.iter()),
+                "reversed contents at step {step} of seed {seed}"
+            );
             for (key, value) in map.iter() {
                 assert_eq!(map.get_at(key.idx()), Some((key, value)));
                 let generation = key.generation().get().get();
@@ -1218,4 +1228,69 @@ fn reserve_makes_room_for_slots_ahead_of_time() {
     assert!(map.try_reserve(usize::MAX).is_err());
     assert_eq!(map.slots_len(), 100);
     assert_eq!(map.len(), 1);
+}
+
+#[test]
+fn with_capacity_makes_room_up_front() {
+    let map = SecondaryMap::<u32>::with_capacity(32);
+    assert!(map.capacity() >= 32);
+    assert!(map.is_empty());
+    assert_eq!(map.slots_len(), 0);
+
+    let map = SecondaryMap::<u32, Keep>::with_capacity_and_config(8);
+    assert!(map.capacity() >= 8);
+    assert!(map.is_empty());
+}
+
+#[test]
+fn every_iterator_runs_from_both_ends() {
+    let mut keys = GenMap::new();
+    let all: Vec<Key> = (0..6).map(|_| keys.insert(())).collect();
+    let mut map = SecondaryMap::<u32>::new();
+    // Gaps at 1 and 4, so both ends have empty slots to skip.
+    for i in [0, 2, 3, 5] {
+        map.insert(all[i], i as u32).unwrap();
+    }
+    let forward: Vec<(Key, u32)> = map.iter().map(|(key, &value)| (key, value)).collect();
+    let backward: Vec<(Key, u32)> = forward.iter().rev().copied().collect();
+    let backward_keys: Vec<Key> = backward.iter().map(|&(key, _)| key).collect();
+    let backward_values: Vec<u32> = backward.iter().map(|&(_, value)| value).collect();
+
+    let pairs: Vec<(Key, u32)> = map.iter().rev().map(|(key, &value)| (key, value)).collect();
+    assert_eq!(pairs, backward);
+    assert_eq!(map.keys().rev().collect::<Vec<_>>(), backward_keys);
+    assert_eq!(
+        map.values().rev().copied().collect::<Vec<_>>(),
+        backward_values
+    );
+    let pairs: Vec<(Key, u32)> = map
+        .iter_mut()
+        .rev()
+        .map(|(key, &mut value)| (key, value))
+        .collect();
+    assert_eq!(pairs, backward);
+    let values: Vec<u32> = map.values_mut().rev().map(|value| *value).collect();
+    assert_eq!(values, backward_values);
+    assert_eq!(map.clone().into_iter().rev().collect::<Vec<_>>(), backward);
+
+    // Taking from both ends meets in the middle, without repeating or
+    // skipping a value, and the length counts down with every step.
+    let mut iter = map.iter();
+    assert_eq!(iter.next(), Some((all[0], &0)));
+    assert_eq!(iter.next_back(), Some((all[5], &5)));
+    assert_eq!(iter.len(), 2);
+    assert_eq!(iter.next_back(), Some((all[3], &3)));
+    assert_eq!(iter.next(), Some((all[2], &2)));
+    assert_eq!(iter.len(), 0);
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next_back(), None);
+
+    let mut owned = map.into_iter();
+    assert_eq!(owned.next_back(), Some((all[5], 5)));
+    assert_eq!(owned.next(), Some((all[0], 0)));
+    assert_eq!(owned.len(), 2);
+    assert_eq!(owned.next_back(), Some((all[3], 3)));
+    assert_eq!(owned.next_back(), Some((all[2], 2)));
+    assert_eq!(owned.next(), None);
+    assert_eq!(owned.next_back(), None);
 }
