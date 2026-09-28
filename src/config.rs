@@ -2,7 +2,7 @@ use crate::key_layout::{KeyLayout, Split};
 use crate::key_piece::KeyPiece;
 use crate::map::MapSlot;
 #[cfg(feature = "alloc")]
-use crate::replace_strategy::NewerWinsWrapping;
+use crate::replace_strategy::NewerWins;
 use crate::replace_strategy::ReplaceStrategy;
 use crate::secondary_map::SecondaryMapSlot;
 use crate::slot::{GenSlotItem, SecondarySlotItem};
@@ -170,7 +170,6 @@ pub trait SecondaryMapConfig<S: SecondarySlotItem>: MapConfig {
     /// Decides whether a value inserted under a key replaces the value
     /// already in the slot at the key's index, when the value in the slot was
     /// inserted under a different generation. The built-in strategies are
-    /// [`NewerWinsWrapping`](crate::NewerWinsWrapping),
     /// [`NewerWins`](crate::NewerWins) and
     /// [`ExistingWins`](crate::ExistingWins).
     type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
@@ -273,8 +272,8 @@ impl KeyConfig for DefaultKeyConfig {
 ///
 /// Keys use the [`DefaultKeyConfig`], and slots live in a `Vec`. A `GenMap`
 /// slot retires when its generation runs out. A `SecondaryMap` uses
-/// [`NewerWinsWrapping`](crate::NewerWinsWrapping) to decide whether an
-/// insert replaces a value that was inserted under a different generation.
+/// [`NewerWins`](crate::NewerWins) to decide whether an insert replaces a
+/// value that was inserted under a different generation.
 /// This config needs the `alloc` feature.
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
@@ -293,6 +292,6 @@ impl<S: GenSlotItem> GenMapConfig<S> for DefaultMapConfig {
 
 #[cfg(feature = "alloc")]
 impl<S: SecondarySlotItem> SecondaryMapConfig<S> for DefaultMapConfig {
-    type ReplaceStrategy = NewerWinsWrapping;
+    type ReplaceStrategy = NewerWins;
     type Storage = Vec<S>;
 }

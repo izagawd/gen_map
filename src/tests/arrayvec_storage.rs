@@ -4,7 +4,7 @@
 use super::{key_from_parts, Bomb, DropTracker};
 use crate::{
     FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeyConfig,
-    MapConfig, NewerWinsWrapping, Packed, SecondaryInsertError, SecondaryMap, SecondaryMapConfig,
+    MapConfig, NewerWins, Packed, SecondaryInsertError, SecondaryMap, SecondaryMapConfig,
     SecondarySlotItem, Split,
 };
 use arrayvec::ArrayVec;
@@ -29,7 +29,7 @@ impl<S: GenSlotItem> GenMapConfig<S> for Four {
 }
 
 impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Four {
-    type ReplaceStrategy = NewerWinsWrapping;
+    type ReplaceStrategy = NewerWins;
     type Storage = ArrayVec<S, 4>;
 }
 

@@ -3,9 +3,9 @@
 use super::{key_from_parts, Bomb, Cfg, DropItem, DropTracker};
 use crate::{
     DefaultKeyConfig, ExistingWins, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
-    GetDisjointMutError, Key, KeyConfig, MapConfig, NewerWins, NewerWinsWrapping, Odd, Packed,
-    ReplaceStrategy, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondaryMapConfigFor,
-    SecondarySlot, SecondarySlotItem,
+    GetDisjointMutError, Key, KeyConfig, MapConfig, NewerWins, Odd, Packed, ReplaceStrategy,
+    SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondaryMapConfigFor, SecondarySlot,
+    SecondarySlotItem,
 };
 use core::marker::PhantomData;
 use std::collections::HashMap;
@@ -185,16 +185,11 @@ fn existing_wins_keeps_the_older_value_until_it_is_removed() {
 }
 
 #[test]
-fn only_the_wrapping_strategy_takes_a_key_from_after_a_wrap() {
+fn newer_wins_refuses_a_key_from_after_a_wrap() {
     let (before, after) = keys_around_a_wrap();
-
-    let mut plain = SecondaryMap::<u32, With<NewerWins>>::new_with_config();
-    plain.insert(before, 1).unwrap();
-    assert_eq!(refused(plain.insert(after, 2)), 2);
-
-    let mut wrapping = SecondaryMap::<u32, With<NewerWinsWrapping>>::new_with_config();
-    wrapping.insert(before, 1).unwrap();
-    assert_eq!(wrapping.insert(after, 2).unwrap(), Some(1));
+    let mut map = SecondaryMap::<u32, With<NewerWins>>::new_with_config();
+    map.insert(before, 1).unwrap();
+    assert_eq!(refused(map.insert(after, 2)), 2);
 }
 
 #[test]
@@ -466,47 +461,21 @@ fn a_far_index_fails_in_a_secondary_map_before_adding_a_slot() {
 
 #[test]
 fn the_strategies_compare_generations_as_documented() {
-    let plain = <NewerWins as ReplaceStrategy<Wrap4>>::replaces;
-    let wrapping = <NewerWinsWrapping as ReplaceStrategy<Wrap4>>::replaces;
+    let newer = <NewerWins as ReplaceStrategy<Wrap4>>::replaces;
     let keep = <ExistingWins as ReplaceStrategy<Wrap4>>::replaces;
-    // The slot's generation, the key's, and whether each of the first two
-    // strategies replaces the value. These are the examples in the docs.
+    // Each case holds the slot's generation, the key's generation, and
+    // whether `NewerWins` replaces the value.
     let cases = [
-        (5, 7, true, true),
-        (7, 5, false, false),
-        (15, 1, false, true),
-        (3, 13, true, false),
-        (13, 3, false, true),
+        (5, 7, true),
+        (7, 5, false),
+        (15, 1, false),
+        (3, 13, true),
+        (13, 3, false),
     ];
-    for (slot, key, by_plain, by_wrapping) in cases {
-        assert_eq!(
-            plain(odd(slot), odd(key)),
-            by_plain,
-            "plain, {slot} to {key}"
-        );
-        assert_eq!(
-            wrapping(odd(slot), odd(key)),
-            by_wrapping,
-            "wrapping, {slot} to {key}"
-        );
+    for (slot, key, replaces) in cases {
+        assert_eq!(newer(odd(slot), odd(key)), replaces, "{slot} to {key}");
         assert!(!keep(odd(slot), odd(key)));
     }
-}
-
-#[test]
-fn the_wrapping_strategy_uses_the_whole_range_of_wide_generations() {
-    // A `u32` generation, as in the default key config.
-    let wrapping = <NewerWinsWrapping as ReplaceStrategy<DefaultKeyConfig>>::replaces;
-    assert!(wrapping(odd(u32::MAX), odd(1)));
-    assert!(!wrapping(odd(1), odd(u32::MAX)));
-
-    // A `u128` generation, whose number of generations does not fit in a
-    // `u128`. Half the range is `1 << 127` steps.
-    let wrapping = <NewerWinsWrapping as ReplaceStrategy<Cfg<u32, u128>>>::replaces;
-    assert!(wrapping(odd(u128::MAX), odd(1)));
-    assert!(!wrapping(odd(1), odd(u128::MAX)));
-    assert!(wrapping(odd(1), odd((1 << 127) - 1)));
-    assert!(!wrapping(odd(1), odd((1 << 127) + 1)));
 }
 
 #[test]
@@ -552,9 +521,9 @@ impl Rng {
     }
 }
 
-/// What an insert into `model` does under `NewerWinsWrapping` with `u32`
-/// generations. The model maps an index to the generation and the value
-/// there.
+/// Inserts `value` under `key` into `model` the way a map with `NewerWins`
+/// does, and returns what the map's `insert` would return. The model maps an
+/// index to the generation and the value there.
 fn model_insert(
     model: &mut HashMap<u32, (u32, u32)>,
     key: Key,
@@ -566,9 +535,7 @@ fn model_insert(
             model.insert(key.idx(), (generation, value));
             Ok(None)
         }
-        Some((current, old))
-            if *current == generation || generation.wrapping_sub(*current) < 1 << 31 =>
-        {
+        Some((current, old)) if generation >= *current => {
             *current = generation;
             Ok(Some(core::mem::replace(old, value)))
         }
@@ -588,7 +555,7 @@ impl MapConfig for InSmallVec {
 
 #[cfg(feature = "smallvec")]
 impl<S: SecondarySlotItem> SecondaryMapConfig<S> for InSmallVec {
-    type ReplaceStrategy = NewerWinsWrapping;
+    type ReplaceStrategy = NewerWins;
     type Storage = smallvec::SmallVec<S, 4>;
 }
 
@@ -604,7 +571,7 @@ impl MapConfig for InArrayVec {
 
 #[cfg(feature = "arrayvec")]
 impl<S: SecondarySlotItem> SecondaryMapConfig<S> for InArrayVec {
-    type ReplaceStrategy = NewerWinsWrapping;
+    type ReplaceStrategy = NewerWins;
     type Storage = arrayvec::ArrayVec<S, 16>;
 }
 

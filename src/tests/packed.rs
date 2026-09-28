@@ -1,7 +1,7 @@
 use super::{key_from_parts, Cfg};
 use crate::{
     FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, Key, KeyConfig, KeyLayout,
-    MapConfig, MapConfigFor, MapKeyConfig, NewerWinsWrapping, Odd, Packed, SecondaryMap,
+    MapConfig, MapConfigFor, MapKeyConfig, NewerWins, Odd, Packed, SecondaryMap,
     SecondaryMapConfig, SecondarySlotItem, Split,
 };
 use core::mem::size_of;
@@ -507,7 +507,7 @@ impl<S: GenSlotItem> GenMapConfig<S> for Wide8 {
 }
 
 impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Wide8 {
-    type ReplaceStrategy = NewerWinsWrapping;
+    type ReplaceStrategy = NewerWins;
     type Storage = Vec<S>;
 }
 
