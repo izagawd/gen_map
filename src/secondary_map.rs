@@ -733,10 +733,6 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// [`remove`](Self::remove).
     pub fn clear(&mut self) {
         for slot in self.slots.as_mut_slice() {
-            // Once `len` reaches zero, the slots that are left hold no value.
-            if self.len == MapIdx::<C>::ZERO {
-                break;
-            }
             if slot.get().is_some() {
                 decrement_len(&mut self.len);
                 drop(slot.take());
@@ -913,9 +909,6 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIter<'a, T, C> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
         for (position, slot) in self.slots.by_ref() {
             if let Some((generation, value)) = slot.get() {
                 self.remaining -= 1;
@@ -925,10 +918,6 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIter<'a, T, C> {
                 return Some((key, value));
             }
         }
-        // The slots ran out while `remaining` said a value was left, which
-        // only happens with a storage that broke the `SlotStorage` contract.
-        // Setting `remaining` to zero keeps the iterator fused.
-        self.remaining = 0;
         None
     }
 
@@ -941,9 +930,6 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIter<'a, T, C> {
 impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIter<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
         while let Some((position, slot)) = self.slots.next_back() {
             if let Some((generation, value)) = slot.get() {
                 self.remaining -= 1;
@@ -953,10 +939,6 @@ impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIter<'_, T
                 return Some((key, value));
             }
         }
-        // The slots ran out while `remaining` said a value was left, which
-        // only happens with a storage that broke the `SlotStorage` contract.
-        // Setting `remaining` to zero keeps the iterator fused.
-        self.remaining = 0;
         None
     }
 }
@@ -988,9 +970,6 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIterMut<'a, T, C>
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
         for (position, slot) in self.slots.by_ref() {
             if let Some((generation, value)) = slot.get_mut() {
                 self.remaining -= 1;
@@ -1000,10 +979,6 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIterMut<'a, T, C>
                 return Some((key, value));
             }
         }
-        // The slots ran out while `remaining` said a value was left, which
-        // only happens with a storage that broke the `SlotStorage` contract.
-        // Setting `remaining` to zero keeps the iterator fused.
-        self.remaining = 0;
         None
     }
 
@@ -1016,9 +991,6 @@ impl<'a, T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryIterMut<'a, T, C>
 impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIterMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
         while let Some((position, slot)) = self.slots.next_back() {
             if let Some((generation, value)) = slot.get_mut() {
                 self.remaining -= 1;
@@ -1028,10 +1000,6 @@ impl<T, C: SecondaryMapConfigFor<T>> DoubleEndedIterator for SecondaryIterMut<'_
                 return Some((key, value));
             }
         }
-        // The slots ran out while `remaining` said a value was left, which
-        // only happens with a storage that broke the `SlotStorage` contract.
-        // Setting `remaining` to zero keeps the iterator fused.
-        self.remaining = 0;
         None
     }
 }
@@ -1160,9 +1128,6 @@ impl<T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryDrain<'_, T, C> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.map.len == MapIdx::<C>::ZERO {
-            return None;
-        }
         while let Some(slot) = self.map.slots.as_mut_slice().get_mut(self.position) {
             let position = self.position;
             self.position += 1;
@@ -1176,11 +1141,6 @@ impl<T, C: SecondaryMapConfigFor<T>> Iterator for SecondaryDrain<'_, T, C> {
                 return Some((key, value));
             }
         }
-        // The slots ran out while the map's length said a value was left,
-        // which only happens with a storage that broke the `SlotStorage`
-        // contract. The length becomes zero, since no value is left to take,
-        // which also keeps the iterator fused.
-        self.map.len = MapIdx::<C>::ZERO;
         None
     }
 
@@ -1221,9 +1181,6 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
         for (position, slot) in self.slots.by_ref() {
             if let Some((generation, value)) = slot.into_inner() {
                 self.remaining -= 1;
@@ -1233,10 +1190,6 @@ where
                 return Some((key, value));
             }
         }
-        // The slots ran out while `remaining` said a value was left, which
-        // only happens with a storage that broke the `SlotStorage` contract.
-        // Setting `remaining` to zero keeps the iterator fused.
-        self.remaining = 0;
         None
     }
 
@@ -1256,9 +1209,6 @@ where
 {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
         while let Some((position, slot)) = self.slots.next_back() {
             if let Some((generation, value)) = slot.into_inner() {
                 self.remaining -= 1;
@@ -1268,10 +1218,6 @@ where
                 return Some((key, value));
             }
         }
-        // The slots ran out while `remaining` said a value was left, which
-        // only happens with a storage that broke the `SlotStorage` contract.
-        // Setting `remaining` to zero keeps the iterator fused.
-        self.remaining = 0;
         None
     }
 }
