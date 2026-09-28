@@ -1,6 +1,6 @@
-//! A generational map with a configurable key.
+//! A configurable generational map.
 //!
-//! [`GenMap`] stores values and hands out a [`Key`] for each one. A key
+//! [`GenMap`] stores values and hands out a [`Key`] for each one that is inserted. A key
 //! matches its value until the value is removed, and by default it never
 //! matches a value that later takes the same slot. That makes keys safe to
 //! hold on to where plain indices or references are not, such as in graphs,
@@ -364,7 +364,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! gen_map = { version = "0.2", default-features = false, features = ["arrayvec"] }
+//! gen_map = { version = "0.3", default-features = false, features = ["arrayvec"] }
 //! ```
 //!
 //! # Minimum supported Rust version

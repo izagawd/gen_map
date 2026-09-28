@@ -9,7 +9,7 @@
 ### Changed
 
 - `Config` has been split into `MapConfig` and `GenMapConfig<S>`.
-- A config can now use a storage that requires trait bounds on its items, since `GenMapConfig<S>` takes the slot type as `S` and its impl can bound `S`.
+- A config can now restrict which value types a map holds, through bounds on `GenSlotItem::Value`. 
 - The config of a `GenMap<T, C>` is now bounded by `MapConfigFor<T>`.
 - `DefaultConfig` has been replaced by `DefaultMapConfig`.
 - `KeyLayout` has been replaced by `KeyConfig`, and `SplitRepr` and `PackedRepr` have been removed.
