@@ -37,9 +37,9 @@ for (key, value) in &map {
 A `KeyConfig` picks the key's index and generation types and how the key
 stores them. `Split<Idx, Gen>` keeps the two as separate fields, and
 `Packed<R, GEN_BITS>` puts them in the bits of one integer and picks the
-index and generation types from its bit counts. A `MapConfig` is used to
-decide the key config, and a `GenMapConfig` is used to decide what happens
-when a slot's generation runs out and where the slots live.
+smallest types that can hold them. A `MapConfig` is used to decide the key
+config, and a `GenMapConfig` is used to decide what happens when a slot's
+generation runs out and where the slots live.
 
 ```rust
 use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Packed};
@@ -76,9 +76,9 @@ how it can be configured.
 ```rust
 use gen_map::{GenMap, SecondaryMap};
 
-let mut names = GenMap::new();
+let mut people = GenMap::new();
 let mut ages = SecondaryMap::new();
-let alice = names.insert("Alice");
+let alice = people.insert("Alice");
 ages.insert(alice, 30).unwrap();
 assert_eq!(ages[alice], 30);
 ```

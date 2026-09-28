@@ -41,8 +41,8 @@ impl<S: fmt::Display> fmt::Display for FullError<S> {
 /// Each variant hands the value back so that the caller can keep it. `S` is
 /// the map's [`StorageError`](crate::StorageError).
 ///
-/// When the keys' index and the storage both run out, the error is
-/// [`IndexExhausted`](Self::IndexExhausted).
+/// When the keys have no index left for a new slot and the storage is also
+/// full, the error is [`IndexExhausted`](Self::IndexExhausted).
 pub enum InsertError<T, S> {
     /// The map has a slot at every index it can use and none of them are
     /// free. A map uses every index its keys can hold, except the largest
@@ -170,8 +170,9 @@ pub enum InsertWithError<E, S> {
 }
 
 impl<E, S> InsertWithError<E, S> {
-    /// Folds the error into `E` when `E` can represent a full map, so that
-    /// a caller with its own error type gets that type back.
+    /// Converts the error into `E`, using `E`'s `From<FullError<S>>` impl
+    /// for a full map, so that a caller with its own error type gets that
+    /// type back.
     ///
     /// # Examples
     ///

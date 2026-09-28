@@ -278,7 +278,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     ///
     /// # Safety
     ///
-    /// The generation must be odd.
+    /// The slot's current generation must be odd.
     #[inline]
     pub unsafe fn replace_odd_unchecked(&mut self, generation: Even<G>, value: U) -> T {
         debug_assert!(self.is_odd());
@@ -295,7 +295,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     ///
     /// # Safety
     ///
-    /// The generation must be even.
+    /// The slot's current generation must be even.
     #[inline]
     pub unsafe fn replace_even_unchecked(&mut self, generation: Odd<G>, value: T) -> U {
         debug_assert!(self.is_even());
@@ -311,7 +311,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     ///
     /// # Safety
     ///
-    /// The generation must be odd.
+    /// The slot's generation must be odd.
     #[inline]
     pub unsafe fn get_odd_unchecked(&self) -> &T {
         debug_assert!(self.is_odd());
@@ -325,7 +325,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     ///
     /// # Safety
     ///
-    /// The generation must be odd.
+    /// The slot's generation must be odd.
     #[inline]
     pub unsafe fn get_odd_unchecked_mut(&mut self) -> &mut T {
         debug_assert!(self.is_odd());
@@ -338,7 +338,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     ///
     /// # Safety
     ///
-    /// The generation must be even.
+    /// The slot's generation must be even.
     #[inline]
     pub unsafe fn get_even_unchecked(&self) -> &U {
         debug_assert!(self.is_even());
@@ -352,7 +352,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     ///
     /// # Safety
     ///
-    /// The generation must be even.
+    /// The slot's generation must be even.
     #[inline]
     pub unsafe fn get_even_unchecked_mut(&mut self) -> &mut U {
         debug_assert!(self.is_even());
@@ -432,7 +432,7 @@ mod sealed {
 /// ```
 /// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, MapConfig};
 ///
-/// /// Only for values that are `Copy`.
+/// /// Maps with this config can only hold values that are `Copy`.
 /// struct CopyValues;
 ///
 /// impl MapConfig for CopyValues {
@@ -460,7 +460,7 @@ mod sealed {
 /// ```
 /// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, MapConfig};
 ///
-/// /// Only for values that are `u32`.
+/// /// Maps with this config can only hold `u32` values.
 /// struct U32Values;
 ///
 /// impl MapConfig for U32Values {
@@ -521,8 +521,8 @@ mod sealed {
 /// #     }
 /// # }
 ///
-/// /// Only for slots that can be cloned, since `ClonePool<S>` needs
-/// /// `S: Clone`.
+/// /// Maps with this config need slots that can be cloned, since
+/// /// `ClonePool<S>` needs `S: Clone`.
 /// struct Cloneable;
 ///
 /// impl MapConfig for Cloneable {

@@ -13,16 +13,16 @@ use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
 
-/// The key config of a [`GenMap`] with config `C`, the one `C` refers to.
+/// The key config that a map config `C` picks for its keys.
 pub type MapKeyConfig<C> = <C as MapConfig>::KeyConfig;
 
-/// The index type of the keys a [`GenMap`] with config `C` hands out.
+/// The index type of the keys that a map with config `C` works with.
 pub type MapIdx<C> = <MapKeyConfig<C> as KeyConfig>::Idx;
 
-/// The generation type of the keys a [`GenMap`] with config `C` hands out.
+/// The generation type of the keys that a map with config `C` works with.
 pub type MapGen<C> = <MapKeyConfig<C> as KeyConfig>::Gen;
 
-/// Short names for [`MapIdx`] and [`MapGen`] inside the crate.
+/// Shorter aliases for [`MapIdx`] and [`MapGen`] inside the crate.
 pub(crate) type Idx<C> = MapIdx<C>;
 pub(crate) type Gen<C> = MapGen<C>;
 
@@ -30,7 +30,8 @@ pub(crate) type Gen<C> = MapGen<C>;
 /// slot is on the free list, its `U` is the index of the next free slot, or
 /// the largest value of the index type if it is the last free slot. No slot
 /// ever has that index, so it can't be mistaken for the index of a real
-/// slot.
+/// slot. A retired slot's `U` is also the largest value of the index type,
+/// and a detached slot's `U` is its own index.
 pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 
 /// The key of the value in the slot at `idx` whose generation is
@@ -477,7 +478,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// There must be a slot at `idx` and it must hold a value, meaning
     /// [`key_at`](Self::key_at) returns `Some` for it. A slot that holds no
     /// value has an even generation, and a key's generation is an
-    /// [`Odd`](crate::Odd), so building the key is undefined behavior.
+    /// [`Odd`](crate::Odd), so building a key from that generation is
+    /// undefined behavior.
     #[inline]
     pub unsafe fn key_at_unchecked(&self, idx: MapIdx<C>) -> Key<MapKeyConfig<C>> {
         debug_assert!(self.key_at(idx).is_some());
@@ -649,8 +651,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
                 return Err(GetDisjointMutAtError::OverlappingIndices);
             }
         }
-        // SAFETY: every index was just found to name an occupied slot, and
-        // every index is distinct.
+        // SAFETY: every index was just found to point at an occupied slot,
+        // and every index is distinct.
         Ok(unsafe { self.get_disjoint_mut_at_unchecked(idxs) })
     }
 
@@ -676,8 +678,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         idxs.map(|idx| {
             // SAFETY: the caller promises that the slot exists and holds a
             // value, so its position is in bounds and its generation is odd.
-            // The caller also promises that no other index names the same
-            // slot, so the references do not alias.
+            // The caller also promises that no other index points at the
+            // same slot, so the references do not alias.
             unsafe {
                 let slot = &mut *slots.add(position_of::<C>(idx));
                 let key = slot_key::<C>(idx, Odd::new_unchecked(slot.generation()));
@@ -910,8 +912,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// slot has to be pushed, this makes sure there is room for it, so that
     /// the push in [`fill`](Self::fill) cannot fail.
     ///
-    /// When the keys' index and the storage both run out, the error is
-    /// `IndexExhausted`.
+    /// When the keys have no index left for a new slot and the storage is
+    /// also full, the error is `IndexExhausted`.
     #[inline]
     fn next_target(&mut self) -> Result<Target<C>, FullError<StorageError<T, C>>> {
         let (idx, position, generation, from_free_list) = if self.next_free != no_slot::<C>() {
