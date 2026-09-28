@@ -56,7 +56,7 @@ use core::hash::Hash;
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a key config",
     label = "not a key config",
-    note = "`Split<Idx, Gen>` and `Packed<R, GEN_BITS>` are key configs, and `Packed` needs `GEN_BITS` to be at least 1 and less than the bits of `R`"
+    note = "`Split<Idx, Gen>` and `Packed<R, GEN_BITS>` are key configs. `Packed` needs `R` to be `u8`, `u16`, `u32`, `u64` or `u128`, and `GEN_BITS` to be at least 1 and less than the bits of `R`"
 )]
 pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
     /// The integer type that represents the index of a slot. A

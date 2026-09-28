@@ -67,17 +67,6 @@ impl<S: GenSlotItem> GenMapConfig<S> for Huge {
     type Storage = Vec<S>;
 }
 
-/// Keys the size of a pointer, with 8 bits of generation.
-struct Native;
-
-impl MapConfig for Native {
-    type KeyConfig = Packed<usize, 8>;
-}
-
-impl<S: GenSlotItem> GenMapConfig<S> for Native {
-    type Storage = Vec<S>;
-}
-
 fn key<K: KeyConfig>(idx: K::Idx, generation: K::Gen) -> Key<K> {
     super::key_from_parts(idx, generation)
 }
@@ -97,7 +86,6 @@ fn packed_keys_are_the_size_of_their_field() {
     assert_eq!(size_of::<Key<Packed<u16, 4>>>(), 2);
     assert_eq!(size_of::<Key<Packed<u8, 4>>>(), 1);
     assert_eq!(size_of::<Key<Packed<u128, 64>>>(), 16);
-    assert_eq!(size_of::<Key<Packed<usize, 8>>>(), size_of::<usize>());
 }
 
 #[test]
@@ -117,10 +105,6 @@ fn limits_follow_the_bit_counts() {
     assert_eq!(Packed::<u8, 4>::max_idx(), 15);
     assert_eq!(Packed::<u128, 64>::max_idx(), u64::MAX);
     assert_eq!(Packed::<u128, 64>::max_generation().get().get(), u64::MAX);
-    assert_eq!(
-        Packed::<usize, 8>::max_idx(),
-        (1usize << (usize::BITS - 8)) - 1
-    );
 }
 
 #[test]
@@ -354,7 +338,7 @@ fn insert_panics_when_the_index_field_is_full() {
 }
 
 #[test]
-fn packed_keys_on_u128_and_usize_work_with_the_map() {
+fn packed_keys_on_u128_work_with_the_map() {
     let mut huge = GenMap::<i32, Huge>::new_with_config();
     let k = huge.insert(1);
     assert_eq!((k.idx(), k.generation().get().get()), (0, 1));
@@ -362,11 +346,6 @@ fn packed_keys_on_u128_and_usize_work_with_the_map() {
     let k = huge.insert(2);
     assert_eq!((k.idx(), k.generation().get().get()), (0, 3));
     assert_eq!(huge[k], 2);
-
-    let mut native = GenMap::<i32, Native>::new_with_config();
-    let k = native.insert(3);
-    assert_eq!((k.idx(), k.generation().get().get()), (0, 1));
-    assert_eq!(native[k], 3);
 }
 
 #[test]
@@ -446,7 +425,6 @@ fn packed_picks_the_types_its_docs_list() {
     assert_eq!(types::<Packed<u32, 8>>(), pair::<u32, u8>());
     assert_eq!(types::<Packed<u32, 16>>(), pair::<u16, u16>());
     assert_eq!(types::<Packed<u64, 40>>(), pair::<u32, u64>());
-    assert_eq!(types::<Packed<usize, 8>>(), pair::<usize, u8>());
 }
 
 /// Returns the number of bits in the smallest unsigned integer with at least
@@ -521,7 +499,7 @@ macro_rules! packed_checks {
 }
 
 #[test]
-fn every_packed_key_config_on_a_fixed_width_integer_picks_the_smallest_types() {
+fn every_packed_key_config_picks_the_smallest_types() {
     let checks = crate::key_layout::packed_table!(packed_checks);
     // Each `R` has a key config for every `GEN_BITS` from 1 up to one less
     // than its bits.
@@ -529,38 +507,4 @@ fn every_packed_key_config_on_a_fixed_width_integer_picks_the_smallest_types() {
     for check in checks {
         check();
     }
-}
-
-/// Checks one `Packed` key config on `usize`. Its index type must be `usize`,
-/// its generation type must be the smallest one that fits, and its limits
-/// must follow its bit counts.
-fn check_packed_usize<const GEN_BITS: u32>()
-where
-    Packed<usize, GEN_BITS>: KeyConfig,
-{
-    assert_eq!(
-        TypeId::of::<<Packed<usize, GEN_BITS> as KeyConfig>::Idx>(),
-        TypeId::of::<usize>()
-    );
-    assert_eq!(
-        <<Packed<usize, GEN_BITS> as KeyConfig>::Gen as KeyPiece>::BITS,
-        smallest_bits(GEN_BITS)
-    );
-    check_packed_limits::<usize, GEN_BITS>();
-}
-
-#[cfg(target_pointer_width = "64")]
-#[test]
-fn every_packed_key_config_on_usize_has_a_usize_index() {
-    macro_rules! check {
-        ($($gen_bits:literal)*) => {
-            $(check_packed_usize::<$gen_bits>();)*
-        };
-    }
-
-    check!(
-        1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32
-        33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61
-        62 63
-    );
 }

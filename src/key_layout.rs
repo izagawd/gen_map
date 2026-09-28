@@ -63,15 +63,16 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// key is as large as `R`. The low `GEN_BITS` bits hold the generation and
 /// the bits above them hold the index.
 ///
-/// `R` can be any unsigned integer from `u8` to `u128`, or `usize`.
-/// `GEN_BITS` must be at least one and less than the bits of `R`. A `Packed`
-/// whose `GEN_BITS` is outside that range does not implement [`KeyConfig`],
-/// so a map config cannot use it.
+/// `R` can be `u8`, `u16`, `u32`, `u64` or `u128`. It cannot be `usize`,
+/// because the number of bits in a `usize` depends on the target. To get
+/// keys the size of a pointer, pick `u32` or `u64` for `R` with
+/// `cfg(target_pointer_width)`. `GEN_BITS` must be at least one and less than
+/// the bits of `R`. A `Packed` that breaks these rules does not implement
+/// [`KeyConfig`], so a map config cannot use it.
 ///
 /// The index type is the smallest unsigned integer with at least
 /// `R::BITS - GEN_BITS` bits, and the generation type is the smallest one
-/// with at least `GEN_BITS` bits. When `R` is `usize`, the index type is
-/// `usize`, because the number of index bits depends on the target.
+/// with at least `GEN_BITS` bits.
 ///
 /// | Key config | Index type | Generation type |
 /// | --- | --- | --- |
@@ -79,7 +80,6 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// | `Packed<u32, 8>` | `u32` | `u8` |
 /// | `Packed<u32, 16>` | `u16` | `u16` |
 /// | `Packed<u64, 40>` | `u32` | `u64` |
-/// | `Packed<usize, 8>` | `usize` | `u8` |
 ///
 /// The largest index is `(1 << (R::BITS - GEN_BITS)) - 1` and the largest
 /// generation is `(1 << GEN_BITS) - 1`. When the index bits fill the whole
@@ -126,16 +126,16 @@ mod sealed {
     use crate::key_piece::KeyPiece;
 
     /// The index and generation types of a [`Packed`](super::Packed) key
-    /// config. It is only implemented for the bit counts that fit in `R`, so
-    /// a `Packed` with any other bit count is not a key config.
+    /// config. It is only implemented for a fixed-width `R` and the bit
+    /// counts that fit in it, so any other `Packed` is not a key config.
     #[diagnostic::on_unimplemented(
         message = "`{Self}` is not a key config",
         label = "not a key config",
-        note = "`Packed<R, GEN_BITS>` needs `GEN_BITS` to be at least 1 and less than the bits of `R`"
+        note = "`Packed<R, GEN_BITS>` needs `R` to be `u8`, `u16`, `u32`, `u64` or `u128`, and `GEN_BITS` to be at least 1 and less than the bits of `R`"
     )]
     pub trait PackedParts {
-        /// The integer type of the index. It has at least as many bits as
-        /// the index field.
+        /// The smallest unsigned integer with at least as many bits as the
+        /// index field.
         type Index: KeyPiece;
 
         /// The smallest unsigned integer with at least as many bits as the
@@ -144,10 +144,9 @@ mod sealed {
     }
 }
 
-/// Hands `$callback` the table of every [`Packed`] key config on a
-/// fixed-width integer. The table has a block for each `R`. Each line in a
-/// block gives an index type and a generation type, and then every
-/// `GEN_BITS` that gets those two types.
+/// Hands `$callback` the table of every [`Packed`] key config. The table has
+/// a block for each `R`. Each line in a block gives an index type and a
+/// generation type, and then every `GEN_BITS` that gets those two types.
 macro_rules! packed_table {
     ($callback:ident) => {
         $callback! {
@@ -209,29 +208,6 @@ packed_table!(impl_packed_parts);
 
 #[cfg(all(test, feature = "alloc"))]
 pub(crate) use packed_table;
-
-/// The fixed-width unsigned integer with as many bits as `usize`.
-#[cfg(target_pointer_width = "16")]
-type UsizeBits = u16;
-
-/// The fixed-width unsigned integer with as many bits as `usize`.
-#[cfg(target_pointer_width = "32")]
-type UsizeBits = u32;
-
-/// The fixed-width unsigned integer with as many bits as `usize`.
-#[cfg(target_pointer_width = "64")]
-type UsizeBits = u64;
-
-// A `Packed` on `usize` has the generation type of the `Packed` with the same
-// `GEN_BITS` on the fixed-width integer that is as wide as `usize`. Its index
-// type is `usize`, because the number of index bits depends on the target.
-impl<const GEN_BITS: u32> sealed::PackedParts for Packed<usize, GEN_BITS>
-where
-    Packed<UsizeBits, GEN_BITS>: sealed::PackedParts,
-{
-    type Index = usize;
-    type Generation = <Packed<UsizeBits, GEN_BITS> as sealed::PackedParts>::Generation;
-}
 
 /// Fails to compile when the bit counts of a [`Packed`] key config do not
 /// add up, or when its index or generation type has fewer bits than its
