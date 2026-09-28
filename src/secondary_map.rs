@@ -67,9 +67,9 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 ///
 /// A `SecondaryMap` does not hand out keys. It stores values under keys
 /// that a `GenMap` handed out, to add data to the values of a `GenMap`
-/// without changing its value type. `C` must have the same
-/// [`KeyConfig`](crate::KeyConfig) as the `GenMap`'s config, so that both
-/// maps use the same key type.
+/// without changing its value type. To use a `GenMap`'s keys, `C` must have
+/// the same [`KeyConfig`](crate::KeyConfig) as the `GenMap`'s config, so
+/// that both maps use the same key type.
 ///
 /// Each value sits in a slot at its key's index, together with the key's
 /// generation, and only a key with that index and generation matches it.
@@ -94,11 +94,11 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// ```
 /// use gen_map::{GenMap, SecondaryMap};
 ///
-/// let mut names = GenMap::new();
+/// let mut people = GenMap::new();
 /// let mut ages = SecondaryMap::new();
 ///
-/// let alice = names.insert("Alice");
-/// let bob = names.insert("Bob");
+/// let alice = people.insert("Alice");
+/// let bob = people.insert("Bob");
 /// ages.insert(alice, 30).unwrap();
 ///
 /// assert_eq!(ages.get(alice), Some(&30));
@@ -272,12 +272,13 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// There must be a slot at `idx` and it must hold a value, meaning
     /// [`key_at`](Self::key_at) returns `Some` for it. A slot that holds no
     /// value has generation zero, and a key's generation is an
-    /// [`Odd`](crate::Odd), so building the key is undefined behavior.
+    /// [`Odd`](crate::Odd), so building a key from that generation is
+    /// undefined behavior.
     #[inline]
     pub unsafe fn key_at_unchecked(&self, idx: MapIdx<C>) -> Key<MapKeyConfig<C>> {
         debug_assert!(self.key_at(idx).is_some());
         // SAFETY: the caller promises a slot at `idx` that holds a value. So
-        // `idx` fits in `usize` and names a slot in bounds, the slot's
+        // `idx` fits in `usize` and points at a slot in bounds, the slot's
         // generation is odd, and the position and generation fit the key.
         unsafe {
             let position = idx.into_usize_unchecked();
@@ -376,7 +377,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     pub unsafe fn generation_at_unchecked(&self, idx: MapIdx<C>) -> MapGen<C> {
         debug_assert!(self.generation_at(idx).is_some());
         // SAFETY: the caller promises a slot at `idx`, so `idx` fits in
-        // `usize` and names a slot in bounds.
+        // `usize` and points at a slot in bounds.
         unsafe {
             self.slots
                 .as_slice()
@@ -439,8 +440,8 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
                 return Err(GetDisjointMutAtError::OverlappingIndices);
             }
         }
-        // SAFETY: every index was just found to name a slot that holds a
-        // value, and every index is distinct.
+        // SAFETY: every index was just found to point at a slot that holds
+        // a value, and every index is distinct.
         Ok(unsafe { self.get_disjoint_mut_at_unchecked(idxs) })
     }
 
@@ -467,7 +468,7 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
             // SAFETY: the caller promises that the slot exists and holds a
             // value, so its position is in bounds, its generation is odd, and
             // the two fit the key. The caller also promises that no other
-            // index names the same slot, so the references do not alias.
+            // index points at the same slot, so the references do not alias.
             unsafe {
                 let position = idx.into_usize_unchecked();
                 let slot = &mut *slots.add(position);
@@ -555,9 +556,9 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         let slots = self.slots.as_mut_slice().as_mut_ptr();
         keys.map(|key| {
             // SAFETY: the caller promises that the key has a value, so its
-            // index fits in `usize` and names a slot in bounds that holds a
-            // value. The caller also promises that no other key names the
-            // same slot, so the references do not alias.
+            // index fits in `usize` and points at a slot in bounds that holds
+            // a value. The caller also promises that no other key points at
+            // the same slot, so the references do not alias.
             unsafe { (*slots.add(key.idx().into_usize_unchecked())).get_odd_unchecked_mut() }
         })
     }
@@ -587,17 +588,17 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// ```
     /// use gen_map::{GenMap, SecondaryInsertError, SecondaryMap};
     ///
-    /// let mut names = GenMap::new();
+    /// let mut people = GenMap::new();
     /// let mut ages = SecondaryMap::new();
     ///
-    /// let alice = names.insert("Alice");
+    /// let alice = people.insert("Alice");
     /// assert_eq!(ages.insert(alice, 30).unwrap(), None);
     /// assert_eq!(ages.insert(alice, 31).unwrap(), Some(30));
     ///
     /// // Bob gets Alice's slot, with a newer generation, so his age replaces
     /// // hers, and Alice's old key can no longer replace his.
-    /// names.remove(alice);
-    /// let bob = names.insert("Bob");
+    /// people.remove(alice);
+    /// let bob = people.insert("Bob");
     /// assert_eq!(bob.idx(), alice.idx());
     /// assert_eq!(ages.insert(bob, 25).unwrap(), Some(31));
     /// assert!(matches!(ages.insert(alice, 32), Err(SecondaryInsertError::Refused(32))));

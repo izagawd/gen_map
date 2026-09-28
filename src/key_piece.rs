@@ -5,22 +5,22 @@ use core::num::NonZero;
 // The map reads a union field based on what `is_odd` says about a slot's
 // generation, so the map's unsafe code relies on every method behaving
 // exactly like it does for the standard unsigned integers. In particular,
-// `into_non_zero` returns `Some` for every value except `ZERO`. `from_usize`
-// and `into_usize` return `None` for a value that does not fit, and
-// converting a value that fits there and back gives the same value. The
-// largest value is odd.
+// `into_non_zero` returns `Some` for every value except `ZERO`.
+// `from_usize`, `into_usize` and `from_u128` return `None` for a value that
+// does not fit, and converting a value that fits there and back gives the
+// same value. The largest value is odd.
 
 /// An unsigned integer that can be the index or the generation of a
-/// [`Key`](crate::Key). Implemented for `u8`, `u16`, `u32`, `u64`, `u128` and
-/// `usize`.
+/// [`Key`](crate::Key). It is implemented for `u8`, `u16`, `u32`, `u64`,
+/// `u128` and `usize`.
 ///
 /// It is sealed, so it cannot be implemented outside this crate.
 pub trait KeyPiece:
     sealed::Sealed + Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static
 {
-    /// The `NonZero` form of this integer. A key hands out its generation in
-    /// this form, and a [`Split`](crate::Split) key stores it this way, which
-    /// makes `Option<Key>` the same size as `Key`.
+    /// The `NonZero` form of this integer. [`Odd`](crate::Odd) stores its
+    /// number in this form, and [`Packed`](crate::Packed) stores its whole
+    /// integer this way, which makes `Option<Key>` the same size as `Key`.
     type NonZero: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static;
 
     /// The value zero.

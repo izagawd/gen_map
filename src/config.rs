@@ -73,7 +73,7 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
     /// The largest generation a key can hold.
     fn max_generation() -> Odd<Self::Gen>;
 
-    /// Packs an index and a generation.
+    /// Packs an index and a generation into a value of this key config.
     ///
     /// # Safety
     ///
@@ -93,25 +93,27 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
         }
     }
 
-    /// The index that was packed.
+    /// Returns the index that was packed into this value.
     fn idx(self) -> Self::Idx;
 
-    /// The generation that was packed.
+    /// Returns the generation that was packed into this value.
     fn generation(self) -> Odd<Self::Gen>;
 }
 
 /// Chooses the [`KeyConfig`] of the keys a map works with.
 ///
 /// The config of a [`GenMap`](crate::GenMap) also implements
-/// [`GenMapConfig`], which has `MapConfig` as a supertrait.
+/// [`GenMapConfig`], and the config of a
+/// [`SecondaryMap`](crate::SecondaryMap) also implements
+/// [`SecondaryMapConfig`]. Both traits have `MapConfig` as a supertrait.
 ///
 /// # Examples
 ///
 /// ```
 /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
 ///
-/// /// Four byte keys, and a slot whose generation runs out wraps instead
-/// /// of retiring.
+/// /// Maps with this config hand out four byte keys, and a slot whose
+/// /// generation runs out wraps instead of retiring.
 /// struct Small;
 ///
 /// impl MapConfig for Small {
@@ -120,7 +122,7 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
 ///
 /// impl<S: GenSlotItem> GenMapConfig<S> for Small {
 ///     const WRAP_ON_OVERFLOW: bool = true;
-///     // The collection the slots live in.
+///     // `Storage` is the collection the slots live in.
 ///     type Storage = Vec<S>;
 /// }
 ///
@@ -130,8 +132,8 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
 /// assert_eq!(map[key], "hello");
 /// ```
 pub trait MapConfig {
-    /// The config of the keys the map hands out. Maps whose configs use the
-    /// same key config share a key type.
+    /// The key config of the keys the map works with. Maps whose configs use
+    /// the same key config share a key type.
     type KeyConfig: KeyConfig;
 }
 
@@ -201,14 +203,14 @@ pub trait GenMapConfig<S: GenSlotItem>: MapConfig {
 ///     type Storage = Vec<S>;
 /// }
 ///
-/// let mut names = GenMap::new();
+/// let mut people = GenMap::new();
 /// let mut ages = SecondaryMap::<u32, Keep>::new_with_config();
-/// let alice = names.insert("Alice");
+/// let alice = people.insert("Alice");
 /// ages.insert(alice, 30).unwrap();
 ///
 /// // Bob gets Alice's slot, but her age stays until it is removed.
-/// names.remove(alice);
-/// let bob = names.insert("Bob");
+/// people.remove(alice);
+/// let bob = people.insert("Bob");
 /// assert!(ages.insert(bob, 25).is_err());
 /// assert_eq!(ages[alice], 30);
 /// ```

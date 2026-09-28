@@ -76,8 +76,9 @@ pub unsafe trait SlotStorage {
 
     /// Makes sure the next `additional` calls of
     /// [`try_push`](Self::try_push) will succeed, growing if the storage can
-    /// and has to. A `SecondaryMap` can ask for more items than any storage
-    /// holds.
+    /// and has to. A `SecondaryMap` asks for room up to a key's index, so
+    /// `additional` can be larger than any storage can hold. The map expects
+    /// an error in that case, not a panic.
     ///
     /// # Errors
     ///
@@ -216,7 +217,8 @@ impl<S> ReserveStorage for Vec<S> {
 /// use arrayvec::ArrayVec;
 /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
 ///
-/// /// Room for sixteen slots, without any allocation.
+/// /// Maps with this config keep up to sixteen slots inline and never
+/// /// allocate.
 /// struct Inline;
 ///
 /// impl MapConfig for Inline {
@@ -298,7 +300,8 @@ unsafe impl<S, const CAP: usize> SlotStorage for arrayvec::ArrayVec<S, CAP> {
 /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
 /// use smallvec::SmallVec;
 ///
-/// /// Room for eight slots before the map allocates.
+/// /// Maps with this config keep up to eight slots inline before they
+/// /// allocate.
 /// struct Small;
 ///
 /// impl MapConfig for Small {

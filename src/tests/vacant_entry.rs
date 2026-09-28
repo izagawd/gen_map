@@ -47,7 +47,7 @@ fn dropped_vacant_entry_leaves_the_map_untouched() {
     assert_eq!(map.slots_len(), 0);
     assert!(map.get(promised).is_none());
 
-    // The next insert hands out the same key the dropped entry named.
+    // The next insert hands out the same key the dropped entry had.
     let key = map.insert(1);
     assert_eq!(key, promised);
 }

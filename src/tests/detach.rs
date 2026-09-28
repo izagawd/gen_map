@@ -168,7 +168,7 @@ fn reattach_fails_with_the_wrong_generation_for_a_detached_slot() {
     map.remove(old);
     let new = map.insert(2);
     map.detach(new).unwrap();
-    // `old` names the same slot with an older generation.
+    // `old` points at the same slot with an older generation.
     assert_not_detached(&mut map, old, 3);
     // The slot is still detached under `new`.
     map.reattach(new, 4).unwrap();

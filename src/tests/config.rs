@@ -50,7 +50,7 @@ fn a_config_can_support_a_single_value_type() {
     let key = map.insert(7);
     assert_eq!(map[key], 7);
 
-    // Configs that name the same key config share a key type.
+    // Configs that use the same key config share a key type.
     let mut other = GenMap::<Position, Components>::new_with_config();
     let keys: [Key; 2] = [key, other.insert(Position(1))];
     assert_eq!(keys[0], keys[1]);

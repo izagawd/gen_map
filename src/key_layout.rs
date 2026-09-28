@@ -3,8 +3,8 @@ use crate::key_piece::KeyPiece;
 use crate::parity::Odd;
 
 /// Stores the index and the generation as two fields, so a key is as large
-/// as the two put together, plus any padding their alignment needs. Every
-/// value of `Idx` and `Gen` fits.
+/// as the two put together, plus any padding their alignment needs. A key
+/// can hold any index of type `Idx` and any odd generation of type `Gen`.
 ///
 /// `Idx` and `Gen` can each be any unsigned integer from `u8` to `u128`, or
 /// `usize`. Both default to `u32`, so `Split` on its own is the same type as
@@ -39,7 +39,8 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 
     #[inline]
     fn max_generation() -> Odd<Gen> {
-        // SAFETY: `KeyPiece` promises that the largest value is odd.
+        // SAFETY: every `KeyPiece` type is an unsigned integer, and the
+        // largest value of an unsigned integer is odd.
         unsafe { Odd::new_unchecked(Gen::MAX) }
     }
 
@@ -94,7 +95,8 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// ```
 /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, Key, MapConfig, Packed};
 ///
-/// /// Four byte keys with 24 bits of index and 8 bits of generation.
+/// /// Maps with this config hand out four byte keys with 24 bits of index
+/// /// and 8 bits of generation.
 /// struct Compact;
 ///
 /// impl MapConfig for Compact {
@@ -126,8 +128,9 @@ mod sealed {
     use crate::key_piece::KeyPiece;
 
     /// The index and generation types of a [`Packed`](super::Packed) key
-    /// config. It is only implemented for a fixed-width `R` and the bit
-    /// counts that fit in it, so any other `Packed` is not a key config.
+    /// config. It is only implemented when `R` is `u8`, `u16`, `u32`, `u64`
+    /// or `u128` and `GEN_BITS` is at least one and less than the bits of
+    /// `R`, so any other `Packed` is not a key config.
     #[diagnostic::on_unimplemented(
         message = "`{Self}` is not a key config",
         label = "not a key config",
@@ -209,10 +212,10 @@ packed_table!(impl_packed_parts);
 #[cfg(all(test, feature = "alloc"))]
 pub(crate) use packed_table;
 
-/// Fails to compile when the bit counts of a [`Packed`] key config do not
-/// add up, or when its index or generation type has fewer bits than its
-/// field. Every `Packed` key config passes, so the check only guards the
-/// unsafe code below against a wrong line in the table. The `const` block is
+/// Fails to compile when `GEN_BITS` is zero or not less than the bits of
+/// `R`, or when the index or generation type has fewer bits than its field.
+/// Every `Packed` key config passes, so the check only guards the unsafe
+/// code below against a wrong line in the table. The `const` block is
 /// evaluated for each set of types it is used with.
 #[inline(always)]
 fn check_packed<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32>() {

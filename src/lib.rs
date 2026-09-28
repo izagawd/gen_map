@@ -78,14 +78,15 @@
 //!   [`KeyPiece`] works, which is every unsigned integer from `u8` to
 //!   `u128`, and `usize`.
 //! - [`Packed<R, GEN_BITS>`](Packed) puts them in the bits of one integer
-//!   `R`, with the generation in the lowest `GEN_BITS` bits. It picks the
-//!   index and generation types from its bit counts.
+//!   `R`, which can be any unsigned integer from `u8` to `u128`, with the
+//!   generation in the lowest `GEN_BITS` bits. It picks the smallest integer
+//!   types that can hold the index and the generation.
 //!
 //! With either, `Option<Key>` is the same size as `Key`.
 //!
 //! A [`MapConfig`] has one associated type,
 //! [`KeyConfig`](MapConfig::KeyConfig), which is the config of the keys the
-//! map hands out. Maps whose configs have the same key config share a key
+//! map works with. Maps whose configs have the same key config share a key
 //! type. A key does not record which map handed it out, so another map with
 //! the same key config accepts it and may hold an unrelated value under it.
 //!
@@ -108,11 +109,12 @@
 //! [`GenSlotItem`](GenSlotItem#bounds-on-the-value-and-the-slot) has three
 //! examples of these bounds.
 //!
-//! [`DefaultMapConfig`] is the config a [`GenMap`] uses when none is named.
+//! [`DefaultMapConfig`] is the config a [`GenMap`] uses when its `C`
+//! parameter is left out.
 //! Its keys use the [`DefaultKeyConfig`], so they are a `u32` index and a
 //! `u32` generation stored as two fields. Its slots live in a `Vec`, and a
 //! slot retires when its generation runs out. [`DefaultKeyConfig`] is also
-//! the key config a [`Key`] uses when none is named.
+//! the key config a [`Key`] uses when its `K` parameter is not assigned.
 //!
 //! A map config is only used as a type parameter and never created as a
 //! value, so an empty struct is enough.
@@ -138,14 +140,14 @@
 //! assert_eq!(map[key], 7);
 //! ```
 //!
-//! [`GenMap::new`] only exists for the default config. Any other config goes
-//! through [`GenMap::new_with_config`].
+//! [`GenMap::new`] only exists for the default config. A map with any other
+//! config is created with [`GenMap::new_with_config`].
 //!
 //! ## When a generation runs out
 //!
 //! A slot's generation can only go up to the largest one its key can hold,
-//! which is `Gen::MAX` for [`Split`] and the largest value of the generation
-//! part for [`Packed`]. Each value a slot holds uses up two generations, one
+//! which is `Gen::MAX` for [`Split`] and `(1 << GEN_BITS) - 1` for
+//! [`Packed`]. Each value a slot holds uses up two generations, one
 //! when it is inserted and one when it is removed, so a `u32` generation lets
 //! a slot hold over two billion values, while a 4 bit generation lets it hold
 //! eight. What happens to a slot after that is up to
@@ -163,7 +165,7 @@
 //! `retire` to keep the slots it chooses from wrapping.
 //! [`Key::is_max_generation`] can be used to determine whether a key has the
 //! largest generation its key config can hold, which is when removing the
-//! key's value would wrap its slot.
+//! key's value would wrap or retire its slot.
 //!
 //! ## Storage
 //!
@@ -266,7 +268,7 @@
 //!
 //! [`key_at`](GenMap::key_at) finds the current key of the value in the slot at
 //! an index, and [`get_at`](GenMap::get_at) finds the value along with that
-//! key, and requires only the index to use.
+//! key. Both need only the index.
 //! [`generation_at`](GenMap::generation_at) returns a slot's generation whether
 //! it holds a value or not.
 //!
@@ -296,24 +298,25 @@
 //!
 //! # Unchecked access
 //!
-//! Every lookup on a `GenMap` or a `SecondaryMap` has an `_unchecked` form,
-//! such as [`get_unchecked`](GenMap::get_unchecked), that skips the checks
-//! the normal form makes, for code that already knows they would pass.
+//! Every lookup on a `GenMap` or a `SecondaryMap` except `contains_key` has
+//! an `_unchecked` form, such as [`get_unchecked`](GenMap::get_unchecked),
+//! that skips the checks the normal form makes, for code that already knows
+//! they would pass.
 //! Calling one when a check would fail is undefined behavior.
 //!
 //! # Secondary maps
 //!
 //! A [`SecondaryMap`] stores values under the keys a [`GenMap`] hands out,
-//! to add data to the values of a `GenMap` without changing their type. Its
-//! config must have the same [`KeyConfig`] as the `GenMap`'s config, so
-//! that both maps use the same key type.
+//! to add data to the values of a `GenMap` without changing their type. To
+//! use a `GenMap`'s keys, its config must have the same [`KeyConfig`] as the
+//! `GenMap`'s config, so that both maps use the same key type.
 //!
 //! ```
 //! use gen_map::{GenMap, SecondaryMap};
 //!
-//! let mut names = GenMap::new();
+//! let mut people = GenMap::new();
 //! let mut ages = SecondaryMap::new();
-//! let alice = names.insert("Alice");
+//! let alice = people.insert("Alice");
 //! ages.insert(alice, 30).unwrap();
 //! assert_eq!(ages[alice], 30);
 //! ```
