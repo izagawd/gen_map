@@ -11,9 +11,9 @@ use crate::parity::Odd;
 /// whose generation is the key's always has its value replaced.
 ///
 /// `K` is the key config of the map's keys. A strategy can read the key's
-/// layout through `K`, for example to find the largest generation with
-/// [`max_generation`](crate::KeyLayout::max_generation). A strategy can also
-/// be implemented only for the key configs it supports.
+/// limits through `K`, for example to find the largest generation with
+/// [`max_generation`](KeyConfig::max_generation). A strategy can also be
+/// implemented only for the key configs it supports.
 ///
 /// A strategy is a type, and [`replaces`](Self::replaces) takes no `self`,
 /// so the strategy a map uses is picked at compile time and the call can be

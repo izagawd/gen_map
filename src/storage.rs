@@ -214,19 +214,13 @@ impl<S> ReserveStorage for Vec<S> {
 ///
 /// ```
 /// use arrayvec::ArrayVec;
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
 ///
 /// /// Room for sixteen slots, without any allocation.
 /// struct Inline;
 ///
-/// impl KeyConfig for Inline {
-///     type Idx = u8;
-///     type Gen = u8;
-///     type Layout = Split;
-/// }
-///
 /// impl MapConfig for Inline {
-///     type KeyConfig = Self;
+///     type KeyConfig = Split<u8, u8>;
 /// }
 ///
 /// impl<S: GenSlotItem> GenMapConfig<S> for Inline {
@@ -301,20 +295,14 @@ unsafe impl<S, const CAP: usize> SlotStorage for arrayvec::ArrayVec<S, CAP> {
 /// `gen_map` may break this feature, so it is not covered by semver.
 ///
 /// ```
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
 /// use smallvec::SmallVec;
 ///
 /// /// Room for eight slots before the map allocates.
 /// struct Small;
 ///
-/// impl KeyConfig for Small {
-///     type Idx = u32;
-///     type Gen = u32;
-///     type Layout = Split;
-/// }
-///
 /// impl MapConfig for Small {
-///     type KeyConfig = Self;
+///     type KeyConfig = Split<u32, u32>;
 /// }
 ///
 /// impl<S: GenSlotItem> GenMapConfig<S> for Small {

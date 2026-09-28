@@ -69,16 +69,19 @@
 //! A map is configured by a [`MapConfig`] and a [`GenMapConfig`], and its
 //! keys by a [`KeyConfig`].
 //!
-//! A [`KeyConfig`] decides two things.
+//! A [`KeyConfig`] decides the integer types of a key's index and
+//! generation, and how the key stores the two. The crate has two kinds of
+//! key config.
 //!
-//! - [`Idx`](KeyConfig::Idx) and [`Gen`](KeyConfig::Gen) are the integer
-//!   types of the index and the generation. Any type that implements
+//! - [`Split<Idx, Gen>`](Split) keeps the index and the generation as two
+//!   fields of the types `Idx` and `Gen`. Any type that implements
 //!   [`KeyPiece`] works, which is every unsigned integer from `u8` to
 //!   `u128`, and `usize`.
-//! - [`Layout`](KeyConfig::Layout) is how a key stores the generation and
-//!   index. [`Split`] keeps them as two fields and [`Packed`] puts them in
-//!   the bits of one integer. With either, `Option<Key>` is the same size as
-//!   `Key`.
+//! - [`Packed<R, GEN_BITS>`](Packed) puts them in the bits of one integer
+//!   `R`, with the generation in the lowest `GEN_BITS` bits. It picks the
+//!   index and generation types from its bit counts.
+//!
+//! With either, `Option<Key>` is the same size as `Key`.
 //!
 //! A [`MapConfig`] has one associated type,
 //! [`KeyConfig`](MapConfig::KeyConfig), which is the config of the keys the
@@ -111,25 +114,18 @@
 //! slot retires when its generation runs out. [`DefaultKeyConfig`] is also
 //! the key config a [`Key`] uses when none is named.
 //!
-//! A config is only used as a type parameter and never created as a value,
-//! so an empty struct is enough. One type can implement all three traits and
-//! be its own key config.
+//! A map config is only used as a type parameter and never created as a
+//! value, so an empty struct is enough.
 //!
 //! ```
-//! use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
+//! use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
 //!
 //! /// A `u8` index and a `u8` generation, so keys are two bytes and the map
 //! /// holds at most 255 slots.
 //! struct Tiny;
 //!
-//! impl KeyConfig for Tiny {
-//!     type Idx = u8;
-//!     type Gen = u8;
-//!     type Layout = Split;
-//! }
-//!
 //! impl MapConfig for Tiny {
-//!     type KeyConfig = Self;
+//!     type KeyConfig = Split<u8, u8>;
 //! }
 //!
 //! impl<S: GenSlotItem> GenMapConfig<S> for Tiny {
@@ -166,8 +162,8 @@
 //! how the map is configured. Code built on a map that wraps can call
 //! `retire` to keep the slots it chooses from wrapping.
 //! [`Key::is_max_generation`] can be used to determine whether a key has the
-//! largest generation its layout can hold, which is when removing the key's
-//! value would wrap its slot.
+//! largest generation its key config can hold, which is when removing the
+//! key's value would wrap its slot.
 //!
 //! ## Storage
 //!
@@ -196,9 +192,9 @@
 //! the storage cannot make room for one. The largest value of the index type
 //! is never a slot's index, so a `u8` index, for example, allows 255 slots
 //! instead of 256. Leaving that value out only costs a slot when a key can
-//! hold it. With a `u32` index and a [`Packed<u32, 8>`](Packed) layout, for
-//! example, a key's index has only 24 bits and never reaches `u32::MAX`, so
-//! the map still allows all 16,777,216 slots.
+//! hold it. With a [`Packed<u32, 8>`](Packed) key config, for example, the
+//! index type is `u32`, but a key's index has only 24 bits and never reaches
+//! `u32::MAX`, so the map still allows all 16,777,216 slots.
 //!
 //! [`insert`](GenMap::insert) panics on a full map. The other ways to insert
 //! report a full map as an error.
@@ -411,7 +407,7 @@ pub use error::{
     SecondaryInsertError,
 };
 pub use key::Key;
-pub use key_layout::{KeyLayout, Packed, PackedRepr, Split, SplitRepr};
+pub use key_layout::{Packed, Split};
 pub use key_piece::KeyPiece;
 pub use map::{
     Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig, MapSlot,

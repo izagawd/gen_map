@@ -3,11 +3,11 @@
 //! valid and what they hold, so it knows nothing about slots or the free
 //! list. Each config gets its own test so they run in parallel.
 
-use crate::map::{Gen, Idx, Layout};
+use crate::map::{Gen, Idx};
 use crate::{
     DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
-    GetDisjointMutError, InsertError, InsertWithError, Key, KeyConfig, KeyLayout, KeyPiece,
-    MapConfig, MapConfigFor, MapKeyConfig, MapSlot, Packed,
+    GetDisjointMutError, InsertError, InsertWithError, Key, KeyConfig, KeyPiece, MapConfig,
+    MapConfigFor, MapKeyConfig, MapSlot, Packed,
 };
 use std::vec::Vec;
 
@@ -15,14 +15,8 @@ use std::vec::Vec;
 /// the map never runs out of them.
 struct Retiring;
 
-impl KeyConfig for Retiring {
-    type Idx = u16;
-    type Gen = u8;
-    type Layout = Packed<u16, 4>;
-}
-
 impl MapConfig for Retiring {
-    type KeyConfig = Self;
+    type KeyConfig = Packed<u16, 4>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Retiring {
@@ -33,14 +27,8 @@ impl<S: GenSlotItem> GenMapConfig<S> for Retiring {
 /// generations both run out often.
 struct Small;
 
-impl KeyConfig for Small {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Packed<u8, 4>;
-}
-
 impl MapConfig for Small {
-    type KeyConfig = Self;
+    type KeyConfig = Packed<u8, 4>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Small {
@@ -50,14 +38,8 @@ impl<S: GenSlotItem> GenMapConfig<S> for Small {
 /// The same as [`Small`], but a slot wraps instead of retiring.
 struct SmallWrap;
 
-impl KeyConfig for SmallWrap {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Packed<u8, 4>;
-}
-
 impl MapConfig for SmallWrap {
-    type KeyConfig = Self;
+    type KeyConfig = Packed<u8, 4>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for SmallWrap {
@@ -71,15 +53,8 @@ impl<S: GenSlotItem> GenMapConfig<S> for SmallWrap {
 struct InlineRetiring;
 
 #[cfg(feature = "arrayvec")]
-impl KeyConfig for InlineRetiring {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Packed<u8, 4>;
-}
-
-#[cfg(feature = "arrayvec")]
 impl MapConfig for InlineRetiring {
-    type KeyConfig = Self;
+    type KeyConfig = Packed<u8, 4>;
 }
 
 #[cfg(feature = "arrayvec")]
@@ -93,15 +68,8 @@ impl<S: GenSlotItem> GenMapConfig<S> for InlineRetiring {
 struct InlineWrap;
 
 #[cfg(feature = "arrayvec")]
-impl KeyConfig for InlineWrap {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Packed<u8, 4>;
-}
-
-#[cfg(feature = "arrayvec")]
 impl MapConfig for InlineWrap {
-    type KeyConfig = Self;
+    type KeyConfig = Packed<u8, 4>;
 }
 
 #[cfg(feature = "arrayvec")]
@@ -117,15 +85,8 @@ impl<S: GenSlotItem> GenMapConfig<S> for InlineWrap {
 struct Spilling;
 
 #[cfg(feature = "smallvec")]
-impl KeyConfig for Spilling {
-    type Idx = u16;
-    type Gen = u8;
-    type Layout = Packed<u16, 4>;
-}
-
-#[cfg(feature = "smallvec")]
 impl MapConfig for Spilling {
-    type KeyConfig = Self;
+    type KeyConfig = Packed<u16, 4>;
 }
 
 #[cfg(feature = "smallvec")]
@@ -309,7 +270,7 @@ fn run<C: MapConfigFor<u32>>(seed: u64, steps: usize) {
 /// doesn't fit in a `usize`. Every index a key can hold gets a slot, except
 /// the largest value of the index type.
 fn slot_count_limit<C: MapConfigFor<u32>>() -> Option<usize> {
-    let max_idx = <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_idx().into_usize()?;
+    let max_idx = <MapKeyConfig<C> as KeyConfig>::max_idx().into_usize()?;
     if Idx::<C>::MAX.into_usize() == Some(max_idx) {
         Some(max_idx)
     } else {

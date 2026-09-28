@@ -1,11 +1,10 @@
 #[cfg(feature = "alloc")]
 use crate::config::DefaultMapConfig;
-use crate::config::{MapConfig, SecondaryMapConfig, SecondaryMapConfigFor};
+use crate::config::{KeyConfig, MapConfig, SecondaryMapConfig, SecondaryMapConfigFor};
 use crate::error::{GetDisjointMutAtError, GetDisjointMutError, SecondaryInsertError};
 use crate::key::Key;
-use crate::key_layout::KeyLayout;
 use crate::key_piece::KeyPiece;
-use crate::map::{decrement_len, increment_len, Layout, MapGen, MapIdx, MapKeyConfig};
+use crate::map::{decrement_len, increment_len, MapGen, MapIdx, MapKeyConfig};
 use crate::parity::Odd;
 use crate::replace_strategy::ReplaceStrategy;
 use crate::slot::SecondarySlot;
@@ -39,7 +38,7 @@ type InsertResult<T, C> = Result<Option<T>, SecondaryInsertError<T, SecondarySto
 /// # Safety
 ///
 /// `position` must fit in the key's index type, and that index and
-/// `generation` must fit the key's layout together. Both hold for the
+/// `generation` must fit the key config together. Both hold for the
 /// position and generation of a slot that holds a value, as the comment on
 /// the map's `slots` field explains.
 #[inline]
@@ -49,19 +48,17 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 ) -> Key<MapKeyConfig<C>> {
     debug_assert!(
         MapIdx::<C>::from_usize(position)
-            .and_then(|idx| {
-                <Layout<C> as KeyLayout<MapIdx<C>, MapGen<C>>>::pack(idx, generation)
-            })
+            .and_then(|idx| <MapKeyConfig<C> as KeyConfig>::pack(idx, generation))
             .is_some(),
         "the index and the generation fit the key"
     );
     // SAFETY: the caller promises that `position` fits in the index type,
-    // and that the index and `generation` fit the layout.
+    // and that the index and `generation` fit the key config.
     unsafe {
         let idx = MapIdx::<C>::from_usize_unchecked(position);
-        Key::from_repr(
-            <Layout<C> as KeyLayout<MapIdx<C>, MapGen<C>>>::pack_unchecked(idx, generation),
-        )
+        Key::from_repr(<MapKeyConfig<C> as KeyConfig>::pack_unchecked(
+            idx, generation,
+        ))
     }
 }
 

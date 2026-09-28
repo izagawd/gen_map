@@ -1,7 +1,7 @@
 use super::{key_from_parts, Cfg};
 use crate::{
     DefaultKeyConfig, DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, Key, KeyConfig,
-    KeyLayout, MapConfig, Split,
+    MapConfig, MapKeyConfig, Split,
 };
 use core::mem::size_of;
 use std::vec::Vec;
@@ -37,20 +37,20 @@ fn maps_whose_configs_share_a_key_config_share_a_key_type() {
 
 #[test]
 fn key_sizes_follow_the_config() {
-    assert_eq!(size_of::<Key<Cfg<u8, u8>>>(), 2);
-    assert_eq!(size_of::<Key<Cfg<u16, u16>>>(), 4);
-    assert_eq!(size_of::<Key<Cfg<u32, u32>>>(), 8);
-    assert_eq!(size_of::<Key<Cfg<u32, u16>>>(), 8);
-    assert_eq!(size_of::<Key<Cfg<u64, u64>>>(), 16);
+    assert_eq!(size_of::<Key<Split<u8, u8>>>(), 2);
+    assert_eq!(size_of::<Key<Split<u16, u16>>>(), 4);
+    assert_eq!(size_of::<Key<Split<u32, u32>>>(), 8);
+    assert_eq!(size_of::<Key<Split<u32, u16>>>(), 8);
+    assert_eq!(size_of::<Key<Split<u64, u64>>>(), 16);
     assert_eq!(size_of::<Key>(), 8);
 }
 
 #[test]
 fn option_of_key_costs_nothing_extra() {
-    assert_eq!(size_of::<Option<Key<Cfg<u8, u8>>>>(), 2);
-    assert_eq!(size_of::<Option<Key<Cfg<u16, u16>>>>(), 4);
-    assert_eq!(size_of::<Option<Key<Cfg<u32, u32>>>>(), 8);
-    assert_eq!(size_of::<Option<Key<Cfg<u64, u64>>>>(), 16);
+    assert_eq!(size_of::<Option<Key<Split<u8, u8>>>>(), 2);
+    assert_eq!(size_of::<Option<Key<Split<u16, u16>>>>(), 4);
+    assert_eq!(size_of::<Option<Key<Split<u32, u32>>>>(), 8);
+    assert_eq!(size_of::<Option<Key<Split<u64, u64>>>>(), 16);
 }
 
 #[test]
@@ -76,14 +76,8 @@ fn key_debug_prints_both_parts() {
 #[test]
 fn every_integer_type_works_as_a_config() {
     struct Mixed;
-    impl KeyConfig for Mixed {
-        type Idx = u64;
-        type Gen = u8;
-        type Layout = Split;
-    }
-
     impl MapConfig for Mixed {
-        type KeyConfig = Self;
+        type KeyConfig = Split<u64, u8>;
     }
 
     impl<S: GenSlotItem> GenMapConfig<S> for Mixed {
@@ -91,14 +85,8 @@ fn every_integer_type_works_as_a_config() {
     }
 
     struct Wide;
-    impl KeyConfig for Wide {
-        type Idx = u128;
-        type Gen = usize;
-        type Layout = Split;
-    }
-
     impl MapConfig for Wide {
-        type KeyConfig = Self;
+        type KeyConfig = Split<u128, usize>;
     }
 
     impl<S: GenSlotItem> GenMapConfig<S> for Wide {
@@ -127,14 +115,8 @@ fn map_is_send_and_sync_when_its_values_are() {
 #[test]
 fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     struct Wide;
-    impl KeyConfig for Wide {
-        type Idx = u128;
-        type Gen = u32;
-        type Layout = Split;
-    }
-
     impl MapConfig for Wide {
-        type KeyConfig = Self;
+        type KeyConfig = Split<u128, u32>;
     }
 
     impl<S: GenSlotItem> GenMapConfig<S> for Wide {
@@ -146,7 +128,7 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     // `too_wide` has the same low 64 bits as `k`'s index, so a conversion to
     // `usize` that truncated it would land on `k`'s slot.
     let too_wide = (1u128 << 64) | k.idx();
-    let bogus = key_from_parts::<Wide>(too_wide, k.generation().get().get());
+    let bogus = key_from_parts::<MapKeyConfig<Wide>>(too_wide, k.generation().get().get());
 
     assert!(map.get(bogus).is_none());
     assert!(map.get_mut(bogus).is_none());

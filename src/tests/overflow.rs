@@ -1,20 +1,12 @@
-use crate::{
-    GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, MapConfigFor, MapSlot, Split,
-};
+use crate::{GenMap, GenMapConfig, GenSlotItem, MapConfig, MapConfigFor, MapSlot, Split};
 use std::vec::Vec;
 
 /// A `u8` index and a `u8` generation, so a slot retires after holding 128
 /// values.
 struct Retire;
 
-impl KeyConfig for Retire {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Split;
-}
-
 impl MapConfig for Retire {
-    type KeyConfig = Self;
+    type KeyConfig = Split<u8, u8>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Retire {
@@ -25,14 +17,8 @@ impl<S: GenSlotItem> GenMapConfig<S> for Retire {
 /// and is used again.
 struct Wrap;
 
-impl KeyConfig for Wrap {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Split;
-}
-
 impl MapConfig for Wrap {
-    type KeyConfig = Self;
+    type KeyConfig = Split<u8, u8>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Wrap {

@@ -3,9 +3,9 @@
 use super::{key_from_parts, Bomb, Cfg, DropItem, DropTracker};
 use crate::{
     DefaultKeyConfig, ExistingWins, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
-    GetDisjointMutError, Key, KeyConfig, MapConfig, NewerWins, Odd, Packed, ReplaceStrategy,
+    GetDisjointMutError, Key, MapConfig, MapKeyConfig, NewerWins, Odd, Packed, ReplaceStrategy,
     SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondaryMapConfigFor, SecondarySlot,
-    SecondarySlotItem,
+    SecondarySlotItem, Split,
 };
 use core::marker::PhantomData;
 use std::collections::HashMap;
@@ -39,14 +39,8 @@ impl<Idx: crate::KeyPiece, Gen: crate::KeyPiece, S: SecondarySlotItem> Secondary
 /// hands them out wraps the generation.
 struct Wrap4;
 
-impl KeyConfig for Wrap4 {
-    type Idx = u16;
-    type Gen = u8;
-    type Layout = Packed<u16, 4>;
-}
-
 impl MapConfig for Wrap4 {
-    type KeyConfig = Self;
+    type KeyConfig = Packed<u16, 4>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Wrap4 {
@@ -58,10 +52,12 @@ impl<S: GenSlotItem> GenMapConfig<S> for Wrap4 {
 struct With<R>(PhantomData<R>);
 
 impl<R> MapConfig for With<R> {
-    type KeyConfig = Wrap4;
+    type KeyConfig = MapKeyConfig<Wrap4>;
 }
 
-impl<R: ReplaceStrategy<Wrap4>, S: SecondarySlotItem> SecondaryMapConfig<S> for With<R> {
+impl<R: ReplaceStrategy<MapKeyConfig<Wrap4>>, S: SecondarySlotItem> SecondaryMapConfig<S>
+    for With<R>
+{
     type ReplaceStrategy = R;
     type Storage = Vec<S>;
 }
@@ -79,7 +75,7 @@ fn reused_keys() -> (Key, Key) {
 
 /// The key a slot had just before its generation wrapped, which is 15, and
 /// the key it had just after, which is 1.
-fn keys_around_a_wrap() -> (Key<Wrap4>, Key<Wrap4>) {
+fn keys_around_a_wrap() -> (Key<Packed<u16, 4>>, Key<Packed<u16, 4>>) {
     let mut keys = GenMap::<(), Wrap4>::new_with_config();
     let mut before = keys.insert(());
     while before.generation().get().get() != 15 {
@@ -374,7 +370,7 @@ fn a_secondary_map_keeps_its_slots() {
     let mut map = SecondaryMap::<u32, Cfg<u8, u8>>::new_with_config();
     // 254 is the largest index a slot can have, since `u8::MAX` is never
     // used.
-    let last = key_from_parts::<Cfg<u8, u8>>(254, 1);
+    let last = key_from_parts::<Split<u8, u8>>(254, 1);
     assert_eq!(map.insert(last, 7).unwrap(), None);
     assert_eq!(map.slots_len(), 255);
     assert_eq!(map.iter().collect::<Vec<_>>(), [(last, &7)]);
@@ -430,7 +426,7 @@ fn an_index_past_usize_fails_in_a_secondary_map_before_adding_a_slot() {
 
     // `u128::MAX` itself is refused before the storage is asked, so the key
     // uses the index just below it.
-    let key = key_from_parts::<Wide>(u128::MAX - 1, 1);
+    let key = key_from_parts::<MapKeyConfig<Wide>>(u128::MAX - 1, 1);
     let mut map = SecondaryMap::<u8, Wide>::new_with_config();
     assert!(matches!(
         map.insert(key, 5),
@@ -449,7 +445,7 @@ fn a_far_index_fails_in_a_secondary_map_before_adding_a_slot() {
 
     // A `Vec` needs a slot at every index up to 2^62, which is more bytes
     // than it can ask for, so it fails without allocating or pushing.
-    let key = key_from_parts::<Big>(1 << 62, 1);
+    let key = key_from_parts::<MapKeyConfig<Big>>(1 << 62, 1);
     let mut map = SecondaryMap::<u8, Big>::new_with_config();
     assert!(matches!(
         map.insert(key, 5),
@@ -461,8 +457,8 @@ fn a_far_index_fails_in_a_secondary_map_before_adding_a_slot() {
 
 #[test]
 fn the_strategies_compare_generations_as_documented() {
-    let newer = <NewerWins as ReplaceStrategy<Wrap4>>::replaces;
-    let keep = <ExistingWins as ReplaceStrategy<Wrap4>>::replaces;
+    let newer = <NewerWins as ReplaceStrategy<MapKeyConfig<Wrap4>>>::replaces;
+    let keep = <ExistingWins as ReplaceStrategy<MapKeyConfig<Wrap4>>>::replaces;
     // Each case holds the slot's generation, the key's generation, and
     // whether `NewerWins` replaces the value.
     let cases = [
@@ -480,7 +476,7 @@ fn the_strategies_compare_generations_as_documented() {
 
 #[test]
 fn a_secondary_slot_holds_a_value_only_while_its_generation_is_odd() {
-    let mut slot = SecondarySlot::<Cfg<u8, u8>, u32>::new(odd(3), 7);
+    let mut slot = SecondarySlot::<Split<u8, u8>, u32>::new(odd(3), 7);
     assert_eq!(
         format!("{slot:?}"),
         "SecondarySlot { generation: 3, value: Some(7) }"
@@ -500,7 +496,7 @@ fn a_secondary_slot_holds_a_value_only_while_its_generation_is_odd() {
         "SecondarySlot { generation: 0, value: None }"
     );
     assert_eq!(slot.into_inner(), None);
-    assert!(SecondarySlot::<Cfg<u8, u8>, u32>::empty().get().is_none());
+    assert!(SecondarySlot::<Split<u8, u8>, u32>::empty().get().is_none());
 }
 
 /// A small random number generator, so the test below is the same on every
@@ -1015,7 +1011,8 @@ fn the_index_lookups_find_nothing_past_usize() {
     type Wide = Cfg<u128, u32>;
 
     let mut map = SecondaryMap::<u8, Wide>::new_with_config();
-    map.insert(key_from_parts::<Wide>(0, 1), 1).unwrap();
+    map.insert(key_from_parts::<MapKeyConfig<Wide>>(0, 1), 1)
+        .unwrap();
     assert_eq!(map.key_at(u128::MAX), None);
     assert_eq!(map.get_at(u128::MAX), None);
     assert!(map.get_at_mut(u128::MAX).is_none());
@@ -1237,7 +1234,7 @@ fn every_iterator_runs_from_both_ends() {
 fn insert_rejects_a_key_at_the_largest_index() {
     // No `GenMap` gives a slot the largest index, so only a hand-built key
     // can have it.
-    let key = key_from_parts::<Cfg<u8, u8>>(u8::MAX, 1);
+    let key = key_from_parts::<Split<u8, u8>>(u8::MAX, 1);
     let mut map = SecondaryMap::<&str, Cfg<u8, u8>>::new_with_config();
     let error = map.insert(key, "x").unwrap_err();
     assert!(matches!(error, SecondaryInsertError::IndexReserved("x")));

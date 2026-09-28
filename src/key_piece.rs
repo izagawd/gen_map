@@ -2,21 +2,22 @@ use core::fmt::Debug;
 use core::hash::Hash;
 use core::num::NonZero;
 
+// The map reads a union field based on what `is_odd` says about a slot's
+// generation, so the map's unsafe code relies on every method behaving
+// exactly like it does for the standard unsigned integers. In particular,
+// `into_non_zero` returns `Some` for every value except `ZERO`. `from_usize`
+// and `into_usize` return `None` for a value that does not fit, and
+// converting a value that fits there and back gives the same value. The
+// largest value is odd.
+
 /// An unsigned integer that can be the index or the generation of a
 /// [`Key`](crate::Key). Implemented for `u8`, `u16`, `u32`, `u64`, `u128` and
 /// `usize`.
 ///
-/// # Safety
-///
-/// The map reads a union field based on what [`is_odd`](Self::is_odd) says
-/// about a slot's generation, so every method must behave exactly like it does
-/// for the standard unsigned integers. In particular,
-/// [`into_non_zero`](Self::into_non_zero) must return `Some` for every value
-/// except [`ZERO`](Self::ZERO). [`from_usize`](Self::from_usize) and
-/// [`into_usize`](Self::into_usize) must return `None` for a value that does
-/// not fit, and converting a value that fits there and back must give the
-/// same value. The largest value must be odd.
-pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static {
+/// It is sealed, so it cannot be implemented outside this crate.
+pub trait KeyPiece:
+    sealed::Sealed + Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static
+{
     /// The `NonZero` form of this integer. A key hands out its generation in
     /// this form, and a [`Split`](crate::Split) key stores it this way, which
     /// makes `Option<Key>` the same size as `Key`.
@@ -100,14 +101,22 @@ pub unsafe trait KeyPiece: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'stati
     unsafe fn from_u128_unchecked(v: u128) -> Self;
 }
 
+mod sealed {
+    /// Keeps [`KeyPiece`](super::KeyPiece) from being implemented outside
+    /// this crate.
+    pub trait Sealed {}
+}
+
 macro_rules! impl_key_piece {
     ($($t:ty)*) => {
         $(
-            // SAFETY: these are the standard unsigned integers the trait
-            // describes. Every method forwards to the integer's own operation
-            // or to an exact cast, and the largest value of every unsigned
-            // integer is odd.
-            unsafe impl KeyPiece for $t {
+            impl sealed::Sealed for $t {}
+
+            // These are the standard unsigned integers the trait describes.
+            // Every method forwards to the integer's own operation or to an
+            // exact cast, and the largest value of every unsigned integer is
+            // odd.
+            impl KeyPiece for $t {
                 type NonZero = NonZero<$t>;
 
                 const ZERO: Self = 0;

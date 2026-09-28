@@ -1,19 +1,15 @@
 use super::{assert_not_detached, Cfg, DropTracker};
-use crate::{GenMap, GenMapConfig, GenSlotItem, Key, KeyConfig, MapConfig, Packed};
+use crate::{
+    GenMap, GenMapConfig, GenSlotItem, Key, MapConfig, MapConfigFor, MapKeyConfig, Packed, Split,
+};
 use std::vec::Vec;
 
 /// Keys whose generation is 4 bits, so the largest one is 15, well below the
 /// largest `u8`, in a map that wraps generations.
 struct Wrap4;
 
-impl KeyConfig for Wrap4 {
-    type Idx = u16;
-    type Gen = u8;
-    type Layout = Packed<u16, 4>;
-}
-
 impl MapConfig for Wrap4 {
-    type KeyConfig = Self;
+    type KeyConfig = Packed<u16, 4>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Wrap4 {
@@ -25,14 +21,8 @@ impl<S: GenSlotItem> GenMapConfig<S> for Wrap4 {
 /// generations.
 struct WrapU8;
 
-impl KeyConfig for WrapU8 {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = crate::Split;
-}
-
 impl MapConfig for WrapU8 {
-    type KeyConfig = Self;
+    type KeyConfig = Split<u8, u8>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for WrapU8 {
@@ -42,11 +32,8 @@ impl<S: GenSlotItem> GenMapConfig<S> for WrapU8 {
 
 /// A map whose only slot holds a value under the largest generation its key
 /// can hold, and the key of that value.
-fn at_the_largest_generation<K>() -> (GenMap<i32, K>, Key<K>)
-where
-    K: KeyConfig + MapConfig<KeyConfig = K> + GenMapConfig<crate::MapSlot<i32, K>>,
-{
-    let mut map = GenMap::<i32, K>::new_with_config();
+fn at_the_largest_generation<C: MapConfigFor<i32>>() -> (GenMap<i32, C>, Key<MapKeyConfig<C>>) {
+    let mut map = GenMap::<i32, C>::new_with_config();
     let mut key = map.insert(0);
     while !key.is_max_generation() {
         map.remove(key);
@@ -218,7 +205,7 @@ fn detach_and_reattach_work_at_the_largest_generation() {
 }
 
 #[test]
-fn a_packed_key_detaches_at_the_largest_generation_of_its_layout() {
+fn a_packed_key_detaches_at_the_largest_generation_of_its_key_config() {
     let (mut map, key) = at_the_largest_generation::<Wrap4>();
     assert_eq!(key.generation().get().get(), 15);
 
@@ -266,7 +253,7 @@ fn reattach_fails_for_another_key_of_a_slot_detached_at_the_largest_generation()
     map.detach(key);
     // A key with the same index and an older generation does not own the
     // detached slot.
-    let older = crate::tests::key_from_parts::<Wrap4>(key.idx(), 13);
+    let older = crate::tests::key_from_parts::<Packed<u16, 4>>(key.idx(), 13);
     assert_not_detached(&mut map, older, 1);
     // The slot is still detached under `key`.
     map.reattach(key, 2).unwrap();

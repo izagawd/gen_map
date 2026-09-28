@@ -37,28 +37,20 @@ mod unchecked;
 mod vacant_entry;
 mod zero_sized;
 
-use crate::{
-    GenMapConfig, GenSlotItem, Key, KeyConfig, KeyLayout, KeyPiece, MapConfig, Odd, Split,
-};
+use crate::{GenMapConfig, GenSlotItem, Key, KeyConfig, KeyPiece, MapConfig, Odd, Split};
 use core::marker::PhantomData;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::vec::Vec;
 
-/// A config made of the two integer types it is given. It is only used as a
-/// type parameter, never created as a value.
+/// The keys of this config are a [`Split`] of the two integer types it is
+/// given. It is only used as a type parameter, never created as a value.
 #[allow(dead_code)]
 pub(crate) struct Cfg<Idx, Gen>(PhantomData<(Idx, Gen)>);
 
-impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Cfg<Idx, Gen> {
-    type Idx = Idx;
-    type Gen = Gen;
-    type Layout = Split;
-}
-
 impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for Cfg<Idx, Gen> {
-    type KeyConfig = Self;
+    type KeyConfig = Split<Idx, Gen>;
 }
 
 impl<Idx: KeyPiece, Gen: KeyPiece, S: GenSlotItem> GenMapConfig<S> for Cfg<Idx, Gen> {
@@ -81,10 +73,10 @@ pub(crate) fn assert_not_detached<C: crate::MapConfigFor<i32>>(
 }
 
 /// The key of `K` with index `idx` and generation `generation`. Panics if
-/// the generation is even or either part does not fit the layout.
+/// the generation is even or either part does not fit the key config.
 pub(crate) fn key_from_parts<K: KeyConfig>(idx: K::Idx, generation: K::Gen) -> Key<K> {
     let generation = Odd::new(generation).unwrap();
-    Key::from_repr(<K::Layout as KeyLayout<K::Idx, K::Gen>>::pack(idx, generation).unwrap())
+    Key::from_repr(K::pack(idx, generation).unwrap())
 }
 
 /// Hands out numbered items and records how many times each one has been
