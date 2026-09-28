@@ -1174,6 +1174,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     ///
     /// Generations start over, so unlike [`clear`](Self::clear) this lets a
     /// key from before the call match a value inserted after it.
+    /// Once this method is called, the map behaves like a new map created
+    /// with the same [`capacity`](Self::capacity).
     #[inline]
     pub fn reset(&mut self) {
         // Reset the bookkeeping first. If a value's `drop` panics inside
