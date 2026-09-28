@@ -198,7 +198,7 @@
 //! index type is `u32`, but a key's index has only 24 bits and never reaches
 //! `u32::MAX`, so the map still allows all 16,777,216 slots.
 //!
-//! [`insert`](GenMap::insert) panics on a full map. The other ways to insert
+//! [`insert`](GenMap::insert) and [`insert_with_key`](GenMap::insert_with_key) panic on a full map. The other ways to insert
 //! report a full map as an error.
 //!
 //! - [`try_insert`](GenMap::try_insert) returns an [`InsertError`] that hands
