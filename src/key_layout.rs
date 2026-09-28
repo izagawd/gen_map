@@ -7,7 +7,8 @@ use crate::parity::Odd;
 /// value of `Idx` and `Gen` fits.
 ///
 /// `Idx` and `Gen` can each be any unsigned integer from `u8` to `u128`, or
-/// `usize`.
+/// `usize`. Both default to `u32`, so `Split` on its own is the same type as
+/// `Split<u32, u32>`.
 ///
 /// # Examples
 ///
@@ -15,9 +16,10 @@ use crate::parity::Odd;
 /// use gen_map::{Key, Split};
 ///
 /// assert_eq!(core::mem::size_of::<Key<Split<u16, u16>>>(), 4);
+/// assert_eq!(core::mem::size_of::<Key<Split>>(), 8);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Split<Idx: KeyPiece, Gen: KeyPiece> {
+pub struct Split<Idx: KeyPiece = u32, Gen: KeyPiece = u32> {
     idx: Idx,
     /// An odd generation is never zero, so storing it as an [`Odd`] gives
     /// `Option<Key>` the size of `Key`.

@@ -70,8 +70,8 @@
 //! keys by a [`KeyConfig`].
 //!
 //! A [`KeyConfig`] decides the integer types of a key's index and
-//! generation, and how the key stores the two. The crate has two kinds of
-//! key config.
+//! generation, and how the key stores the two. This crate provides two kinds
+//! of key configs.
 //!
 //! - [`Split<Idx, Gen>`](Split) keeps the index and the generation as two
 //!   fields of the types `Idx` and `Gen`. Any type that implements

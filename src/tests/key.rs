@@ -11,7 +11,9 @@ fn default_key_matches_default_config() {
     let mut map = GenMap::new();
     let key: Key = map.insert(1);
     let same: Key<DefaultKeyConfig> = key;
+    let split: Key<Split> = key;
     assert_eq!(map[same], 1);
+    assert_eq!(map[split], 1);
 }
 
 #[test]
