@@ -328,10 +328,8 @@
 //! the config's [`ReplaceStrategy`](SecondaryMapConfig::ReplaceStrategy)
 //! decides whether to replace it.
 //!
-//! - [`NewerWinsWrapping`] replaces it when the key's generation is newer,
-//!   counting past the largest generation back to zero. It is the
-//!   `ReplaceStrategy` of [`DefaultMapConfig`].
 //! - [`NewerWins`] replaces it when the key's generation is larger.
+//!   `NewerWins` is the `ReplaceStrategy` of [`DefaultMapConfig`].
 //! - [`ExistingWins`] never replaces it.
 //!
 //! Any other type that implements [`ReplaceStrategy`] can be used instead.
@@ -420,7 +418,7 @@ pub use map::{
     StorageError, VacantEntry, Values, ValuesMut,
 };
 pub use parity::{Even, Odd};
-pub use replace_strategy::{ExistingWins, NewerWins, NewerWinsWrapping, ReplaceStrategy};
+pub use replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
 pub use secondary_map::{
     SecondaryDrain, SecondaryIntoIter, SecondaryIter, SecondaryIterMut, SecondaryKeys,
     SecondaryMap, SecondaryMapSlot, SecondaryStorageError, SecondaryValues, SecondaryValuesMut,

@@ -87,10 +87,10 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// has used, in the [`SlotStorage`] its [`SecondaryMapConfig`] picks, the
 /// same kind of storage a `GenMap` uses.
 ///
-/// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`], which
-/// keeps the slots in a `Vec` and uses
-/// [`NewerWinsWrapping`](crate::NewerWinsWrapping) to decide whether an
-/// insert replaces a value that was inserted under a different generation.
+/// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`]. A map
+/// with that config keeps its slots in a `Vec` and uses
+/// [`NewerWins`](crate::NewerWins) to decide whether an insert replaces a
+/// value that was inserted under a different generation.
 ///
 /// # Examples
 ///

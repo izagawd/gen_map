@@ -4,7 +4,7 @@
 
 use super::{key_from_parts, Bomb, DropTracker};
 use crate::{
-    GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, NewerWinsWrapping, SecondaryMap,
+    GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, NewerWins, SecondaryMap,
     SecondaryMapConfig, SecondarySlotItem, Split,
 };
 use smallvec::SmallVec;
@@ -29,7 +29,7 @@ impl<S: GenSlotItem> GenMapConfig<S> for Four {
 }
 
 impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Four {
-    type ReplaceStrategy = NewerWinsWrapping;
+    type ReplaceStrategy = NewerWins;
     type Storage = SmallVec<S, 4>;
 }
 
