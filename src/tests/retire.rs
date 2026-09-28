@@ -2,21 +2,15 @@
 //! covers it too.
 
 use super::{assert_not_detached, DropTracker};
-use crate::{GenMap, GenMapConfig, GenSlotItem, InsertError, KeyConfig, MapConfig, Packed};
+use crate::{GenMap, GenMapConfig, GenSlotItem, InsertError, MapConfig, Packed};
 use std::vec::Vec;
 
 /// Sixteen slots whose generations wrap after eight values, so every slot is
 /// used again unless it is retired by hand.
 struct Wrapping;
 
-impl KeyConfig for Wrapping {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Packed<u8, 4>;
-}
-
 impl MapConfig for Wrapping {
-    type KeyConfig = Self;
+    type KeyConfig = Packed<u8, 4>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Wrapping {

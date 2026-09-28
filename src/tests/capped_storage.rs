@@ -3,9 +3,9 @@
 
 use super::key_from_parts;
 use crate::{
-    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeyConfig,
-    MapConfig, NewerWins, SecondaryInsertError, SecondaryMap, SecondaryMapConfig,
-    SecondarySlotItem, SecondaryStorageError, SlotStorage, Split, StorageError,
+    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, MapConfig,
+    NewerWins, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem,
+    SecondaryStorageError, SlotStorage, Split, StorageError,
 };
 use std::vec::Vec;
 
@@ -76,14 +76,8 @@ unsafe impl<S> SlotStorage for Capped<S> {
 
 struct Four;
 
-impl KeyConfig for Four {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Split;
-}
-
 impl MapConfig for Four {
-    type KeyConfig = Self;
+    type KeyConfig = Split<u8, u8>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Four {
@@ -171,8 +165,9 @@ fn insert_panics_with_the_storages_reason() {
 fn a_secondary_map_hands_back_the_storages_own_error_and_adds_no_slots() {
     let mut map = SecondaryMap::<i32, Four>::new_with_config();
     assert_eq!(map.capacity(), CAP);
-    let error: SecondaryInsertError<i32, SecondaryStorageError<i32, Four>> =
-        map.insert(key_from_parts::<Four>(9, 1), 9).unwrap_err();
+    let error: SecondaryInsertError<i32, SecondaryStorageError<i32, Four>> = map
+        .insert(key_from_parts::<Split<u8, u8>>(9, 1), 9)
+        .unwrap_err();
     assert!(matches!(
         error,
         SecondaryInsertError::StorageFull(9, CapReached)
@@ -180,7 +175,11 @@ fn a_secondary_map_hands_back_the_storages_own_error_and_adds_no_slots() {
     assert_eq!(map.slots_len(), 0);
 
     // Inserting at index 3 fills all four slots the storage has room for.
-    assert_eq!(map.insert(key_from_parts::<Four>(3, 1), 3).unwrap(), None);
+    assert_eq!(
+        map.insert(key_from_parts::<Split<u8, u8>>(3, 1), 3)
+            .unwrap(),
+        None
+    );
     assert_eq!(map.slots_len(), CAP);
     assert_eq!(map.len(), 1);
 }
@@ -189,7 +188,7 @@ fn a_secondary_map_hands_back_the_storages_own_error_and_adds_no_slots() {
 fn a_secondary_map_clones_without_a_cloneable_storage() {
     // `Capped` does not implement `Clone`, and the map does not need it to.
     let mut map = SecondaryMap::<i32, Four>::new_with_config();
-    let key = key_from_parts::<Four>(2, 1);
+    let key = key_from_parts::<Split<u8, u8>>(2, 1);
     map.insert(key, 7).unwrap();
     let copy = map.clone();
     assert_eq!(copy.len(), 1);

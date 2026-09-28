@@ -35,26 +35,21 @@ for (key, value) in &map {
 ## Configuring the map
 
 A `KeyConfig` picks the key's index and generation types and how the key
-stores them. A `MapConfig` is used to decide the key config, and a
-`GenMapConfig` is used to decide what happens when a slot's generation runs
-out and where the slots live.
+stores them. `Split<Idx, Gen>` keeps the two as separate fields, and
+`Packed<R, GEN_BITS>` puts them in the bits of one integer and picks the
+index and generation types from its bit counts. A `MapConfig` is used to
+decide the key config, and a `GenMapConfig` is used to decide what happens
+when a slot's generation runs out and where the slots live.
 
 ```rust
-use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Packed};
+use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Packed};
 
-/// Four byte keys with 24 bits of index and 8 bits of generation.
-struct CompactKey;
-
-impl KeyConfig for CompactKey {
-    type Idx = u32;
-    type Gen = u8;
-    type Layout = Packed<u32, 8>;
-}
-
+/// Maps with this config hand out four byte keys with 24 bits of index and 8
+/// bits of generation.
 struct CompactConfig;
 
 impl MapConfig for CompactConfig {
-    type KeyConfig = CompactKey;
+    type KeyConfig = Packed<u32, 8>;
 }
 
 // `S` is the slot the map keeps each value in.
@@ -68,17 +63,15 @@ assert_eq!(core::mem::size_of_val(&key), 4);
 ```
 
 The [documentation](https://docs.rs/gen_map) covers the rest, such as key
-layouts, storage, what happens when a generation runs out, and limiting which
+configs, storage, what happens when a generation runs out, and limiting which
 maps can use a config.
 
 ## Secondary maps
 
 A `SecondaryMap` stores values under the keys a `GenMap` hands out, to add
-data to a `GenMap`'s values without changing their type. Its config picks a
-`ReplaceStrategy`, which decides whether an insert replaces a value that was
-inserted under a different generation. The config also picks the storage the
-slots live in, which can be any storage a `GenMap` can use. The map keeps a
-slot at every index up to the highest index that an insert has used.
+data to a `GenMap`'s values without changing their type. Like a `GenMap`, it
+can be configured, and the [documentation](https://docs.rs/gen_map) covers
+how it can be configured.
 
 ```rust
 use gen_map::{GenMap, SecondaryMap};

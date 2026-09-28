@@ -1,13 +1,13 @@
 use super::{Cfg, DropTracker};
 use crate::{
-    GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError, Key, KeyConfig, MapConfig, Split,
+    GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError, Key, MapConfig, MapKeyConfig, Split,
 };
 use std::vec::Vec;
 
 type Tiny = Cfg<u8, u8>;
 
 /// A map whose first slot has retired and whose value now sits in slot 1.
-fn map_with_a_retired_slot() -> (GenMap<i32, Tiny>, Key<Tiny>) {
+fn map_with_a_retired_slot() -> (GenMap<i32, Tiny>, Key<MapKeyConfig<Tiny>>) {
     let mut map = GenMap::<i32, Tiny>::new_with_config();
     let mut key = map.insert(0);
     while map.slots_len() == 1 {
@@ -77,14 +77,8 @@ fn get_at_reports_the_current_key_of_a_reused_slot() {
 #[test]
 fn get_at_with_an_index_that_does_not_fit_in_usize_is_none() {
     struct Wide;
-    impl KeyConfig for Wide {
-        type Idx = u128;
-        type Gen = u32;
-        type Layout = Split;
-    }
-
     impl MapConfig for Wide {
-        type KeyConfig = Self;
+        type KeyConfig = Split<u128, u32>;
     }
 
     impl<S: GenSlotItem> GenMapConfig<S> for Wide {

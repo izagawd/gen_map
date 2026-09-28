@@ -4,8 +4,8 @@
 
 use super::{key_from_parts, Bomb, DropTracker};
 use crate::{
-    GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, NewerWins, SecondaryMap,
-    SecondaryMapConfig, SecondarySlotItem, Split,
+    GenMap, GenMapConfig, GenSlotItem, MapConfig, NewerWins, SecondaryMap, SecondaryMapConfig,
+    SecondarySlotItem, Split,
 };
 use smallvec::SmallVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -14,14 +14,8 @@ use std::vec::Vec;
 /// Room for four slots inline before the storage moves to the heap.
 struct Four;
 
-impl KeyConfig for Four {
-    type Idx = u32;
-    type Gen = u32;
-    type Layout = Split;
-}
-
 impl MapConfig for Four {
-    type KeyConfig = Self;
+    type KeyConfig = Split<u32, u32>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Four {
@@ -136,7 +130,9 @@ fn a_secondary_map_in_a_small_vec_keeps_working_after_it_moves_to_the_heap() {
     assert_eq!(map.capacity(), 4);
     // The keys use every third index, so the map holds empty slots between
     // them.
-    let keys: Vec<_> = (0..20).map(|i| key_from_parts::<Four>(i * 3, 1)).collect();
+    let keys: Vec<_> = (0..20)
+        .map(|i| key_from_parts::<Split<u32, u32>>(i * 3, 1))
+        .collect();
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(map.insert(key, i as u32).unwrap(), None);
     }
@@ -161,13 +157,14 @@ fn a_secondary_map_in_a_small_vec_can_make_room_ahead_of_time() {
     assert!(capacity >= 64);
     assert!(map.try_reserve(8).is_ok());
 
-    let key = key_from_parts::<Four>(63, 1);
+    let key = key_from_parts::<Split<u32, u32>>(63, 1);
     map.insert(key, 1).unwrap();
     assert_eq!(map[key], 1);
     assert_eq!(map.slots_len(), 64);
 
     // The storage's own iterator runs from both ends, so the map's does too.
-    map.insert(key_from_parts::<Four>(2, 1), 2).unwrap();
+    map.insert(key_from_parts::<Split<u32, u32>>(2, 1), 2)
+        .unwrap();
     let backward: Vec<u32> = map.into_iter().rev().map(|(_, value)| value).collect();
     assert_eq!(backward, [1, 2]);
 }

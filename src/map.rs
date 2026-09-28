@@ -5,7 +5,6 @@ use crate::error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
 };
 use crate::key::Key;
-use crate::key_layout::KeyLayout;
 use crate::key_piece::KeyPiece;
 use crate::parity::{Even, Odd};
 use crate::slot::{Parity, Slot};
@@ -27,9 +26,6 @@ pub type MapGen<C> = <MapKeyConfig<C> as KeyConfig>::Gen;
 pub(crate) type Idx<C> = MapIdx<C>;
 pub(crate) type Gen<C> = MapGen<C>;
 
-/// The layout of the keys a [`GenMap`] with config `C` hands out.
-pub(crate) type Layout<C> = <MapKeyConfig<C> as KeyConfig>::Layout;
-
 /// The [`Slot`] a [`GenMap<T, C>`](GenMap) keeps each value in. While a
 /// slot is on the free list, its `U` is the index of the next free slot, or
 /// the largest value of the index type if it is the last free slot. No slot
@@ -47,10 +43,8 @@ pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 #[inline]
 unsafe fn slot_key<C: MapConfig>(idx: Idx<C>, generation: Odd<Gen<C>>) -> Key<MapKeyConfig<C>> {
     // SAFETY: the map never lets a slot's position, or the generation of a
-    // slot that holds a value, grow past what the layout holds.
-    Key::from_repr(unsafe {
-        <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::pack_unchecked(idx, generation)
-    })
+    // slot that holds a value, grow past what the key config holds.
+    Key::from_repr(unsafe { <MapKeyConfig<C> as KeyConfig>::pack_unchecked(idx, generation) })
 }
 
 /// Converts a position in the backing storage to `Idx<C>`.
@@ -95,7 +89,7 @@ type Slots<T, C> = <C as GenMapConfig<MapSlot<T, C>>>::Storage;
 /// The largest index a key of `C` can hold.
 #[inline]
 fn max_idx<C: MapConfig>() -> Idx<C> {
-    <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_idx()
+    <MapKeyConfig<C> as KeyConfig>::max_idx()
 }
 
 /// The largest index a slot can have. It is the largest index a key of `C`
@@ -144,7 +138,7 @@ pub(crate) fn decrement_len<I: KeyPiece>(len: &mut I) {
 /// largest one a key of `C` can hold, which is when a slot retires or wraps.
 #[inline]
 fn next_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Option<Even<Gen<C>>> {
-    if generation == <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::max_generation() {
+    if generation == <MapKeyConfig<C> as KeyConfig>::max_generation() {
         None
     } else {
         Some(generation.wrapping_next())
@@ -158,8 +152,8 @@ fn next_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Option<Even<Gen<C>>
 /// [`GenMap::reattach`] calls this function with the key's generation to
 /// check that the slot is still detached under that key.
 ///
-/// With a [`Packed`](crate::Packed) layout, this generation can be one past
-/// the largest generation a key can hold. That does no harm, because a
+/// With a [`Packed`](crate::Packed) key config, this generation can be one
+/// past the largest generation a key can hold. That does no harm, because a
 /// detached slot is never on the free list, so its generation never goes into
 /// a key.
 #[inline]
@@ -189,9 +183,9 @@ impl<C: MapConfig> Target<C> {
     #[inline]
     fn key(&self) -> Key<MapKeyConfig<C>> {
         // SAFETY: a `Target` only ever comes from `next_target`, which checks
-        // that both parts fit the layout.
+        // that both parts fit the key config.
         Key::from_repr(unsafe {
-            <Layout<C> as KeyLayout<Idx<C>, Gen<C>>>::pack_unchecked(self.idx, self.generation)
+            <MapKeyConfig<C> as KeyConfig>::pack_unchecked(self.idx, self.generation)
         })
     }
 }
@@ -341,18 +335,12 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// Creates an empty map with config `C`.
     ///
     /// ```
-    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
+    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
     ///
     /// struct Wide;
     ///
-    /// impl KeyConfig for Wide {
-    ///     type Idx = u64;
-    ///     type Gen = u64;
-    ///     type Layout = Split;
-    /// }
-    ///
     /// impl MapConfig for Wide {
-    ///     type KeyConfig = Self;
+    ///     type KeyConfig = Split<u64, u64>;
     /// }
     ///
     /// impl<S: GenSlotItem> GenMapConfig<S> for Wide {
@@ -806,18 +794,12 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// # Examples
     ///
     /// ```
-    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, InsertError, KeyConfig, MapConfig, Split};
+    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, InsertError, MapConfig, Split};
     ///
     /// struct Tiny;
     ///
-    /// impl KeyConfig for Tiny {
-    ///     type Idx = u8;
-    ///     type Gen = u8;
-    ///     type Layout = Split;
-    /// }
-    ///
     /// impl MapConfig for Tiny {
-    ///     type KeyConfig = Self;
+    ///     type KeyConfig = Split<u8, u8>;
     /// }
     ///
     /// impl<S: GenSlotItem> GenMapConfig<S> for Tiny {
@@ -1020,19 +1002,13 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// # Examples
     ///
     /// ```
-    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Packed};
+    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Packed};
     ///
     /// /// Sixteen slots whose generations wrap after eight values.
     /// struct Wrapping;
     ///
-    /// impl KeyConfig for Wrapping {
-    ///     type Idx = u8;
-    ///     type Gen = u8;
-    ///     type Layout = Packed<u8, 4>;
-    /// }
-    ///
     /// impl MapConfig for Wrapping {
-    ///     type KeyConfig = Self;
+    ///     type KeyConfig = Packed<u8, 4>;
     /// }
     ///
     /// impl<S: GenSlotItem> GenMapConfig<S> for Wrapping {

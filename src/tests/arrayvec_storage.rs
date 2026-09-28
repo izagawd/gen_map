@@ -3,9 +3,9 @@
 
 use super::{key_from_parts, Bomb, DropTracker};
 use crate::{
-    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeyConfig,
-    MapConfig, NewerWins, Packed, SecondaryInsertError, SecondaryMap, SecondaryMapConfig,
-    SecondarySlotItem, Split,
+    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, MapConfig,
+    NewerWins, Packed, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem,
+    Split,
 };
 use arrayvec::ArrayVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -14,14 +14,8 @@ use std::vec::Vec;
 /// Room for four slots, with a `u8` index that could address many more.
 struct Four;
 
-impl KeyConfig for Four {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Split;
-}
-
 impl MapConfig for Four {
-    type KeyConfig = Self;
+    type KeyConfig = Split<u8, u8>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Four {
@@ -37,14 +31,8 @@ impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Four {
 /// out at the same time.
 struct Sixteen;
 
-impl KeyConfig for Sixteen {
-    type Idx = u8;
-    type Gen = u8;
-    type Layout = Packed<u8, 4>;
-}
-
 impl MapConfig for Sixteen {
-    type KeyConfig = Self;
+    type KeyConfig = Packed<u8, 4>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for Sixteen {
@@ -195,13 +183,13 @@ fn a_secondary_map_in_an_array_vec_holds_the_first_four_indices() {
     let mut map = SecondaryMap::<u32, Four>::new_with_config();
     assert_eq!(map.capacity(), 4);
     for i in 0..4 {
-        let key = key_from_parts::<Four>(i, 1);
+        let key = key_from_parts::<Split<u8, u8>>(i, 1);
         assert_eq!(map.insert(key, u32::from(i)).unwrap(), None);
     }
     assert_eq!(map.slots_len(), 4);
 
     // The fifth index does not fit, and the map stays as it was.
-    let fifth = key_from_parts::<Four>(4, 1);
+    let fifth = key_from_parts::<Split<u8, u8>>(4, 1);
     assert!(matches!(
         map.insert(fifth, 4),
         Err(SecondaryInsertError::StorageFull(4, _))
@@ -227,7 +215,7 @@ fn a_secondary_map_in_an_array_vec_holds_the_first_four_indices() {
 #[test]
 fn a_secondary_map_in_an_array_vec_adds_no_slots_for_an_index_that_does_not_fit() {
     let mut map = SecondaryMap::<u32, Four>::new_with_config();
-    let far = key_from_parts::<Four>(200, 1);
+    let far = key_from_parts::<Split<u8, u8>>(200, 1);
     assert!(matches!(
         map.insert(far, 1),
         Err(SecondaryInsertError::StorageFull(1, _))
@@ -235,7 +223,7 @@ fn a_secondary_map_in_an_array_vec_adds_no_slots_for_an_index_that_does_not_fit(
     assert_eq!(map.slots_len(), 0);
 
     // The storage still has room for all four slots.
-    let last = key_from_parts::<Four>(3, 1);
+    let last = key_from_parts::<Split<u8, u8>>(3, 1);
     assert_eq!(map.insert(last, 3).unwrap(), None);
     assert_eq!(map.slots_len(), 4);
     assert_eq!(map[last], 3);

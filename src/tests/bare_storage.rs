@@ -1,7 +1,7 @@
 //! Storages that implement `SlotStorage` and little else, to check that a
 //! map only asks for more where a method needs it.
 
-use crate::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, SlotStorage, Split};
+use crate::{GenMap, GenMapConfig, GenSlotItem, MapConfig, SlotStorage, Split};
 use std::vec::Vec;
 
 /// A `Vec` behind `SlotStorage` alone. With `ITER` it also has an owning
@@ -70,19 +70,11 @@ impl<S> IntoIterator for Bare<S, true> {
     }
 }
 
-struct Keys;
-
-impl KeyConfig for Keys {
-    type Idx = u32;
-    type Gen = u32;
-    type Layout = Split;
-}
-
 /// Its storage has no owning iterator.
 struct NoIter;
 
 impl MapConfig for NoIter {
-    type KeyConfig = Keys;
+    type KeyConfig = Split<u32, u32>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for NoIter {
@@ -93,7 +85,7 @@ impl<S: GenSlotItem> GenMapConfig<S> for NoIter {
 struct ForwardIter;
 
 impl MapConfig for ForwardIter {
-    type KeyConfig = Keys;
+    type KeyConfig = Split<u32, u32>;
 }
 
 impl<S: GenSlotItem> GenMapConfig<S> for ForwardIter {

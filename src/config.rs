@@ -1,6 +1,7 @@
-use crate::key_layout::{KeyLayout, Split};
+use crate::key_layout::Split;
 use crate::key_piece::KeyPiece;
 use crate::map::MapSlot;
+use crate::parity::Odd;
 #[cfg(feature = "alloc")]
 use crate::replace_strategy::NewerWins;
 use crate::replace_strategy::ReplaceStrategy;
@@ -9,28 +10,55 @@ use crate::slot::{GenSlotItem, SecondarySlotItem};
 use crate::storage::SlotStorage;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+use core::hash::Hash;
 
 /// Chooses the index and generation types of a [`Key`](crate::Key), and how
-/// the key stores the two.
+/// the key stores the two. A `Key<K>` holds a value of its key config `K`,
+/// and that value holds the index and the generation.
+///
+/// [`Split<Idx, Gen>`](crate::Split) keeps the index and the generation as
+/// two fields, and [`Packed<R, GEN_BITS>`](crate::Packed) puts them in the
+/// bits of one integer. Either one can be the
+/// [`KeyConfig`](MapConfig::KeyConfig) of a [`MapConfig`].
 ///
 /// # Examples
 ///
 /// ```
-/// use gen_map::{Key, KeyConfig, Split};
+/// use gen_map::{Key, Packed, Split};
 ///
-/// /// Four byte keys.
-/// struct SmallKeys;
+/// // These keys keep a `u16` index and a `u16` generation as two fields.
+/// assert_eq!(core::mem::size_of::<Key<Split<u16, u16>>>(), 4);
 ///
-/// impl KeyConfig for SmallKeys {
-///     type Idx = u16;
-///     type Gen = u16;
-///     // How a key stores the index and the generation.
-///     type Layout = Split;
-/// }
-///
-/// assert_eq!(core::mem::size_of::<Key<SmallKeys>>(), 4);
+/// // These keys keep 24 bits of index and 8 bits of generation in one `u32`.
+/// assert_eq!(core::mem::size_of::<Key<Packed<u32, 8>>>(), 4);
 /// ```
-pub trait KeyConfig {
+///
+/// # Safety
+///
+/// The map trusts what a key config hands back. For a value that
+/// [`pack_unchecked`](Self::pack_unchecked) made, [`idx`](Self::idx) and
+/// [`generation`](Self::generation) must return exactly the index and the
+/// generation that `pack_unchecked` was given, and two values must be equal
+/// only if they unpack to the same parts. [`max_idx`](Self::max_idx) and
+/// [`max_generation`](Self::max_generation) must return the same value every
+/// time, because the maps pack parts again long after they first checked
+/// them against those limits.
+///
+/// Safe code can make a key from any value of the key config it can build,
+/// with [`Key::from_repr`](crate::Key::from_repr), and read the key's parts
+/// through the safe [`idx`](Self::idx) and [`generation`](Self::generation)
+/// methods. So every value that safe code can build must unpack to an odd
+/// generation, since `generation` returns an [`Odd`]. It must also unpack to
+/// an index of at most `max_idx` and a generation of at most
+/// `max_generation`. A key config whose fields are private and whose values
+/// only come from `pack_unchecked`, like [`Split`](crate::Split) and
+/// [`Packed`](crate::Packed), meets these rules.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a key config",
+    label = "not a key config",
+    note = "`Split<Idx, Gen>` and `Packed<R, GEN_BITS>` are key configs. `Packed` needs `R` to be `u8`, `u16`, `u32`, `u64` or `u128`, and `GEN_BITS` to be at least 1 and less than the bits of `R`"
+)]
+pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
     /// The integer type that represents the index of a slot. A
     /// [`GenMap`](crate::GenMap) never gives a slot the largest value of
     /// this type.
@@ -39,10 +67,37 @@ pub trait KeyConfig {
     /// The integer type that represents the generation of a slot.
     type Gen: KeyPiece;
 
-    /// How a key stores its index and generation. [`Split`](crate::Split)
-    /// keeps them as two fields and [`Packed`](crate::Packed) puts them in
-    /// the bits of one integer.
-    type Layout: KeyLayout<Self::Idx, Self::Gen>;
+    /// The largest index a key can hold.
+    fn max_idx() -> Self::Idx;
+
+    /// The largest generation a key can hold.
+    fn max_generation() -> Odd<Self::Gen>;
+
+    /// Packs an index and a generation.
+    ///
+    /// # Safety
+    ///
+    /// `idx` must be at most [`max_idx`](Self::max_idx), and `generation` at
+    /// most [`max_generation`](Self::max_generation).
+    unsafe fn pack_unchecked(idx: Self::Idx, generation: Odd<Self::Gen>) -> Self;
+
+    /// Packs an index and a generation, or returns `None` if either is larger
+    /// than the key config can hold.
+    #[inline]
+    fn pack(idx: Self::Idx, generation: Odd<Self::Gen>) -> Option<Self> {
+        if idx <= Self::max_idx() && generation <= Self::max_generation() {
+            // SAFETY: both parts were just checked to fit.
+            Some(unsafe { Self::pack_unchecked(idx, generation) })
+        } else {
+            None
+        }
+    }
+
+    /// The index that was packed.
+    fn idx(self) -> Self::Idx;
+
+    /// The generation that was packed.
+    fn generation(self) -> Odd<Self::Gen>;
 }
 
 /// Chooses the [`KeyConfig`] of the keys a map works with.
@@ -53,23 +108,14 @@ pub trait KeyConfig {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeyConfig, MapConfig, Split};
-///
-/// /// Four byte keys.
-/// struct SmallKeys;
-///
-/// impl KeyConfig for SmallKeys {
-///     type Idx = u16;
-///     type Gen = u16;
-///     type Layout = Split;
-/// }
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
 ///
 /// /// Four byte keys, and a slot whose generation runs out wraps instead
 /// /// of retiring.
 /// struct Small;
 ///
 /// impl MapConfig for Small {
-///     type KeyConfig = SmallKeys;
+///     type KeyConfig = Split<u16, u16>;
 /// }
 ///
 /// impl<S: GenSlotItem> GenMapConfig<S> for Small {
@@ -254,17 +300,11 @@ impl<T, C> SecondaryMapConfigFor<T> for C where
 {
 }
 
-/// The key config a [`Key`](crate::Key) uses when none is named.
+/// The key config a [`Key`](crate::Key) uses when its `K` parameter is left
+/// out.
 ///
 /// Keys are a `u32` index and a `u32` generation stored as two fields.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct DefaultKeyConfig;
-
-impl KeyConfig for DefaultKeyConfig {
-    type Idx = u32;
-    type Gen = u32;
-    type Layout = Split;
-}
+pub type DefaultKeyConfig = Split<u32, u32>;
 
 /// The config of a [`GenMap<T>`](crate::GenMap) and a
 /// [`SecondaryMap<T>`](crate::SecondaryMap), which leave out their config
