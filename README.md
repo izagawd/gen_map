@@ -1,13 +1,14 @@
 # gen_map
 
-A customizable generational map that returns a `Key` upon inserting a value. The key can be used to later access or remove the value, and removing a value bumps its slot's generation, so the old key no longer matches.
+A customizable generational map that returns a `Key` upon inserting a value. 
+The key can be used to later access or remove the value, and removing a value bumps its slot's generation, so the old key no longer matches the slot.
 The operations for inserting, removing and accessing a value are all O(1).
 
 The crate never uses `std`, so it also works on targets that do not have it.
 
 ```toml
 [dependencies]
-gen_map = "0.2.2"
+gen_map = "0.3"
 ```
 
 ## Example

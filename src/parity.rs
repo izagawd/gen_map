@@ -1,8 +1,9 @@
 use crate::key_piece::KeyPiece;
 use core::hint::unreachable_unchecked;
 
-/// An odd number of type `G`. It is never zero, so it is stored as a
-/// `NonZero`, which makes `Option<Odd<G>>` the same size as `G`.
+/// An odd number of type `G`. It is never zero, so it is stored as a `NonZero`,
+/// which lets `Option` use zero to represent `None` and makes `Option<Odd<G>>`
+/// the same size as `G`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Odd<G: KeyPiece>(G::NonZero);
 
@@ -18,7 +19,8 @@ impl<G: KeyPiece> Odd<G> {
         }
     }
 
-    /// [`new`](Self::new) without the check.
+    /// Returns `value` as an `Odd`, like [`new`](Self::new), but without
+    /// checking that it is odd.
     ///
     /// # Safety
     ///
@@ -27,8 +29,9 @@ impl<G: KeyPiece> Odd<G> {
     pub unsafe fn new_unchecked(value: G) -> Self {
         debug_assert!(value.is_odd());
         if !value.is_odd() {
-            // SAFETY: the caller promises an odd value. Saying so here lets
-            // the compiler rely on it in the code that follows.
+            // SAFETY: the caller promises an odd value, so this branch never
+            // runs. Marking it unreachable lets the compiler assume that the
+            // value is odd in the code that follows.
             unsafe { unreachable_unchecked() }
         }
         // SAFETY: the caller promises an odd value, and zero is even.
@@ -78,7 +81,8 @@ impl<G: KeyPiece> Even<G> {
         }
     }
 
-    /// [`new`](Self::new) without the check.
+    /// Returns `value` as an `Even`, like [`new`](Self::new), but without
+    /// checking that it is even.
     ///
     /// # Safety
     ///
@@ -87,8 +91,9 @@ impl<G: KeyPiece> Even<G> {
     pub unsafe fn new_unchecked(value: G) -> Self {
         debug_assert!(!value.is_odd());
         if value.is_odd() {
-            // SAFETY: the caller promises an even value. Saying so here lets
-            // the compiler rely on it in the code that follows.
+            // SAFETY: the caller promises an even value, so this branch never
+            // runs. Marking it unreachable lets the compiler assume that the
+            // value is even in the code that follows.
             unsafe { unreachable_unchecked() }
         }
         Self(value)

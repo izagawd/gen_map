@@ -35,14 +35,14 @@ use core::hash::Hash;
 ///
 /// # Safety
 ///
-/// The map trusts what a key config hands back. For a value that
+/// The maps' unsafe code relies on what a key config returns. For a value that
 /// [`pack_unchecked`](Self::pack_unchecked) made, [`idx`](Self::idx) and
 /// [`generation`](Self::generation) must return exactly the index and the
 /// generation that `pack_unchecked` was given, and two values must be equal
 /// only if they unpack to the same parts. [`max_idx`](Self::max_idx) and
 /// [`max_generation`](Self::max_generation) must return the same value every
-/// time, because the maps pack parts again long after they first checked
-/// them against those limits.
+/// time, because the maps pack parts again long after they first checked them
+/// against those limits.
 ///
 /// Safe code can make a key from any value of the key config it can build,
 /// with [`Key::from_repr`](crate::Key::from_repr), and read the key's parts
@@ -222,9 +222,9 @@ pub trait SecondaryMapConfig<S: SecondarySlotItem>: MapConfig {
     /// [`ExistingWins`](crate::ExistingWins).
     type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
 
-    /// The collection the map keeps its slots in. The map keeps a slot at
-    /// every index up to the highest index that an insert has used.
-    /// `type Storage = Vec<S>;` keeps them in a `Vec`, and any other
+    /// The collection the map keeps its slots in. The map keeps a slot at every
+    /// index up to the highest index that an insert has used. With
+    /// `type Storage = Vec<S>;`, the map keeps them in a `Vec`, and any other
     /// [`SlotStorage`] works too, such as the `ArrayVec` and `SmallVec` a
     /// [`GenMapConfig`] can use.
     type Storage: SlotStorage<Item = S>;
