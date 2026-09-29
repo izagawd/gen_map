@@ -1,29 +1,99 @@
-# Changelog
+# gen_map
 
-## 0.3.0 (2026-09-28)
+A customizable generational map that returns a `Key` upon inserting a value. The key can be used to later access or remove the value, and removing a value bumps its slot's generation, so the old key no longer matches.
+The operations for inserting, removing and accessing a value are all O(1).
 
-### Added
+The crate never uses `std`, so it also works on targets that do not have it.
 
-- `SecondaryMap` has been added, and it associates values with the keys of a `GenMap`. It is configurable through the `SecondaryMapConfig` trait.
+```toml
+[dependencies]
+gen_map = "0.3"
+```
 
-### Changed
+## Example
 
-- `Config` has been split into `MapConfig` and `GenMapConfig<S>`.
-- A config can now use a storage that requires trait bounds on its items, since `GenMapConfig<S>` takes the slot type as `S` and its impl can bound `S`.
-- The config of a `GenMap<T, C>` is now bounded by `MapConfigFor<T>`.
-- `DefaultConfig` has been replaced by `DefaultMapConfig`.
-- `KeyLayout` has been replaced by `KeyConfig`, and `SplitRepr` and `PackedRepr` have been removed.
-- `Split` is now `Split<Idx, Gen>`, with both parameters defaulting to `u32`.
-- `Packed` now picks its own index and generation types, and it no longer accepts `usize` as `R`.
-- `Key<K>` now takes a key config instead of a map config. Maps whose configs have the same key config share a key type, so one map accepts another's keys.
-- `Key`'s parameter now defaults to `DefaultKeyConfig` even without the `alloc` feature.
-- `Key::generation` now returns an `Odd`. `Key::from_raw_parts` has been replaced by `Key::from_repr` and `KeyConfig::pack`, and `Key::non_zero_generation` has been removed.
-- `GenMap::reattach` now returns `Result<(), T>`, and `GenMap::detach` now accepts a key whose generation is the largest one its key config can hold.
-- A map no longer uses the largest value of its index type as an index.
-- `GenMap::new` and `GenMap::new_with_config` are no longer `const`.
-- `Slot<T, C>` has become `Slot<G, T, U>`, and it can now be used directly, outside a map. It holds a generation of type `G` together with a `T` while the generation is odd, or a `U` while it is even.
-- `SlotStorage` and `ReserveStorage` now have no type parameter. `SlotStorage::EMPTY` has been replaced by `SlotStorage::empty`, and `SlotStorage::ensure_room` now takes the number of items to make room for.
-- `SlotStorage` no longer requires `IntoIterator`, and `GenMap` implements `IntoIterator` only when its storage does.
-- `KeyPiece` is now sealed.
-- `GenMap` and its slots now use less memory.
-- The docs on docs.rs now show which items need which feature.
+```rust
+use gen_map::GenMap;
+
+let mut map = GenMap::new();
+let a = map.insert("a");
+let b = map.insert("b");
+
+assert_eq!(map[a], "a");
+assert_eq!(map[b], "b");
+assert_eq!(map.remove(a), Some("a"));
+assert!(map.get(a).is_none()); // A removed key never matches again.
+
+let c = map.insert("c"); // This takes the slot `a` had, but under a new key.
+assert_ne!(a, c);
+
+for (key, value) in &map {
+    println!("{key:?} = {value}");
+}
+```
+
+## Configuring the map
+
+A `KeyConfig` picks the key's index and generation types and how the key
+stores them. `Split<Idx, Gen>` keeps the two as separate fields, and
+`Packed<R, GEN_BITS>` puts them in the bits of one integer and picks the
+smallest types that can hold them. A `MapConfig` is used to decide the key
+config, and a `GenMapConfig` is used to decide what happens when a slot's
+generation runs out and where the slots live.
+
+```rust
+use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Packed};
+
+/// Maps with this config hand out four byte keys with 24 bits of index and 8
+/// bits of generation.
+struct CompactConfig;
+
+impl MapConfig for CompactConfig {
+    type KeyConfig = Packed<u32, 8>;
+}
+
+// `S` is the slot the map keeps each value in.
+impl<S: GenSlotItem> GenMapConfig<S> for CompactConfig {
+    type Storage = Vec<S>;
+}
+
+let mut map = GenMap::<&str, CompactConfig>::new_with_config();
+let key = map.insert("a");
+assert_eq!(core::mem::size_of_val(&key), 4);
+```
+
+The [documentation](https://docs.rs/gen_map) covers the rest, such as key
+configs, storage, what happens when a generation runs out, and limiting which
+maps can use a config.
+
+## Secondary maps
+
+A `SecondaryMap` stores values under the keys a `GenMap` hands out, to add
+data to a `GenMap`'s values without changing their type. Like a `GenMap`, it
+can be configured, and the [documentation](https://docs.rs/gen_map) covers
+how it can be configured.
+
+```rust
+use gen_map::{GenMap, SecondaryMap};
+
+let mut people = GenMap::new();
+let mut ages = SecondaryMap::new();
+let alice = people.insert("Alice");
+ages.insert(alice, 30).unwrap();
+assert_eq!(ages[alice], 30);
+```
+
+## Cargo features
+
+- `alloc` is on by default. It adds the `Vec` storage and the default
+  config. Turn default features off and use `arrayvec` instead to run
+  without an allocator.
+- `arrayvec` adds `ArrayVec` storage for a `GenMap` or a `SecondaryMap`. An
+  `ArrayVec` has a fixed capacity and never allocates.
+- `smallvec` adds `SmallVec` storage for a `GenMap` or a `SecondaryMap`. A
+  `SmallVec` keeps a few slots inline before it allocates. The feature uses a
+  beta of smallvec 2.0, so it is not covered by semver.
+
+## License
+
+gen_map is released under the MIT license.
