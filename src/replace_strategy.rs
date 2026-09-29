@@ -38,7 +38,8 @@ use crate::parity::Odd;
 pub trait ReplaceStrategy<K: KeyConfig> {
     /// Returns `true` if a value inserted under a key with generation `key`
     /// replaces a value that was inserted under generation `slot`. The two
-    /// are never equal.
+    /// generations are never equal, because the map only asks the strategy when
+    /// they differ.
     fn replaces(slot: Odd<K::Gen>, key: Odd<K::Gen>) -> bool;
 }
 
@@ -47,11 +48,12 @@ pub trait ReplaceStrategy<K: KeyConfig> {
 /// [`ReplaceStrategy`](crate::SecondaryMapConfig::ReplaceStrategy) of
 /// [`DefaultMapConfig`](crate::DefaultMapConfig).
 ///
-/// This is exact as long as the map that hands out the keys never wraps a
-/// generation, which is the default, since
-/// [`WRAP_ON_OVERFLOW`](crate::GenMapConfig::WRAP_ON_OVERFLOW) is `false`.
-/// After a wrap, a newer key can have a smaller generation than the slot,
-/// and its insert is refused.
+/// A larger generation only means a newer key while the `GenMap` that hands out
+/// the keys never wraps a generation. A `GenMap` only wraps generations when
+/// [`WRAP_ON_OVERFLOW`](crate::GenMapConfig::WRAP_ON_OVERFLOW) is `true` in its
+/// config, which is not the default. Once a slot's generation wraps back to
+/// zero, a newer key can have a smaller generation than the key of the value in
+/// the slot, and the `SecondaryMap` refuses the newer key's insert.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct NewerWins;
 

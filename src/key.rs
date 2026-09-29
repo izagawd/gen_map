@@ -24,10 +24,11 @@ impl<K: KeyConfig> Key<K> {
         self.repr.generation()
     }
 
-    /// Returns `true` if the key's generation is the largest one its key
-    /// config can hold. If the map still has the key's value and the result
-    /// of this method is true, removing the value wraps or retires its slot,
-    /// as the map's config says.
+    /// Returns `true` if the key's generation is the largest one its key config
+    /// can hold. The slot's generation cannot go up past that one, so removing
+    /// the key's value either wraps the slot's generation back to zero or
+    /// retires the slot, depending on
+    /// [`WRAP_ON_OVERFLOW`](crate::GenMapConfig::WRAP_ON_OVERFLOW).
     #[inline]
     pub fn is_max_generation(&self) -> bool {
         self.generation() == K::max_generation()

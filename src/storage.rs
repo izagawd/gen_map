@@ -10,19 +10,21 @@ use core::fmt;
 /// [`SecondaryMapConfig`](crate::SecondaryMapConfig) chooses one with its
 /// `Storage` type.
 ///
-/// A storage that can also grow on request implements [`ReserveStorage`]
-/// too. A storage that implements `IntoIterator` gives either map an owning
-/// `into_iter`, which implements `DoubleEndedIterator` when the storage's
-/// iterator implements both `DoubleEndedIterator` and `ExactSizeIterator`.
+/// A storage that can also grow on request implements [`ReserveStorage`] too. A
+/// storage that implements `IntoIterator` gives either map an owning
+/// `into_iter`. The iterator that `into_iter` returns implements
+/// `DoubleEndedIterator` when the storage's iterator implements both
+/// `DoubleEndedIterator` and `ExactSizeIterator`.
 ///
 /// # Safety
 ///
 /// A `GenMap` reads slots without bounds checks at positions it has already
 /// checked against [`len`](Self::len), and it keeps a free list of positions
-/// that it expects to still be there. A `SecondaryMap` builds each value's
-/// key from the position of its slot without checking that the position fits
-/// in the key, and it reads a slot it has just pushed without a bounds check.
-/// So a storage must behave like a `Vec` in the ways listed below.
+/// whose slots it expects to find unchanged when it reuses them. A
+/// `SecondaryMap` builds each value's key from the position of its slot without
+/// checking that the position fits in the key, and it reads a slot it has just
+/// pushed without a bounds check. So a storage must behave like a `Vec` in the
+/// ways listed below.
 ///
 /// - [`as_slice`](Self::as_slice) and [`as_mut_slice`](Self::as_mut_slice)
 ///   must return exactly the items pushed with [`try_push`](Self::try_push)
@@ -68,10 +70,11 @@ pub unsafe trait SlotStorage {
     /// total if it cannot grow.
     fn capacity(&self) -> usize;
 
-    /// Every item, in the order they were pushed.
+    /// Returns every item as a slice, in the order the items were pushed.
     fn as_slice(&self) -> &[Self::Item];
 
-    /// Every item mutably, in the order they were pushed.
+    /// Returns every item as a mutable slice, in the order the items were
+    /// pushed.
     fn as_mut_slice(&mut self) -> &mut [Self::Item];
 
     /// Makes sure the next `additional` calls of

@@ -26,15 +26,16 @@ pub type MapGen<C> = <MapKeyConfig<C> as KeyConfig>::Gen;
 pub(crate) type Idx<C> = MapIdx<C>;
 pub(crate) type Gen<C> = MapGen<C>;
 
-/// The [`Slot`] a [`GenMap<T, C>`](GenMap) keeps each value in. While a
-/// slot is on the free list, its `U` is the index of the next free slot, or
-/// the largest value of the index type if it is the last free slot. No slot
-/// ever has that index, so it can't be mistaken for the index of a real
-/// slot. A retired slot's `U` is also the largest value of the index type,
-/// and a detached slot's `U` is its own index.
+/// The [`Slot`] a [`GenMap<T, C>`](GenMap) keeps each value in. While a slot is
+/// on the free list, its `U` is the index of the next free slot, or the largest
+/// value of the index type if it is the last free slot. No slot ever has that
+/// index, so it can't be mistaken for the index of a real slot. A retired
+/// slot's `U` is also the largest value of the index type. A detached slot's
+/// `U` is its own index, which is how [`GenMap::reattach`] tells a detached
+/// slot apart from a free or retired one.
 pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 
-/// The key of the value in the slot at `idx` whose generation is
+/// Returns the key of the value in the slot at `idx`, given the slot's current
 /// `generation`.
 ///
 /// # Safety
@@ -93,10 +94,11 @@ fn max_idx<C: MapConfig>() -> Idx<C> {
     <MapKeyConfig<C> as KeyConfig>::max_idx()
 }
 
-/// The largest index a slot can have. It is the largest index a key of `C`
-/// can hold, except that no slot ever gets the largest value of the index
-/// type. That value is [`no_slot`], and leaving it out also keeps the number
-/// of slots, and so the number of values, within the index type.
+/// The largest index a slot can have. It is the largest index a key of `C` can
+/// hold, except that no slot ever gets the largest value of the index type.
+/// That value is [`no_slot`]. Leaving it out also caps the number of slots, and
+/// so the number of values, at the largest value of the index type, so the map
+/// can count its values in that type.
 #[inline]
 fn max_slot_idx<C: MapConfig>() -> Idx<C> {
     let max = max_idx::<C>();
@@ -115,9 +117,11 @@ fn no_slot<C: MapConfig>() -> Idx<C> {
     Idx::<C>::MAX
 }
 
-/// Adds one to a map's `len`, which is below the largest value of the index
-/// type beforehand, because every value has a slot of its own and no slot has
-/// that index.
+/// Adds one to a map's `len` when the map adds a value. No slot has the largest
+/// value of the index type as its index, so a map has at most as many slots as
+/// that largest value. Every value has a slot of its own, and the new value
+/// already has one of them, so `len` is below that largest value beforehand and
+/// the add cannot overflow.
 #[inline]
 pub(crate) fn increment_len<I: KeyPiece>(len: &mut I) {
     debug_assert!(
@@ -263,9 +267,9 @@ pub struct GenMap<
     /// The index of the first slot on the free list, or `no_slot` if no slot
     /// is free.
     next_free: Idx<C>,
-    /// The number of values. No slot has the largest value of the index
-    /// type as its index, so there are at most that many slots, and the
-    /// count always fits.
+    /// The number of values. No slot has the largest value of the index type as
+    /// its index, so there are at most as many slots as that largest value, and
+    /// the count of values always fits in the index type.
     len: Idx<C>,
 }
 
@@ -274,9 +278,11 @@ pub struct GenMap<
 impl<T> GenMap<T> {
     /// Creates an empty map with the [`DefaultMapConfig`].
     ///
-    /// Use [`new_with_config`](Self::new_with_config) for any other config,
-    /// since Rust does not use a default type parameter when it infers
-    /// types.
+    /// This method only exists for the default config, so that `GenMap::new()`
+    /// compiles without a type annotation. Rust does not fall back to a default
+    /// type parameter when it infers types, so a `new` for every config would
+    /// leave the config unknown. Use [`new_with_config`](Self::new_with_config)
+    /// for any other config.
     #[inline]
     #[must_use]
     pub fn new() -> Self {
@@ -320,12 +326,12 @@ where
         self.slots.reserve(additional);
     }
 
-    /// The fallible form of [`reserve`](Self::reserve). After `Ok`, the next
-    /// `additional` inserts cannot fail for lack of storage.
+    /// The fallible form of [`reserve`](Self::reserve). After it returns `Ok`,
+    /// the next `additional` inserts cannot fail for lack of storage.
     ///
     /// # Errors
     ///
-    /// Returns what the storage says when it cannot make the room.
+    /// Returns the storage's error if the storage cannot make the room.
     #[inline]
     pub fn try_reserve(&mut self, additional: usize) -> Result<(), StorageError<T, C>> {
         self.slots.try_reserve(additional)
@@ -421,7 +427,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
             .get_odd_mut(key.generation())
     }
 
-    /// [`get`](Self::get) without the bounds and generation checks.
+    /// Returns a reference to the value corresponding to `key`, like
+    /// [`get`](Self::get), but without checking that the key's slot exists or
+    /// that the slot's generation matches the key's.
     ///
     /// # Safety
     ///
@@ -441,7 +449,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         }
     }
 
-    /// [`get_mut`](Self::get_mut) without the bounds and generation checks.
+    /// Returns a mutable reference to the value corresponding to `key`, like
+    /// [`get_mut`](Self::get_mut), but without checking that the key's slot
+    /// exists or that the slot's generation matches the key's.
     ///
     /// # Safety
     ///
@@ -471,7 +481,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         }
     }
 
-    /// [`key_at`](Self::key_at) without the bounds and occupancy checks.
+    /// Returns the key of the value in the slot at `idx`, like
+    /// [`key_at`](Self::key_at), but without checking that there is a slot at
+    /// `idx` or that it holds a value.
     ///
     /// # Safety
     ///
@@ -525,7 +537,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         }
     }
 
-    /// [`get_at`](Self::get_at) without the bounds and occupancy checks.
+    /// Returns the key and a reference to the value in the slot at `idx`, like
+    /// [`get_at`](Self::get_at), but without checking that there is a slot at
+    /// `idx` or that it holds a value.
     ///
     /// # Safety
     ///
@@ -546,8 +560,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         }
     }
 
-    /// [`get_at_mut`](Self::get_at_mut) without the bounds and occupancy
-    /// checks.
+    /// Returns the key and a mutable reference to the value in the slot at
+    /// `idx`, like [`get_at_mut`](Self::get_at_mut), but without checking that
+    /// there is a slot at `idx` or that it holds a value.
     ///
     /// # Safety
     ///
@@ -580,7 +595,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         Some(self.slots.as_slice().get(idx.into_usize()?)?.generation())
     }
 
-    /// [`generation_at`](Self::generation_at) without the bounds check.
+    /// Returns the generation of the slot at `idx`, like
+    /// [`generation_at`](Self::generation_at), but without checking that there
+    /// is a slot at `idx`.
     ///
     /// # Safety
     ///
@@ -656,8 +673,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         Ok(unsafe { self.get_disjoint_mut_at_unchecked(idxs) })
     }
 
-    /// [`get_disjoint_mut_at`](Self::get_disjoint_mut_at) without any of the
-    /// checks.
+    /// Returns the key and a mutable reference to the value in the slot at each
+    /// index, like [`get_disjoint_mut_at`](Self::get_disjoint_mut_at), but
+    /// without any of its checks.
     ///
     /// # Safety
     ///
@@ -739,7 +757,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         Ok(unsafe { self.get_disjoint_mut_unchecked(keys) })
     }
 
-    /// [`get_disjoint_mut`](Self::get_disjoint_mut) without any of the
+    /// Returns a mutable reference to the value of each key, like
+    /// [`get_disjoint_mut`](Self::get_disjoint_mut), but without any of its
     /// checks.
     ///
     /// # Safety
@@ -891,9 +910,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     }
 
     /// Hands out the slot the next insert would use, without writing to it.
-    /// [`VacantEntry::key`] is the key the value will get and
-    /// [`VacantEntry::insert`] puts it there. Dropping the entry inserts
-    /// nothing.
+    /// [`VacantEntry::key`] is the key the value will get, and
+    /// [`VacantEntry::insert`] puts the value in the slot. Dropping the entry
+    /// inserts nothing.
     ///
     /// # Errors
     ///
@@ -1006,7 +1025,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// ```
     /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Packed};
     ///
-    /// /// Sixteen slots whose generations wrap after eight values.
+    /// /// Maps with this config have at most sixteen slots, and a slot's
+    /// /// generation wraps after the slot has held eight values.
     /// struct Wrapping;
     ///
     /// impl MapConfig for Wrapping {
@@ -1033,8 +1053,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
         let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
         slot.get_odd(key.generation())?;
         decrement_len(&mut self.len);
-        // A generation of zero and a link to no slot is what a retired slot
-        // looks like, and nothing puts it back on the free list.
+        // A retired slot has generation zero and `no_slot` as its link. This
+        // method does not put the slot on the free list, so no insert can use
+        // it again.
         // SAFETY: the slot's generation matched the key's, which is odd.
         Some(unsafe { slot.replace_odd_unchecked(Even::ZERO, no_slot::<C>()) })
     }
@@ -1081,9 +1102,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// the free list, so no insert uses it.
     ///
     /// While the slot is detached, its generation is one more than the key's
-    /// generation, or zero if the key's generation is the largest value of
-    /// the generation type. No key matches that generation, and `reattach`
-    /// gives the slot the key's generation back.
+    /// generation, or zero if the key's generation is the largest value of the
+    /// generation type. That generation is even, so no key matches it, and
+    /// `reattach` gives the slot the key's generation back.
     ///
     /// [`clear`](Self::clear) and [`retain`](Self::retain) leave a detached
     /// slot as it is, since it holds no value. [`reset`](Self::reset) removes
@@ -1100,7 +1121,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     ///
     /// let value = map.detach(key).unwrap();
     /// assert!(map.get(key).is_none());
-    /// let other = map.insert(2); // Does not take the detached slot.
+    /// // This insert does not take the detached slot.
+    /// let other = map.insert(2);
     /// assert_ne!(other.idx(), key.idx());
     ///
     /// map.reattach(key, value + 10).unwrap();
@@ -1172,16 +1194,17 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
 
     /// Removes every value and every slot, keeping the allocation.
     ///
-    /// Generations start over, so unlike [`clear`](Self::clear) this lets a
-    /// key from before the call match a value inserted after it.
-    /// Once this method is called, the map behaves like a new map created
-    /// with the same [`capacity`](Self::capacity).
+    /// The slots that the map adds afterwards start again at generation zero,
+    /// so unlike [`clear`](Self::clear), this method lets a key from before the
+    /// call match a value inserted after it. Once this method is called, the
+    /// map behaves like a new map created with the same
+    /// [`capacity`](Self::capacity).
     #[inline]
     pub fn reset(&mut self) {
-        // Reset the bookkeeping first. If a value's `drop` panics inside
-        // `clear`, the storage is already empty, and a free list or `len`
-        // that still described the old slots would let the next insert read
-        // past the end of the storage.
+        // The free list and `len` are reset before the storage drops the slots.
+        // If a value's `drop` panics while the storage clears, the storage can
+        // already be empty, and a free list or `len` that still described the
+        // old slots would let the next insert read past the end of the storage.
         self.next_free = no_slot::<C>();
         self.len = Idx::<C>::ZERO;
         self.slots.clear();
@@ -1581,11 +1604,13 @@ impl<T, C: MapConfigFor<T>> DoubleEndedIterator for ValuesMut<'_, T, C> {
 impl<T, C: MapConfigFor<T>> ExactSizeIterator for ValuesMut<'_, T, C> {}
 impl<T, C: MapConfigFor<T>> FusedIterator for ValuesMut<'_, T, C> {}
 
-/// Owning iterator over `(key, value)` pairs. It is created by consuming a
-/// map with `into_iter`, which a map only has when its storage implements
+/// Owning iterator over `(key, value)` pairs. It is created by consuming a map
+/// with `into_iter`, which a map only has when its storage implements
 /// `IntoIterator`. It implements `DoubleEndedIterator`, which gives it
 /// `next_back` and `rev`, only when the storage's iterator implements both
-/// `DoubleEndedIterator` and `ExactSizeIterator`.
+/// `DoubleEndedIterator` and `ExactSizeIterator`, because it needs the length
+/// of the storage's iterator to work out the position of a slot taken from the
+/// back.
 pub struct IntoIter<T, C: MapConfigFor<T>>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,
@@ -1621,11 +1646,11 @@ where
     }
 }
 
-// `next_back` calls `Enumerate::next_back`, which needs the storage's
-// iterator to implement `ExactSizeIterator` as well as
-// `DoubleEndedIterator`. When it takes the last slot, it works out that
-// slot's position as the number of slots already taken from the front plus
-// `len()`, the number of slots still left.
+// `next_back` calls `Enumerate::next_back`, which needs the storage's iterator
+// to implement `ExactSizeIterator` as well as `DoubleEndedIterator`.
+// `Enumerate::next_back` takes the last slot and works out its position as the
+// number of slots already taken from the front plus `len()`, which is the
+// number of slots still left once that slot is taken.
 impl<T, C: MapConfigFor<T>> DoubleEndedIterator for IntoIter<T, C>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,
@@ -1694,7 +1719,7 @@ impl<'a, T, C: MapConfigFor<T>> IntoIterator for &'a mut GenMap<T, C> {
 }
 
 /// Draining iterator over `(key, value)` pairs. It is created using
-/// [`GenMap::drain`]. Dropping it removes whatever has not been yielded yet.
+/// [`GenMap::drain`]. Dropping it removes the values it has not yielded yet.
 pub struct Drain<'a, T, C: MapConfigFor<T>> {
     map: &'a mut GenMap<T, C>,
     position: usize,

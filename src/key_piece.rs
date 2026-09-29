@@ -2,13 +2,14 @@ use core::fmt::Debug;
 use core::hash::Hash;
 use core::num::NonZero;
 
-// The map reads a union field based on what `is_odd` says about a slot's
-// generation, so the map's unsafe code relies on every method behaving
+// A `Slot` reads one of its union fields based on what `is_odd` says about its
+// generation, so the crate's unsafe code relies on every method behaving
 // exactly like it does for the standard unsigned integers. In particular,
-// `into_non_zero` returns `Some` for every value except `ZERO`.
-// `from_usize`, `into_usize` and `from_u128` return `None` for a value that
-// does not fit, and converting a value that fits there and back gives the
-// same value. The largest value is odd.
+// `into_non_zero` returns `Some` for every value except `ZERO`. `from_usize`,
+// `into_usize` and `from_u128` return `None` for a value that does not fit in
+// the target type, and converting a value to a type that can hold it and back
+// gives the same value. The largest value is odd, which `Even::next` and
+// `Split`'s `max_generation` rely on.
 
 /// An unsigned integer that can be the index or the generation of a
 /// [`Key`](crate::Key). It is implemented for `u8`, `u16`, `u32`, `u64`,
@@ -52,7 +53,8 @@ pub trait KeyPiece:
     /// Converts the value to a `usize`, or returns `None` if it does not fit.
     fn into_usize(self) -> Option<usize>;
 
-    /// [`into_usize`](Self::into_usize) for a value that is known to fit.
+    /// Converts the value to a `usize`, like [`into_usize`](Self::into_usize),
+    /// but without checking that it fits.
     ///
     /// # Safety
     ///
@@ -63,7 +65,8 @@ pub trait KeyPiece:
     /// Converts a `usize` to this type, or returns `None` if it does not fit.
     fn from_usize(v: usize) -> Option<Self>;
 
-    /// [`from_usize`](Self::from_usize) for a value that is known to fit.
+    /// Converts a `usize` to this type, like [`from_usize`](Self::from_usize),
+    /// but without checking that it fits.
     ///
     /// # Safety
     ///
@@ -75,8 +78,9 @@ pub trait KeyPiece:
     /// zero.
     fn into_non_zero(self) -> Option<Self::NonZero>;
 
-    /// [`into_non_zero`](Self::into_non_zero) for a value that is known not
-    /// to be zero.
+    /// Converts the value to its `NonZero` form, like
+    /// [`into_non_zero`](Self::into_non_zero), but without checking that it is
+    /// not zero.
     ///
     /// # Safety
     ///
@@ -92,7 +96,8 @@ pub trait KeyPiece:
     /// Converts a `u128` to this type, or returns `None` if it does not fit.
     fn from_u128(v: u128) -> Option<Self>;
 
-    /// [`from_u128`](Self::from_u128) for a value that is known to fit.
+    /// Converts a `u128` to this type, like [`from_u128`](Self::from_u128), but
+    /// without checking that it fits.
     ///
     /// # Safety
     ///
@@ -112,9 +117,10 @@ macro_rules! impl_key_piece {
         $(
             impl sealed::Sealed for $t {}
 
-            // These are the standard unsigned integers the trait describes.
-            // Every method forwards to the integer's own operation or to an
-            // exact cast, and the largest value of every unsigned integer is
+            // This macro only implements the trait for the standard unsigned
+            // integers, which the contract at the top of this file is written
+            // for. Every method forwards to the integer's own operation or to
+            // an exact cast, and the largest value of every unsigned integer is
             // odd.
             impl KeyPiece for $t {
                 type NonZero = NonZero<$t>;

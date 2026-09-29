@@ -74,9 +74,9 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// Each value sits in a slot at its key's index, together with the key's
 /// generation, and only a key with that index and generation matches it.
 /// Removing a key's value from the `GenMap` does not remove the key's value
-/// from this map. Here the key keeps matching its value until the value is
-/// removed, or replaced by an insert under a key with the same index and a
-/// different generation. `C`'s
+/// from this map. The key keeps matching its value in this map until the value
+/// is removed from this map, or until an insert under a key with the same index
+/// and a different generation replaces it. `C`'s
 /// [`ReplaceStrategy`](crate::SecondaryMapConfig::ReplaceStrategy) decides
 /// whether such an insert replaces the value.
 ///
@@ -116,8 +116,9 @@ pub struct SecondaryMap<
     // of this.
     slots: Slots<T, C>,
     // The number of values. `insert` rejects a key whose index is the largest
-    // value of the index type, so no slot has that index, there are at most
-    // that many slots, and the count always fits.
+    // value of the index type, so no slot has that index, there are at most as
+    // many slots as that largest value, and the count of values always fits in
+    // the index type.
     len: MapIdx<C>,
 }
 
@@ -126,9 +127,11 @@ pub struct SecondaryMap<
 impl<T> SecondaryMap<T> {
     /// Creates an empty map with the [`DefaultMapConfig`].
     ///
-    /// Use [`new_with_config`](Self::new_with_config) for any other config,
-    /// since Rust does not use a default type parameter when it infers
-    /// types.
+    /// This method only exists for the default config, so that
+    /// `SecondaryMap::new()` compiles without a type annotation. Rust does not
+    /// fall back to a default type parameter when it infers types, so a `new`
+    /// for every config would leave the config unknown. Use
+    /// [`new_with_config`](Self::new_with_config) for any other config.
     #[inline]
     #[must_use]
     pub fn new() -> Self {
@@ -216,7 +219,9 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
             .get_odd_mut(key.generation())
     }
 
-    /// [`get`](Self::get) without the bounds and generation checks.
+    /// Returns a reference to the value stored under `key`, like
+    /// [`get`](Self::get), but without checking that the key's slot exists or
+    /// that the slot's generation matches the key's.
     ///
     /// # Safety
     ///
@@ -236,7 +241,9 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         }
     }
 
-    /// [`get_mut`](Self::get_mut) without the bounds and generation checks.
+    /// Returns a mutable reference to the value stored under `key`, like
+    /// [`get_mut`](Self::get_mut), but without checking that the key's slot
+    /// exists or that the slot's generation matches the key's.
     ///
     /// # Safety
     ///
@@ -265,7 +272,9 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         Some(unsafe { key_from_parts_unchecked::<C>(position, generation) })
     }
 
-    /// [`key_at`](Self::key_at) without the bounds and occupancy checks.
+    /// Returns the key of the value in the slot at `idx`, like
+    /// [`key_at`](Self::key_at), but without checking that there is a slot at
+    /// `idx` or that it holds a value.
     ///
     /// # Safety
     ///
@@ -312,7 +321,9 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         Some((key, value))
     }
 
-    /// [`get_at`](Self::get_at) without the bounds and occupancy checks.
+    /// Returns the key and a reference to the value in the slot at `idx`, like
+    /// [`get_at`](Self::get_at), but without checking that there is a slot at
+    /// `idx` or that it holds a value.
     ///
     /// # Safety
     ///
@@ -334,8 +345,9 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         }
     }
 
-    /// [`get_at_mut`](Self::get_at_mut) without the bounds and occupancy
-    /// checks.
+    /// Returns the key and a mutable reference to the value in the slot at
+    /// `idx`, like [`get_at_mut`](Self::get_at_mut), but without checking that
+    /// there is a slot at `idx` or that it holds a value.
     ///
     /// # Safety
     ///
@@ -366,7 +378,9 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         Some(self.slots.as_slice().get(idx.into_usize()?)?.generation())
     }
 
-    /// [`generation_at`](Self::generation_at) without the bounds check.
+    /// Returns the generation of the slot at `idx`, like
+    /// [`generation_at`](Self::generation_at), but without checking that there
+    /// is a slot at `idx`.
     ///
     /// # Safety
     ///
@@ -445,8 +459,9 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         Ok(unsafe { self.get_disjoint_mut_at_unchecked(idxs) })
     }
 
-    /// [`get_disjoint_mut_at`](Self::get_disjoint_mut_at) without any of the
-    /// checks.
+    /// Returns the key and a mutable reference to the value in the slot at each
+    /// index, like [`get_disjoint_mut_at`](Self::get_disjoint_mut_at), but
+    /// without any of its checks.
     ///
     /// # Safety
     ///
@@ -533,7 +548,8 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
         Ok(unsafe { self.get_disjoint_mut_unchecked(keys) })
     }
 
-    /// [`get_disjoint_mut`](Self::get_disjoint_mut) without any of the
+    /// Returns a mutable reference to the value of each key, like
+    /// [`get_disjoint_mut`](Self::get_disjoint_mut), but without any of its
     /// checks.
     ///
     /// # Safety
@@ -605,9 +621,10 @@ impl<T, C: SecondaryMapConfigFor<T>> SecondaryMap<T, C> {
     /// assert_eq!(ages[bob], 25);
     /// ```
     pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
-        // No `GenMap` gives a slot the largest index, so only a hand-built
-        // key can have it. Rejecting it keeps the slots, and so the count of
-        // values, within the index type.
+        // No `GenMap` gives a slot the largest value of the index type as its
+        // index, so only a hand-built key can have that index. Rejecting it
+        // caps the number of slots, and so the count of values, at that largest
+        // value, so the count fits in the index type.
         if key.idx() == MapIdx::<C>::MAX {
             return Err(SecondaryInsertError::IndexReserved(value));
         }
@@ -821,12 +838,12 @@ where
         self.slots.reserve(additional);
     }
 
-    /// The fallible form of [`reserve`](Self::reserve). After `Ok`, the map
-    /// can add `additional` more slots without running out of storage.
+    /// The fallible form of [`reserve`](Self::reserve). After it returns `Ok`,
+    /// the map can add `additional` more slots without running out of storage.
     ///
     /// # Errors
     ///
-    /// Returns what the storage says when it cannot make the room.
+    /// Returns the storage's error if the storage cannot make the room.
     #[inline]
     pub fn try_reserve(&mut self, additional: usize) -> Result<(), SecondaryStorageError<T, C>> {
         self.slots.try_reserve(additional)

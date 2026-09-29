@@ -21,13 +21,15 @@ use crate::parity::Odd;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Split<Idx: KeyPiece = u32, Gen: KeyPiece = u32> {
     idx: Idx,
-    /// An odd generation is never zero, so storing it as an [`Odd`] gives
+    /// An odd generation is never zero, and an [`Odd`] stores it as a
+    /// `NonZero`, which lets `Option` use zero to represent `None` and gives
     /// `Option<Key>` the size of `Key`.
     generation: Odd<Gen>,
 }
 
-// SAFETY: the two fields are stored and read back as they are. The fields
-// are private, so a `Split` only comes from `pack_unchecked`.
+// SAFETY: `pack_unchecked` stores the index and the generation in two fields,
+// and `idx` and `generation` return those fields unchanged. The fields are
+// private, so a `Split` only comes from `pack_unchecked`.
 unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
     type Idx = Idx;
     type Gen = Gen;
@@ -65,8 +67,9 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// the bits above them hold the index.
 ///
 /// `R` can be `u8`, `u16`, `u32`, `u64` or `u128`. It cannot be `usize`,
-/// because the number of bits in a `usize` depends on the target. To get
-/// keys the size of a pointer, pick `u32` or `u64` for `R` with
+/// because `Packed` picks its index and generation types from the number of
+/// bits in `R`, and the number of bits in a `usize` depends on the target. To
+/// get keys the size of a pointer, pick `u32` or `u64` for `R` with
 /// `cfg(target_pointer_width)`. `GEN_BITS` must be at least one and less than
 /// the bits of `R`. A `Packed` that breaks these rules does not implement
 /// [`KeyConfig`], so a map config cannot use it.
@@ -85,10 +88,12 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// The largest index is `(1 << (R::BITS - GEN_BITS)) - 1` and the largest
 /// generation is `(1 << GEN_BITS) - 1`. When the index bits fill the whole
 /// index type, as in `Packed<u32, 16>`, the largest index is also the largest
-/// value of that type. No slot ever gets that index, so a map can hold one
-/// slot fewer than the index bits could address. A slot whose generation
-/// reaches the largest one retires or wraps, as
-/// [`WRAP_ON_OVERFLOW`](crate::GenMapConfig::WRAP_ON_OVERFLOW) says.
+/// value of that type. No map ever gives a slot that index, as the
+/// [crate documentation](crate#how-it-works) explains, so such a map can hold
+/// one slot fewer than the index bits could address. When a value is removed
+/// from a slot that has the largest generation, the slot retires or its
+/// generation wraps back to zero, as
+/// [`WRAP_ON_OVERFLOW`](crate::GenMapConfig::WRAP_ON_OVERFLOW) decides.
 ///
 /// # Examples
 ///

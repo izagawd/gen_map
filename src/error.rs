@@ -157,8 +157,8 @@ impl<T, S: fmt::Display> fmt::Display for SecondaryInsertError<T, S> {
 
 /// Why [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key)
 /// could not insert. The map can be full before the closure runs, or the
-/// closure can refuse to make a value, and this tells the two apart. `E` is
-/// the closure's error and `S` is the map's
+/// closure can refuse to make a value, and the variant says which of the two
+/// happened. `E` is the closure's error and `S` is the map's
 /// [`StorageError`](crate::StorageError).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InsertWithError<E, S> {

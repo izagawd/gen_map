@@ -407,8 +407,8 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// The slot a [`GenMap`](crate::GenMap) keeps each of its values in, as a
-/// [`GenMapConfig`](crate::GenMapConfig) sees it.
+/// Describes the slot a [`GenMap`](crate::GenMap) keeps each of its values in,
+/// for use as a bound in a [`GenMapConfig`](crate::GenMapConfig) impl.
 ///
 /// Every value in a map sits in a slot, together with the slot's
 /// generation. The slots of a `GenMap<T, C>` are
@@ -418,8 +418,8 @@ mod sealed {
 /// is the slot and `S::Value` is the type of the value in it, so for a
 /// `GenMap<T, C>` it is `T`.
 ///
-/// Only [`Slot`] implements `GenSlotItem`, and it cannot be implemented outside
-/// this crate.
+/// Only [`Slot`] implements `GenSlotItem`. The trait is sealed, so no type
+/// outside this crate can implement it.
 ///
 /// # Bounds on the value and the slot
 ///
@@ -554,11 +554,14 @@ impl<G: KeyPiece, T, U> GenSlotItem for Slot<G, T, U> {
     type Value = T;
 }
 
-/// The slot a [`SecondaryMap`](crate::SecondaryMap) keeps each of its values
-/// in, as a [`SecondaryMapConfig`](crate::SecondaryMapConfig) sees it.
+/// Describes the slot a [`SecondaryMap`](crate::SecondaryMap) keeps each of its
+/// values in, for use as a bound in a
+/// [`SecondaryMapConfig`](crate::SecondaryMapConfig) impl. Inside
+/// `impl<S: SecondarySlotItem> SecondaryMapConfig<S> for YourConfig`, `S` is
+/// the slot and `S::Value` is the type of the value in it.
 ///
-/// Only [`SecondarySlot`] implements it, and it cannot be implemented
-/// outside this crate.
+/// Only [`SecondarySlot`] implements `SecondarySlotItem`. The trait is sealed,
+/// so no type outside this crate can implement it.
 pub trait SecondarySlotItem: sealed::Sealed {
     /// The type of the value in the slot. For the slots of a
     /// `SecondaryMap<T, C>`, it is `T`.
