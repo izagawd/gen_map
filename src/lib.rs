@@ -1,7 +1,7 @@
-//! A configurable generational map.
+//! [`GenMap`] is a configurable generational map that stores each value in a slot
+//! and hands out a [`Key`] that points at that slot.
 //!
-//! [`GenMap`] stores each value in a slot and hands out a [`Key`] that points
-//! at that slot. When a value is removed, the map frees its slot and may reuse
+//! When a value is removed, the map frees its slot and may reuse
 //! that slot for a value inserted later. The key of the removed value stops
 //! matching the slot when the value is removed, so it does not match the value
 //! the map later puts in that slot either. That makes keys safe to hold on to
@@ -39,6 +39,43 @@
 //! // first slot, so it comes before "b".
 //! let pairs: Vec<_> = map.iter().collect();
 //! assert_eq!(pairs, [(c, &"c"), (b, &"b")]);
+//! ```
+//!
+//! A [`SecondaryMap`] stores values under the keys a [`GenMap`] hands out.
+//!
+//! ```
+//! use gen_map::{GenMap, SecondaryMap};
+//!
+//! let mut people = GenMap::new();
+//! let mut ages = SecondaryMap::new();
+//! let alice = people.insert("Alice");
+//! ages.insert(alice, 30).unwrap();
+//! assert_eq!(ages[alice], 30);
+//! ```
+//!
+//! A config decides the size of a map's keys and the collection the map keeps
+//! its slots in.
+//!
+//! ```
+//! use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
+//!
+//! /// Maps with this config hand out keys with a `u8` index and a `u8`
+//! /// generation, so each key is two bytes. A map with this config never gives
+//! /// a slot the index `u8::MAX`, so it holds at most 255 slots.
+//! struct Tiny;
+//!
+//! impl MapConfig for Tiny {
+//!     type KeyConfig = Split<u8, u8>;
+//! }
+//!
+//! impl<S: GenSlotItem> GenMapConfig<S> for Tiny {
+//!     type Storage = Vec<S>;
+//! }
+//!
+//! let mut map = GenMap::<u64, Tiny>::new_with_config();
+//! let key = map.insert(7);
+//! assert_eq!(core::mem::size_of_val(&key), 2);
+//! assert_eq!(map[key], 7);
 //! ```
 //!
 //! # How it works
@@ -94,28 +131,6 @@
 //!   slots in. It can be a `Vec`, an `ArrayVec`, a `SmallVec` or any other
 //!   type that implements [`SlotStorage`].
 //!
-//! ```
-//! use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
-//!
-//! /// Maps with this config hand out keys with a `u8` index and a `u8`
-//! /// generation, so each key is two bytes. A map with this config never gives
-//! /// a slot the index `u8::MAX`, so it holds at most 255 slots.
-//! struct Tiny;
-//!
-//! impl MapConfig for Tiny {
-//!     type KeyConfig = Split<u8, u8>;
-//! }
-//!
-//! impl<S: GenSlotItem> GenMapConfig<S> for Tiny {
-//!     type Storage = Vec<S>;
-//! }
-//!
-//! let mut map = GenMap::<u64, Tiny>::new_with_config();
-//! let key = map.insert(7);
-//! assert_eq!(core::mem::size_of_val(&key), 2);
-//! assert_eq!(map[key], 7);
-//! ```
-//!
 //! When its `C` parameter is left out, as in `GenMap<T>`, a map uses
 //! [`DefaultMapConfig`]. Maps with that config hand out keys with a `u32`
 //! index and a `u32` generation, keep their slots in a `Vec` and retire a slot
@@ -129,27 +144,18 @@
 //!
 //! # Secondary maps
 //!
-//! A [`SecondaryMap`] stores values under the keys a [`GenMap`] hands out. Use
-//! it to add data to the values of a `GenMap` without changing their type. A
-//! `SecondaryMap` can only use a `GenMap`'s keys when both configs have the
-//! same [`KeyConfig`](MapConfig::KeyConfig), because only then do the two maps
-//! share a key type.
+//! Use a [`SecondaryMap`] to add data to the values of a [`GenMap`] without
+//! changing their type. A `SecondaryMap` can only use a `GenMap`'s keys when
+//! both configs have the same [`KeyConfig`](MapConfig::KeyConfig), because
+//! only then do the two maps share a key type.
 //!
-//! ```
-//! use gen_map::{GenMap, SecondaryMap};
-//!
-//! let mut people = GenMap::new();
-//! let mut ages = SecondaryMap::new();
-//! let alice = people.insert("Alice");
-//! ages.insert(alice, 30).unwrap();
-//! assert_eq!(ages[alice], 30);
-//! ```
-//!
-//! When a value is removed from the `GenMap`, the value under its key stays in
-//! the `SecondaryMap`. The
+//! When a value is removed from the `GenMap`, the value stored under its key
+//! stays in the `SecondaryMap`. If the `GenMap` later puts a new value in the
+//! removed value's slot, the new value's key has the same index as the old key
+//! and a newer generation. The
 //! [`ReplaceStrategy`](SecondaryMapConfig::ReplaceStrategy) of the
-//! `SecondaryMap`'s config decides whether a value inserted under a newer key
-//! for the same slot replaces the old value.
+//! `SecondaryMap`'s config decides whether a value inserted under that newer
+//! key replaces the old value.
 //!
 //! # Cargo features
 //!
