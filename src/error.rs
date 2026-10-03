@@ -44,7 +44,7 @@ impl<S: fmt::Display> fmt::Display for FullError<S> {
 /// `S` is the map's [`StorageError`](crate::StorageError), or the
 /// [`DenseStorageError`](crate::DenseStorageError) of a `DenseGenMap`.
 ///
-/// When the keys have no index left for a new slot and the storage is also
+/// When the keys have no index left for a new slot and a storage is also
 /// full, the error is [`IndexExhausted`](Self::IndexExhausted).
 pub enum InsertError<T, S> {
     /// The map has a slot at every index it can use and none of them are
@@ -102,11 +102,12 @@ impl<T, S: fmt::Display> fmt::Display for InsertError<T, S> {
     }
 }
 
-/// Why [`SecondaryMap::insert`](crate::SecondaryMap::insert) could not
+/// Why [`SecondaryMap::insert`](crate::SecondaryMap::insert) or
+/// [`DenseSecondaryMap::insert`](crate::DenseSecondaryMap::insert) could not
 /// insert. Each variant hands the value back so that the caller can keep it.
 /// `S` is the map's [`SecondaryStorageError`](crate::SecondaryStorageError),
 /// or the [`DenseSecondaryStorageError`](crate::DenseSecondaryStorageError)
-/// of a [`DenseSecondaryMap`](crate::DenseSecondaryMap).
+/// of a `DenseSecondaryMap`.
 pub enum SecondaryInsertError<T, S> {
     /// The slot at the key's index holds a value that was inserted under a
     /// different generation, and the config's

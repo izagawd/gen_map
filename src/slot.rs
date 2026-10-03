@@ -27,8 +27,9 @@ union Value<T, U> {
 /// while it is even.
 ///
 /// A [`GenMap`](crate::GenMap) keeps each of its values in a slot like this,
-/// its [`MapSlot`](crate::MapSlot). A key's generation is odd, so a key that
-/// matches a slot finds its `T`.
+/// its [`MapSlot`](crate::MapSlot). The dense maps keep the position of each
+/// value in one instead. A key's generation is odd, so a key that matches a
+/// slot finds its `T`.
 ///
 /// # Examples
 ///
@@ -422,7 +423,9 @@ mod sealed {
 /// outside this crate can implement it.
 pub trait GenSlotItem: sealed::Sealed {
     /// The type of the value in the slot. For the slots of a
-    /// `GenMap<T, C>`, it is `T`.
+    /// `GenMap<T, C>`, it is `T`. The slots of a dense map store the position
+    /// of each value instead, so for them it is the index type of the map's
+    /// keys.
     type Value;
 }
 

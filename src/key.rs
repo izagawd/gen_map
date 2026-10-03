@@ -3,7 +3,8 @@ use crate::parity::Odd;
 use core::cmp::Ordering;
 use core::fmt;
 
-/// A key to a value in a [`GenMap`](crate::GenMap), returned by `insert`.
+/// A key to a value in a [`GenMap`](crate::GenMap) or a
+/// [`DenseGenMap`](crate::DenseGenMap), returned by `insert`.
 /// The key config `K` decides how the key stores its index and generation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Key<K: KeyConfig = DefaultKeyConfig> {
@@ -27,8 +28,9 @@ impl<K: KeyConfig> Key<K> {
     /// Returns `true` if the key's generation is the largest one its key config
     /// can hold. The slot's generation cannot go up past that one, so removing
     /// the key's value either wraps the slot's generation back to zero or
-    /// retires the slot, depending on
-    /// [`WRAP_ON_OVERFLOW`](crate::GenMapConfig::WRAP_ON_OVERFLOW).
+    /// retires the slot, depending on the `WRAP_ON_OVERFLOW` of the map's
+    /// config, which [`GenMapConfig`](crate::GenMapConfig) and
+    /// [`DenseGenMapConfig`](crate::DenseGenMapConfig) both have.
     #[inline]
     pub fn is_max_generation(&self) -> bool {
         self.generation() == K::max_generation()
