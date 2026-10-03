@@ -1522,7 +1522,10 @@ impl<'a, T, K: KeyConfig> Iterator for DenseIter<'a, T, K> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        Some((*self.keys.next()?, self.values.next()?))
+        let key = *self.keys.next()?;
+        // SAFETY: the map keeps one key for each value, and the iterator takes
+        // out a key and a value together, so a value is left whenever a key is.
+        Some((key, unsafe { self.values.next().unwrap_unchecked() }))
     }
 
     #[inline]
@@ -1534,7 +1537,9 @@ impl<'a, T, K: KeyConfig> Iterator for DenseIter<'a, T, K> {
 impl<T, K: KeyConfig> DoubleEndedIterator for DenseIter<'_, T, K> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        Some((*self.keys.next_back()?, self.values.next_back()?))
+        let key = *self.keys.next_back()?;
+        // SAFETY: the same as in `next`.
+        Some((key, unsafe { self.values.next_back().unwrap_unchecked() }))
     }
 }
 
@@ -1564,7 +1569,9 @@ impl<'a, T, K: KeyConfig> Iterator for DenseIterMut<'a, T, K> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        Some((*self.keys.next()?, self.values.next()?))
+        let key = *self.keys.next()?;
+        // SAFETY: the same as in `DenseIter::next`.
+        Some((key, unsafe { self.values.next().unwrap_unchecked() }))
     }
 
     #[inline]
@@ -1576,7 +1583,9 @@ impl<'a, T, K: KeyConfig> Iterator for DenseIterMut<'a, T, K> {
 impl<T, K: KeyConfig> DoubleEndedIterator for DenseIterMut<'_, T, K> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        Some((*self.keys.next_back()?, self.values.next_back()?))
+        let key = *self.keys.next_back()?;
+        // SAFETY: the same as in `DenseIter::next`.
+        Some((key, unsafe { self.values.next_back().unwrap_unchecked() }))
     }
 }
 
