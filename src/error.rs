@@ -104,8 +104,9 @@ impl<T, S: fmt::Display> fmt::Display for InsertError<T, S> {
 
 /// This error says why [`SecondaryMap::insert`](crate::SecondaryMap::insert),
 /// [`DenseSecondaryMap::insert`](crate::DenseSecondaryMap::insert) or
-/// `SparseSecondaryMap::insert` could not insert. Each variant hands the value
-/// back so that the caller can keep it. `S` is the map's
+/// [`SparseSecondaryMap::insert`](crate::SparseSecondaryMap::insert) could
+/// not insert. Each variant hands the value back so that the caller can keep
+/// it. `S` is the map's
 /// [`SecondaryStorageError`](crate::SecondaryStorageError), the
 /// [`DenseSecondaryStorageError`](crate::DenseSecondaryStorageError) of a
 /// `DenseSecondaryMap`, or `TryReserveError` for a `SparseSecondaryMap`.
@@ -260,8 +261,9 @@ impl<E: fmt::Display, S: fmt::Display> fmt::Display for InsertWithError<E, S> {
 /// This error says why the `get_disjoint_mut` method of a
 /// [`GenMap`](crate::GenMap), [`SecondaryMap`](crate::SecondaryMap),
 /// [`DenseGenMap`](crate::DenseGenMap),
-/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) or `SparseSecondaryMap`
-/// could not hand out its references.
+/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) or
+/// [`SparseSecondaryMap`](crate::SparseSecondaryMap) could not hand out its
+/// references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutError {
     /// The map has no value for one of the keys, meaning the map's
@@ -285,8 +287,9 @@ impl fmt::Display for GetDisjointMutError {
 /// This error says why the `get_disjoint_mut_at` method of a
 /// [`GenMap`](crate::GenMap), [`SecondaryMap`](crate::SecondaryMap),
 /// [`DenseGenMap`](crate::DenseGenMap),
-/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) or `SparseSecondaryMap`
-/// could not hand out its references.
+/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) or
+/// [`SparseSecondaryMap`](crate::SparseSecondaryMap) could not hand out its
+/// references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutAtError {
     /// There is no slot at one of the indices, or the slot holds no value,

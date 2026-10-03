@@ -104,8 +104,9 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
 /// [`SecondaryMap`](crate::SecondaryMap) also implements
 /// [`SecondaryMapConfig`]. The configs of the dense maps implement
 /// [`DenseGenMapConfig`] and [`DenseSecondaryMapConfig`], and the config of a
-/// `SparseSecondaryMap` implements `SparseSecondaryMapConfig`. All five traits
-/// have `MapConfig` as a supertrait.
+/// [`SparseSecondaryMap`](crate::SparseSecondaryMap) implements
+/// [`SparseSecondaryMapConfig`]. All five traits have `MapConfig` as a
+/// supertrait.
 ///
 /// # Examples
 ///
@@ -392,7 +393,8 @@ pub type DefaultKeyConfig = Split<u32, u32>;
 /// [`SecondaryMap<T>`](crate::SecondaryMap), a
 /// [`DenseGenMap<T>`](crate::DenseGenMap), a
 /// [`DenseSecondaryMap<T>`](crate::DenseSecondaryMap) and a
-/// `SparseSecondaryMap<T>`, which leave out their config parameter `C`.
+/// [`SparseSecondaryMap<T>`](crate::SparseSecondaryMap), which leave out
+/// their config parameter `C`.
 ///
 /// Keys use the [`DefaultKeyConfig`], and slots, values and keys live in a
 /// `Vec` each, except in a `SparseSecondaryMap`, which keeps its values in a

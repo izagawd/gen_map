@@ -319,7 +319,7 @@ fn insert<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: 
             // run out as well, because when both run out, the map reports
             // the index.
             assert_eq!(map.slots_len(), map.capacity());
-            assert!(slot_count_limit::<C>().map_or(true, |limit| map.slots_len() < limit));
+            assert!(slot_count_limit::<C>().is_none_or(|limit| map.slots_len() < limit));
             assert_no_slot_is_free(map, model);
         }
     }

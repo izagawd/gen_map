@@ -10,10 +10,9 @@
 //! [How it works](#how-it-works) lists the few cases where a key can match a
 //! value other than the one it was handed out for.
 //!
-//! Inserting, removing and looking up a value are all O(1). The crate only
-//! uses `std` when the `std` feature is on, and
-//! [Cargo features](#cargo-features) lists the features that need an
-//! allocator.
+//! Inserting, removing and looking up a value are all O(1). Only the `std`
+//! feature uses `std`, and [Cargo features](#cargo-features) shows how to use
+//! the crate without `std` or without an allocator.
 //!
 //! # Examples
 //!
@@ -159,7 +158,7 @@
 //! key replaces the old value.
 //!
 //! A `SecondaryMap` keeps a slot at every index up to the highest index that
-//! an insert has used. A `SparseSecondaryMap` keeps its values in a `HashMap`
+//! an insert has used. A [`SparseSecondaryMap`] keeps its values in a `HashMap`
 //! under the indices of their keys instead, so it uses less memory when only
 //! a few of a `GenMap`'s keys have a value in it. Its lookups hash the key's
 //! index, so they take longer than a `SecondaryMap`'s. It needs the `std`
@@ -190,8 +189,10 @@
 //!
 //! # Cargo features
 //!
-//! - `alloc` is on by default. It adds the `Vec` storage and
-//!   [`DefaultMapConfig`]. Without it, every map needs a config of its own.
+//! - `std` is on by default, and it turns `alloc` on too. It adds
+//!   [`SparseSecondaryMap`], which keeps its values in std's `HashMap`.
+//! - `alloc` adds the `Vec` storage and [`DefaultMapConfig`]. Without it,
+//!   every map needs a config of its own.
 //! - `arrayvec` lets a config use `arrayvec::ArrayVec` as a storage. An
 //!   `ArrayVec` has a fixed capacity and never allocates.
 //! - `smallvec` lets a config use `smallvec::SmallVec` as a storage. A
@@ -199,12 +200,10 @@
 //!   for more. This feature uses the 2.0 beta of `smallvec`. Until `smallvec`
 //!   2.0 is released, a newer beta or a new release of `gen_map` may break
 //!   this feature, so it is not covered by semver.
-//! - `std` adds `SparseSecondaryMap`, which keeps its values in std's
-//!   `HashMap`.
 //!
-//! The crate only needs an allocator when `alloc` or `smallvec` is on. To use
-//! the crate without any allocator, turn default features off and `arrayvec`
-//! on.
+//! To use the crate without `std`, turn default features off and `alloc` on.
+//! The crate only needs an allocator when `alloc` or `smallvec` is on, so to
+//! use it without any allocator, turn default features off and `arrayvec` on.
 //!
 //! ```toml
 //! [dependencies]
@@ -213,10 +212,7 @@
 //!
 //! # Minimum supported Rust version
 //!
-//! The crate builds on Rust 1.79 and later. The `smallvec` feature needs
-//! Rust 1.86, because the 2.0 beta of `smallvec` does. The `std` feature also
-//! needs Rust 1.86, because `SparseSecondaryMap` uses `HashMap` methods that
-//! became stable in Rust 1.86.
+//! The crate builds on Rust 1.86 and later.
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -244,10 +240,7 @@ mod parity;
 mod replace_strategy;
 mod secondary_map;
 mod slot;
-// The `std` feature needs Rust 1.86, so Clippy checks this module against
-// that version.
 #[cfg(feature = "std")]
-#[clippy::msrv = "1.86"]
 mod sparse_secondary_map;
 mod storage;
 

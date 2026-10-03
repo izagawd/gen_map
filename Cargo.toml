@@ -2,7 +2,7 @@
 name = "gen_map"
 version = "0.3.0"
 edition = "2021"
-rust-version = "1.79.0"
+rust-version = "1.86.0"
 authors = ["Izagawd <theizaboss@gmail.com>"]
 keywords = ["generational", "arena", "handle", "no-std"]
 categories = ["memory-management", "data-structures", "no-std", "no-std::no-alloc"]
@@ -12,7 +12,7 @@ readme = "README.md"
 description = "A generational map with configurable key size, key layout and storage."
 
 [features]
-default = ["alloc"]
+default = ["std"]
 alloc = []
 std = ["alloc"]
 arrayvec = ["dep:arrayvec"]

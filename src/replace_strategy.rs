@@ -3,9 +3,10 @@ use crate::parity::Odd;
 
 /// A replace strategy decides whether a value inserted into a
 /// [`SecondaryMap`](crate::SecondaryMap), a
-/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) or a `SparseSecondaryMap`
-/// under a key replaces the value already stored at the key's index, when that
-/// value was inserted under a different generation.
+/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) or a
+/// [`SparseSecondaryMap`](crate::SparseSecondaryMap) under a key replaces the
+/// value already stored at the key's index, when that value was inserted under
+/// a different generation.
 ///
 /// The `insert` of each of these maps only asks the strategy in that case.
 /// An empty slot always takes the value, and a value stored under the key's
@@ -49,7 +50,7 @@ pub trait ReplaceStrategy<K: KeyConfig> {
 /// [`DefaultMapConfig`](crate::DefaultMapConfig) picks for a
 /// [`SecondaryMap`](crate::SecondaryMap), a
 /// [`DenseSecondaryMap`](crate::DenseSecondaryMap) and a
-/// `SparseSecondaryMap`.
+/// [`SparseSecondaryMap`](crate::SparseSecondaryMap).
 ///
 /// A larger generation only means a newer key while the map that hands out
 /// the keys never wraps a generation. A `GenMap` or a `DenseGenMap` only wraps
