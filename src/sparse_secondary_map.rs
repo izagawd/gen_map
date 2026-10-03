@@ -470,10 +470,12 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     ///
     /// # Errors
     ///
-    /// Hands `value` back, and leaves the map as it was, if the strategy kept
-    /// the old value, the key's index is the largest value of the index type,
-    /// or the `HashMap` could not make room for the value. The
-    /// [`SecondaryInsertError`] variant says which of the three happened.
+    /// Hands `value` back, and leaves the values in the map as they were, if
+    /// the strategy kept the old value, the key's index is the largest value of
+    /// the index type, or the `HashMap` could not make room for one more value.
+    /// The map makes that room before it looks the index up, even when `value`
+    /// ends up replacing a value. The [`SecondaryInsertError`] variant says
+    /// which of the three happened.
     ///
     /// # Examples
     ///
@@ -502,27 +504,32 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         if key.idx() == MapIdx::<C>::MAX {
             return Err(SecondaryInsertError::IndexReserved(value));
         }
-        let generation = key.generation();
-        if let Some(slot) = self.slots.get_mut(&key.idx()) {
-            if slot.generation != generation
-                && !<Strategy<C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
-                    slot.generation,
-                    generation,
-                )
-            {
-                return Err(SecondaryInsertError::Refused(value));
-            }
-            slot.generation = generation;
-            return Ok(Some(core::mem::replace(&mut slot.value, value)));
-        }
-        // `HashMap::insert` panics or aborts when it cannot make room, so the
-        // map makes room first and hands `value` back if that fails.
+        // `HashMap::entry` makes room for one more value when it finds no value
+        // at the index, and it panics or aborts if it cannot. The map makes
+        // room first, so it can hand `value` back instead.
         if let Err(error) = self.slots.try_reserve(1) {
             return Err(SecondaryInsertError::StorageFull(value, error));
         }
-        self.slots
-            .insert(key.idx(), SparseSlot { generation, value });
-        Ok(None)
+        let generation = key.generation();
+        match self.slots.entry(key.idx()) {
+            hash_map::Entry::Occupied(mut entry) => {
+                let slot = entry.get_mut();
+                if slot.generation != generation
+                    && !<Strategy<C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
+                        slot.generation,
+                        generation,
+                    )
+                {
+                    return Err(SecondaryInsertError::Refused(value));
+                }
+                slot.generation = generation;
+                Ok(Some(core::mem::replace(&mut slot.value, value)))
+            }
+            hash_map::Entry::Vacant(entry) => {
+                entry.insert(SparseSlot { generation, value });
+                Ok(None)
+            }
+        }
     }
 
     /// Removes the value stored under `key` and returns it, or returns `None`

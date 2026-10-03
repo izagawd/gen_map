@@ -415,7 +415,7 @@ fn shrinking_frees_room_and_keeps_every_value() {
 }
 
 #[test]
-fn remove_hashes_the_index_once() {
+fn insert_and_remove_hash_the_index_once() {
     // A `Flaky` hasher that never breaks counts how many hashes the map makes.
     let built = Rc::new(Cell::new(0));
     let hasher = Flaky {
@@ -423,13 +423,26 @@ fn remove_hashes_the_index_once() {
         built: built.clone(),
     };
     let mut map = SparseSecondaryMap::<u32, Newer, Flaky>::with_hasher_and_config(hasher);
-    // With room to spare, a miss does not make the map grow and rehash its
-    // values.
+    // With room to spare, the map does not grow and rehash its values.
     map.reserve(10);
-    map.insert(key8(0, 1), 0).unwrap();
-    map.insert(key8(1, 1), 1).unwrap();
+    for (key, value, expected) in [
+        (key8(0, 1), 0, None),
+        (key8(1, 1), 1, None),
+        (key8(0, 1), 2, Some(0)),
+        (key8(0, 3), 3, Some(2)),
+    ] {
+        built.set(0);
+        assert_eq!(map.insert(key, value).unwrap(), expected);
+        assert_eq!(built.get(), 1);
+    }
+    built.set(0);
+    assert!(matches!(
+        map.insert(key8(0, 1), 4),
+        Err(SecondaryInsertError::Refused(4))
+    ));
+    assert_eq!(built.get(), 1);
     for (key, expected) in [
-        (key8(0, 1), Some(0)),
+        (key8(0, 3), Some(3)),
         (key8(5, 1), None),
         (key8(1, 3), None),
     ] {
