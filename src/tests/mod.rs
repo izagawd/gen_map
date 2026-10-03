@@ -8,7 +8,9 @@ mod bare_storage;
 mod basic;
 mod capped_storage;
 mod clone;
-mod config;
+mod dense_map;
+mod dense_model;
+mod dense_secondary;
 mod detach;
 mod disjoint;
 mod drain;
@@ -20,6 +22,7 @@ mod key_piece;
 mod model;
 mod overflow;
 mod packed;
+mod panic_fuzz;
 mod parity;
 mod reset;
 mod retain;
@@ -53,14 +56,14 @@ impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for Cfg<Idx, Gen> {
     type KeyConfig = Split<Idx, Gen>;
 }
 
-impl<Idx: KeyPiece, Gen: KeyPiece, S: GenSlotItem> GenMapConfig<S> for Cfg<Idx, Gen> {
-    type Storage = Vec<S>;
+impl<Idx: KeyPiece, Gen: KeyPiece> GenMapConfig for Cfg<Idx, Gen> {
+    type Storage<S: GenSlotItem> = Vec<S>;
 }
 
 /// Checks that `reattach` refuses `key` because nothing is detached under
 /// it, hands `value` back, and leaves the map's length and the generation of
 /// the key's slot as they were.
-pub(crate) fn assert_not_detached<C: crate::MapConfigFor<i32>>(
+pub(crate) fn assert_not_detached<C: crate::GenMapConfig>(
     map: &mut crate::GenMap<i32, C>,
     key: Key<crate::MapKeyConfig<C>>,
     value: i32,

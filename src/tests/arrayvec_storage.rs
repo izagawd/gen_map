@@ -18,13 +18,13 @@ impl MapConfig for Four {
     type KeyConfig = Split<u8, u8>;
 }
 
-impl<S: GenSlotItem> GenMapConfig<S> for Four {
-    type Storage = ArrayVec<S, 4>;
+impl GenMapConfig for Four {
+    type Storage<S: GenSlotItem> = ArrayVec<S, 4>;
 }
 
-impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Four {
+impl SecondaryMapConfig for Four {
     type ReplaceStrategy = NewerWins;
-    type Storage = ArrayVec<S, 4>;
+    type Storage<S: SecondarySlotItem> = ArrayVec<S, 4>;
 }
 
 /// Sixteen slots in the storage and sixteen indices in the keys, so both run
@@ -35,8 +35,8 @@ impl MapConfig for Sixteen {
     type KeyConfig = Packed<u8, 4>;
 }
 
-impl<S: GenSlotItem> GenMapConfig<S> for Sixteen {
-    type Storage = ArrayVec<S, 16>;
+impl GenMapConfig for Sixteen {
+    type Storage<S: GenSlotItem> = ArrayVec<S, 16>;
 }
 
 /// Fills every slot of a [`Four`] map.

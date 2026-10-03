@@ -1,6 +1,6 @@
 #[cfg(feature = "alloc")]
 use crate::config::DefaultMapConfig;
-use crate::config::{GenMapConfig, KeyConfig, MapConfig, MapConfigFor};
+use crate::config::{GenMapConfig, KeyConfig, MapConfig};
 use crate::error::{
     FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
 };
@@ -8,7 +8,7 @@ use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use crate::parity::{Even, Odd};
 use crate::slot::{Parity, Slot};
-use crate::storage::{ReserveStorage, SlotStorage};
+use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -86,7 +86,7 @@ unsafe fn position_of<C: MapConfig>(idx: Idx<C>) -> usize {
 }
 
 /// The storage a config gives the map for its slots.
-type Slots<T, C> = <C as GenMapConfig<MapSlot<T, C>>>::Storage;
+type Slots<T, C> = <C as GenMapConfig>::Storage<MapSlot<T, C>>;
 
 /// The largest index a key of `C` can hold.
 #[inline]
@@ -166,10 +166,42 @@ fn detached_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Even<Gen<C>> {
     generation.wrapping_next()
 }
 
+/// Returns `true` if `slot` is detached under `key`.
+///
+/// When a key's value is detached, the slot's generation is set to what
+/// [`detached_generation`] returns for the key's generation, and the slot's
+/// `U` is set to the slot's own index. A slot on the free list has another
+/// slot's index or [`no_slot`] in its `U`, and a retired slot has `no_slot`.
+/// So a slot is detached under a key only if it has that generation and its
+/// own index in its `U`.
+#[inline]
+fn is_detached<T, C: GenMapConfig>(slot: &MapSlot<T, C>, key: Key<MapKeyConfig<C>>) -> bool {
+    slot.get_even(detached_generation::<C>(key.generation()))
+        .is_some_and(|link| *link == key.idx())
+}
+
+/// Returns the generation and the link to give the slot at `idx` once the
+/// value it held under `generation` is gone. Unless the slot retires, the link
+/// is the old head of the free list, and `next_free` becomes `idx`. A slot
+/// whose generation has run out starts over at zero if `C` wraps, and
+/// otherwise retires, which keeps it off the free list for good.
+#[inline]
+fn freed_parts<C: GenMapConfig>(
+    next_free: &mut Idx<C>,
+    idx: Idx<C>,
+    generation: Odd<Gen<C>>,
+) -> (Even<Gen<C>>, Idx<C>) {
+    match next_generation::<C>(generation) {
+        Some(next) => (next, core::mem::replace(next_free, idx)),
+        None if C::WRAP_ON_OVERFLOW => (Even::ZERO, core::mem::replace(next_free, idx)),
+        None => (Even::ZERO, no_slot::<C>()),
+    }
+}
+
 /// The error the storage of a `GenMap<T, C>` gives when it cannot make room
 /// for another slot. It is `TryReserveError` for a `Vec`, `CapacityError` for
 /// an `ArrayVec` and `CollectionAllocErr` for a `SmallVec`.
-pub type StorageError<T, C> = <<C as GenMapConfig<MapSlot<T, C>>>::Storage as SlotStorage>::Error;
+pub type StorageError<T, C> = <<C as GenMapConfig>::Storage<MapSlot<T, C>> as SliceStorage>::Error;
 
 /// Where the next inserted value will go, worked out before anything is
 /// written.
@@ -199,7 +231,7 @@ impl<C: MapConfig> Target<C> {
 /// line so that the insert paths stay small.
 #[cold]
 #[inline(never)]
-fn panic_full<T, C: MapConfigFor<T>>(full: FullError<StorageError<T, C>>, slots_len: usize) -> ! {
+fn panic_full<T, C: GenMapConfig>(full: FullError<StorageError<T, C>>, slots_len: usize) -> ! {
     match full {
         FullError::IndexExhausted => panic!(
             "GenMap is full, its keys cannot address more than {} slots",
@@ -216,12 +248,12 @@ fn panic_full<T, C: MapConfigFor<T>>(full: FullError<StorageError<T, C>>, slots_
 /// [`GenMap::vacant_entry`](GenMap::vacant_entry). No slot is written until
 /// [`insert`](Self::insert) is called, so dropping the entry inserts
 /// nothing.
-pub struct VacantEntry<'a, T, C: MapConfigFor<T>> {
+pub struct VacantEntry<'a, T, C: GenMapConfig> {
     map: &'a mut GenMap<T, C>,
     target: Target<C>,
 }
 
-impl<'a, T, C: MapConfigFor<T>> VacantEntry<'a, T, C> {
+impl<'a, T, C: GenMapConfig> VacantEntry<'a, T, C> {
     /// The key the value will get. It matches nothing until
     /// [`insert`](Self::insert) is called.
     #[inline]
@@ -239,7 +271,7 @@ impl<'a, T, C: MapConfigFor<T>> VacantEntry<'a, T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> fmt::Debug for VacantEntry<'_, T, C> {
+impl<T, C: GenMapConfig> fmt::Debug for VacantEntry<'_, T, C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VacantEntry")
             .field("key", &self.key())
@@ -251,17 +283,13 @@ impl<T, C: MapConfigFor<T>> fmt::Debug for VacantEntry<'_, T, C> {
 /// `C`.
 ///
 /// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`]. To use
-/// your own config, implement [`MapConfig`] and [`GenMapConfig`] for it,
-/// usually as `impl MapConfig for YourConfig` and
-/// `impl<S: GenSlotItem> GenMapConfig<S> for YourConfig`. The bound on `C`,
-/// [`MapConfigFor<T>`](MapConfigFor), is implemented automatically for every
-/// such config, so you never implement it yourself.
+/// your own config, implement [`MapConfig`] and [`GenMapConfig`] for it.
 ///
 /// See the [crate documentation](crate) for examples.
 pub struct GenMap<
     T,
-    #[cfg(feature = "alloc")] C: MapConfigFor<T> = DefaultMapConfig,
-    #[cfg(not(feature = "alloc"))] C: MapConfigFor<T>,
+    #[cfg(feature = "alloc")] C: GenMapConfig = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: GenMapConfig,
 > {
     slots: Slots<T, C>,
     /// The index of the first slot on the free list, or `no_slot` if no slot
@@ -303,7 +331,7 @@ impl<T> GenMap<T> {
 
 /// These methods need a storage that can grow on request, so a map whose
 /// storage has a fixed capacity does not have them.
-impl<T, C: MapConfigFor<T>> GenMap<T, C>
+impl<T, C: GenMapConfig> GenMap<T, C>
 where
     Slots<T, C>: ReserveStorage,
 {
@@ -318,12 +346,13 @@ where
     ///
     /// # Panics
     ///
-    /// Panics or aborts if the storage cannot make the room, as
-    /// `Vec::reserve` does. Use [`try_reserve`](Self::try_reserve) to get an
-    /// error instead.
+    /// Panics if the storage cannot make the room. Use
+    /// [`try_reserve`](Self::try_reserve) to get an error instead.
     #[inline]
     pub fn reserve(&mut self, additional: usize) {
-        self.slots.reserve(additional);
+        if let Err(error) = self.try_reserve(additional) {
+            panic!("GenMap cannot make room for {additional} more slots: {error:?}");
+        }
     }
 
     /// The fallible form of [`reserve`](Self::reserve). After it returns `Ok`,
@@ -334,11 +363,11 @@ where
     /// Returns the storage's error if the storage cannot make the room.
     #[inline]
     pub fn try_reserve(&mut self, additional: usize) -> Result<(), StorageError<T, C>> {
-        self.slots.try_reserve(additional)
+        self.slots.ensure_room(additional)
     }
 }
 
-impl<T, C: MapConfigFor<T>> GenMap<T, C> {
+impl<T, C: GenMapConfig> GenMap<T, C> {
     /// Creates an empty map with config `C`.
     ///
     /// ```
@@ -350,8 +379,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     ///     type KeyConfig = Split<u64, u64>;
     /// }
     ///
-    /// impl<S: GenSlotItem> GenMapConfig<S> for Wide {
-    ///     type Storage = Vec<S>;
+    /// impl GenMapConfig for Wide {
+    ///     type Storage<S: GenSlotItem> = Vec<S>;
     /// }
     ///
     /// let mut map = GenMap::<&str, Wide>::new_with_config();
@@ -823,8 +852,8 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     ///     type KeyConfig = Split<u8, u8>;
     /// }
     ///
-    /// impl<S: GenSlotItem> GenMapConfig<S> for Tiny {
-    ///     type Storage = Vec<S>;
+    /// impl GenMapConfig for Tiny {
+    ///     type Storage<S: GenSlotItem> = Vec<S>;
     /// }
     ///
     /// // No slot gets the index `u8::MAX`, so the map holds 255 values.
@@ -985,12 +1014,12 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
             self.next_free = unsafe { slot.replace_even_unchecked(target.generation, value) };
         } else {
             let slot = Slot::new_odd(target.generation, value);
-            // `next_target` made room for this slot, and `SlotStorage`
+            // `next_target` made room for this slot, and `SliceStorage`
             // promises that `try_push` succeeds after that, so only a broken
             // storage refuses the push. The slot is dropped with its value in
             // that case.
             if self.slots.try_push(slot).is_err() {
-                panic!("SlotStorage::try_push failed although ensure_room returned Ok");
+                panic!("SliceStorage::try_push failed although ensure_room returned Ok");
             }
         }
         increment_len(&mut self.len);
@@ -1033,9 +1062,9 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     ///     type KeyConfig = Packed<u8, 4>;
     /// }
     ///
-    /// impl<S: GenSlotItem> GenMapConfig<S> for Wrapping {
+    /// impl GenMapConfig for Wrapping {
     ///     const WRAP_ON_OVERFLOW: bool = true;
-    ///     type Storage = Vec<S>;
+    ///     type Storage<S: GenSlotItem> = Vec<S>;
     /// }
     ///
     /// let mut map = GenMap::<&str, Wrapping>::new_with_config();
@@ -1077,17 +1106,7 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
             (slot, generation)
         };
         decrement_len(&mut self.len);
-
-        // A slot whose generation has run out starts over at zero if the
-        // config wraps, and retires otherwise. A retired slot stays off the
-        // free list for good.
-        let (next, link) = match next_generation::<C>(generation) {
-            Some(next) => (next, core::mem::replace(&mut self.next_free, idx)),
-            None if <C as GenMapConfig<MapSlot<T, C>>>::WRAP_ON_OVERFLOW => {
-                (Even::ZERO, core::mem::replace(&mut self.next_free, idx))
-            }
-            None => (Even::ZERO, no_slot::<C>()),
-        };
+        let (next, link) = freed_parts::<C>(&mut self.next_free, idx, generation);
         // SAFETY: the slot's generation is odd.
         unsafe { slot.replace_odd_unchecked(next, link) }
     }
@@ -1096,10 +1115,10 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// `key`, so that [`reattach`](Self::reattach) can put a value back under
     /// the same key. Returns `None` if there is no value for `key`.
     ///
-    /// Until `reattach` puts a value back,
-    /// [`contains_key`](Self::contains_key) returns `false` for the key and
-    /// [`len`](Self::len) does not count the value, but the slot is not on
-    /// the free list, so no insert uses it.
+    /// Until `reattach` puts a value back or [`release`](Self::release) frees
+    /// the slot, [`contains_key`](Self::contains_key) returns `false` for the
+    /// key and [`len`](Self::len) does not count the value, but the slot is not
+    /// on the free list, so no insert uses it.
     ///
     /// While the slot is detached, its generation is one more than the key's
     /// generation, or zero if the key's generation is the largest value of the
@@ -1147,33 +1166,60 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     /// # Errors
     ///
     /// Hands `value` back, and leaves the map as it was, if the key was not
-    /// detached, or was detached and its slot has since been removed by
-    /// [`reset`](Self::reset).
+    /// detached, or was detached and its slot has since been freed by
+    /// [`release`](Self::release) or removed by [`reset`](Self::reset).
     #[inline]
     pub fn reattach(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> Result<(), T> {
-        let generation = key.generation();
         let Some(slot) = key
             .idx()
             .into_usize()
             .and_then(|position| self.slots.as_mut_slice().get_mut(position))
-            .filter(|slot| {
-                // When the key's value was detached, the slot's generation
-                // was set to what `detached_generation` returns for the key's
-                // generation, and the slot's `U` was set to the slot's own
-                // index. A slot on the free list has another slot's index or
-                // `no_slot` in its `U`, and a retired slot has `no_slot`. So
-                // a slot is still detached under this key only if it has that
-                // generation and its own index in its `U`.
-                slot.get_even(detached_generation::<C>(generation))
-                    .is_some_and(|link| *link == key.idx())
-            })
+            .filter(|slot| is_detached::<T, C>(slot, key))
         else {
             return Err(value);
         };
-        // SAFETY: the slot's generation was just found to be even.
-        unsafe { slot.replace_even_unchecked(generation, value) };
+        // SAFETY: a detached slot's generation is even.
+        unsafe { slot.replace_even_unchecked(key.generation(), value) };
         increment_len(&mut self.len);
         Ok(())
+    }
+
+    /// Frees the slot of a key whose value [`detach`](Self::detach) took out,
+    /// without putting a value back. The slot goes on the free list as if the
+    /// value had been removed, so the key never matches again and
+    /// [`reattach`](Self::reattach) fails for it. Returns `false`, and leaves
+    /// the map as it was, if the key is not detached.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::GenMap;
+    ///
+    /// let mut map = GenMap::new();
+    /// let key = map.insert(1);
+    /// map.detach(key).unwrap();
+    ///
+    /// assert!(map.release(key));
+    /// assert_eq!(map.reattach(key, 2), Err(2));
+    ///
+    /// // The next insert reuses the freed slot under a newer key.
+    /// let other = map.insert(3);
+    /// assert_eq!(other.idx(), key.idx());
+    /// assert_ne!(other, key);
+    /// ```
+    #[inline]
+    pub fn release(&mut self, key: Key<MapKeyConfig<C>>) -> bool {
+        let Some(slot) = key
+            .idx()
+            .into_usize()
+            .and_then(|position| self.slots.as_mut_slice().get_mut(position))
+            .filter(|slot| is_detached::<T, C>(slot, key))
+        else {
+            return false;
+        };
+        let (next, link) = freed_parts::<C>(&mut self.next_free, key.idx(), key.generation());
+        slot.set_even(next, link);
+        true
     }
 
     /// Removes every value. The slots stay, and old keys stop matching just
@@ -1286,14 +1332,14 @@ impl<T, C: MapConfigFor<T>> GenMap<T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> Default for GenMap<T, C> {
+impl<T, C: GenMapConfig> Default for GenMap<T, C> {
     #[inline]
     fn default() -> Self {
         Self::new_with_config()
     }
 }
 
-impl<T, C: MapConfigFor<T>> Index<Key<MapKeyConfig<C>>> for GenMap<T, C> {
+impl<T, C: GenMapConfig> Index<Key<MapKeyConfig<C>>> for GenMap<T, C> {
     type Output = T;
 
     /// Returns a reference to the value corresponding to `key`.
@@ -1308,7 +1354,7 @@ impl<T, C: MapConfigFor<T>> Index<Key<MapKeyConfig<C>>> for GenMap<T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> IndexMut<Key<MapKeyConfig<C>>> for GenMap<T, C> {
+impl<T, C: GenMapConfig> IndexMut<Key<MapKeyConfig<C>>> for GenMap<T, C> {
     /// Returns a mutable reference to the value corresponding to `key`.
     ///
     /// # Panics
@@ -1321,7 +1367,7 @@ impl<T, C: MapConfigFor<T>> IndexMut<Key<MapKeyConfig<C>>> for GenMap<T, C> {
     }
 }
 
-impl<T: fmt::Debug, C: MapConfigFor<T>> fmt::Debug for GenMap<T, C> {
+impl<T: fmt::Debug, C: GenMapConfig> fmt::Debug for GenMap<T, C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_map().entries(self.iter()).finish()
     }
@@ -1331,24 +1377,24 @@ impl<T: fmt::Debug, C: MapConfigFor<T>> fmt::Debug for GenMap<T, C> {
 /// storage of the same type, and panics if the push fails. That only
 /// happens with a storage that cannot hold as many slots as another of its
 /// type. The slot is dropped with its value in that case.
-fn push_cloned<T, C: MapConfigFor<T>>(slots: &mut Slots<T, C>, slot: MapSlot<T, C>) {
+fn push_cloned<T, C: GenMapConfig>(slots: &mut Slots<T, C>, slot: MapSlot<T, C>) {
     if slots.try_push(slot).is_err() {
-        panic!("SlotStorage::try_push failed while cloning a storage of the same type");
+        panic!("SliceStorage::try_push failed while cloning a storage of the same type");
     }
 }
 
 /// Empties the slot storage on drop. It is only dropped while unwinding out
 /// of `clone_from`, where a half cloned storage would disagree with `len` and
 /// the free list.
-struct ClearOnUnwind<'a, T, C: MapConfigFor<T>>(&'a mut Slots<T, C>);
+struct ClearOnUnwind<'a, T, C: GenMapConfig>(&'a mut Slots<T, C>);
 
-impl<T, C: MapConfigFor<T>> Drop for ClearOnUnwind<'_, T, C> {
+impl<T, C: GenMapConfig> Drop for ClearOnUnwind<'_, T, C> {
     fn drop(&mut self) {
-        SlotStorage::clear(self.0);
+        SliceStorage::clear(self.0);
     }
 }
 
-impl<T: Clone, C: MapConfigFor<T>> Clone for GenMap<T, C> {
+impl<T: Clone, C: GenMapConfig> Clone for GenMap<T, C> {
     /// The clone has the same slots, free list and generations, so every key
     /// of the original works on it.
     fn clone(&self) -> Self {
@@ -1370,7 +1416,7 @@ impl<T: Clone, C: MapConfigFor<T>> Clone for GenMap<T, C> {
         self.next_free = no_slot::<C>();
         self.len = Idx::<C>::ZERO;
         let guard: ClearOnUnwind<'_, T, C> = ClearOnUnwind(&mut self.slots);
-        SlotStorage::clear(guard.0);
+        SliceStorage::clear(guard.0);
         // An allocation that is too small would grow several times while the
         // slots are pushed, so it is swapped for one of the right size.
         if guard.0.capacity() < source.slots.len() {
@@ -1386,12 +1432,12 @@ impl<T: Clone, C: MapConfigFor<T>> Clone for GenMap<T, C> {
 }
 
 /// Iterator over `(key, &value)` pairs. It is created using [`GenMap::iter`].
-pub struct Iter<'a, T, C: MapConfigFor<T>> {
+pub struct Iter<'a, T, C: MapConfig> {
     slots: Enumerate<core::slice::Iter<'a, MapSlot<T, C>>>,
     remaining: usize,
 }
 
-impl<'a, T, C: MapConfigFor<T>> Iterator for Iter<'a, T, C> {
+impl<'a, T, C: MapConfig> Iterator for Iter<'a, T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a T);
 
     #[inline]
@@ -1416,7 +1462,7 @@ impl<'a, T, C: MapConfigFor<T>> Iterator for Iter<'a, T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> DoubleEndedIterator for Iter<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for Iter<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
@@ -1434,10 +1480,10 @@ impl<T, C: MapConfigFor<T>> DoubleEndedIterator for Iter<'_, T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> ExactSizeIterator for Iter<'_, T, C> {}
-impl<T, C: MapConfigFor<T>> FusedIterator for Iter<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for Iter<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for Iter<'_, T, C> {}
 
-impl<T, C: MapConfigFor<T>> Clone for Iter<'_, T, C> {
+impl<T, C: MapConfig> Clone for Iter<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             slots: self.slots.clone(),
@@ -1448,12 +1494,12 @@ impl<T, C: MapConfigFor<T>> Clone for Iter<'_, T, C> {
 
 /// Iterator over `(key, &mut value)` pairs. It is created using
 /// [`GenMap::iter_mut`].
-pub struct IterMut<'a, T, C: MapConfigFor<T>> {
+pub struct IterMut<'a, T, C: MapConfig> {
     slots: Enumerate<core::slice::IterMut<'a, MapSlot<T, C>>>,
     remaining: usize,
 }
 
-impl<'a, T, C: MapConfigFor<T>> Iterator for IterMut<'a, T, C> {
+impl<'a, T, C: MapConfig> Iterator for IterMut<'a, T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a mut T);
 
     #[inline]
@@ -1478,7 +1524,7 @@ impl<'a, T, C: MapConfigFor<T>> Iterator for IterMut<'a, T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> DoubleEndedIterator for IterMut<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for IterMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
@@ -1496,15 +1542,15 @@ impl<T, C: MapConfigFor<T>> DoubleEndedIterator for IterMut<'_, T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> ExactSizeIterator for IterMut<'_, T, C> {}
-impl<T, C: MapConfigFor<T>> FusedIterator for IterMut<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for IterMut<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for IterMut<'_, T, C> {}
 
 /// Iterator over keys. It is created using [`GenMap::keys`].
-pub struct Keys<'a, T, C: MapConfigFor<T>> {
+pub struct Keys<'a, T, C: MapConfig> {
     inner: Iter<'a, T, C>,
 }
 
-impl<T, C: MapConfigFor<T>> Iterator for Keys<'_, T, C> {
+impl<T, C: MapConfig> Iterator for Keys<'_, T, C> {
     type Item = Key<MapKeyConfig<C>>;
 
     #[inline]
@@ -1518,17 +1564,17 @@ impl<T, C: MapConfigFor<T>> Iterator for Keys<'_, T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> DoubleEndedIterator for Keys<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for Keys<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(key, _)| key)
     }
 }
 
-impl<T, C: MapConfigFor<T>> ExactSizeIterator for Keys<'_, T, C> {}
-impl<T, C: MapConfigFor<T>> FusedIterator for Keys<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for Keys<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for Keys<'_, T, C> {}
 
-impl<T, C: MapConfigFor<T>> Clone for Keys<'_, T, C> {
+impl<T, C: MapConfig> Clone for Keys<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -1538,11 +1584,11 @@ impl<T, C: MapConfigFor<T>> Clone for Keys<'_, T, C> {
 
 /// Iterator over shared references to values. It is created using
 /// [`GenMap::values`].
-pub struct Values<'a, T, C: MapConfigFor<T>> {
+pub struct Values<'a, T, C: MapConfig> {
     inner: Iter<'a, T, C>,
 }
 
-impl<'a, T, C: MapConfigFor<T>> Iterator for Values<'a, T, C> {
+impl<'a, T, C: MapConfig> Iterator for Values<'a, T, C> {
     type Item = &'a T;
 
     #[inline]
@@ -1556,17 +1602,17 @@ impl<'a, T, C: MapConfigFor<T>> Iterator for Values<'a, T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> DoubleEndedIterator for Values<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for Values<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(_, value)| value)
     }
 }
 
-impl<T, C: MapConfigFor<T>> ExactSizeIterator for Values<'_, T, C> {}
-impl<T, C: MapConfigFor<T>> FusedIterator for Values<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for Values<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for Values<'_, T, C> {}
 
-impl<T, C: MapConfigFor<T>> Clone for Values<'_, T, C> {
+impl<T, C: MapConfig> Clone for Values<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -1576,11 +1622,11 @@ impl<T, C: MapConfigFor<T>> Clone for Values<'_, T, C> {
 
 /// Iterator over mutable references to values. It is created using
 /// [`GenMap::values_mut`].
-pub struct ValuesMut<'a, T, C: MapConfigFor<T>> {
+pub struct ValuesMut<'a, T, C: MapConfig> {
     inner: IterMut<'a, T, C>,
 }
 
-impl<'a, T, C: MapConfigFor<T>> Iterator for ValuesMut<'a, T, C> {
+impl<'a, T, C: MapConfig> Iterator for ValuesMut<'a, T, C> {
     type Item = &'a mut T;
 
     #[inline]
@@ -1594,15 +1640,15 @@ impl<'a, T, C: MapConfigFor<T>> Iterator for ValuesMut<'a, T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> DoubleEndedIterator for ValuesMut<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for ValuesMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(_, value)| value)
     }
 }
 
-impl<T, C: MapConfigFor<T>> ExactSizeIterator for ValuesMut<'_, T, C> {}
-impl<T, C: MapConfigFor<T>> FusedIterator for ValuesMut<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for ValuesMut<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for ValuesMut<'_, T, C> {}
 
 /// Owning iterator over `(key, value)` pairs. It is created by consuming a map
 /// with `into_iter`, which a map only has when its storage implements
@@ -1611,7 +1657,7 @@ impl<T, C: MapConfigFor<T>> FusedIterator for ValuesMut<'_, T, C> {}
 /// `DoubleEndedIterator` and `ExactSizeIterator`, because it needs the length
 /// of the storage's iterator to work out the position of a slot taken from the
 /// back.
-pub struct IntoIter<T, C: MapConfigFor<T>>
+pub struct IntoIter<T, C: GenMapConfig>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,
 {
@@ -1619,7 +1665,7 @@ where
     remaining: usize,
 }
 
-impl<T, C: MapConfigFor<T>> Iterator for IntoIter<T, C>
+impl<T, C: GenMapConfig> Iterator for IntoIter<T, C>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,
 {
@@ -1651,7 +1697,7 @@ where
 // `Enumerate::next_back` takes the last slot and works out its position as the
 // number of slots already taken from the front plus `len()`, which is the
 // number of slots still left once that slot is taken.
-impl<T, C: MapConfigFor<T>> DoubleEndedIterator for IntoIter<T, C>
+impl<T, C: GenMapConfig> DoubleEndedIterator for IntoIter<T, C>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,
     <Slots<T, C> as IntoIterator>::IntoIter: DoubleEndedIterator + ExactSizeIterator,
@@ -1672,17 +1718,17 @@ where
     }
 }
 
-impl<T, C: MapConfigFor<T>> ExactSizeIterator for IntoIter<T, C> where
+impl<T, C: GenMapConfig> ExactSizeIterator for IntoIter<T, C> where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>
 {
 }
 
-impl<T, C: MapConfigFor<T>> FusedIterator for IntoIter<T, C> where
+impl<T, C: GenMapConfig> FusedIterator for IntoIter<T, C> where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>
 {
 }
 
-impl<T, C: MapConfigFor<T>> IntoIterator for GenMap<T, C>
+impl<T, C: GenMapConfig> IntoIterator for GenMap<T, C>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,
 {
@@ -1698,7 +1744,7 @@ where
     }
 }
 
-impl<'a, T, C: MapConfigFor<T>> IntoIterator for &'a GenMap<T, C> {
+impl<'a, T, C: GenMapConfig> IntoIterator for &'a GenMap<T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a T);
     type IntoIter = Iter<'a, T, C>;
 
@@ -1708,7 +1754,7 @@ impl<'a, T, C: MapConfigFor<T>> IntoIterator for &'a GenMap<T, C> {
     }
 }
 
-impl<'a, T, C: MapConfigFor<T>> IntoIterator for &'a mut GenMap<T, C> {
+impl<'a, T, C: GenMapConfig> IntoIterator for &'a mut GenMap<T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a mut T);
     type IntoIter = IterMut<'a, T, C>;
 
@@ -1720,12 +1766,12 @@ impl<'a, T, C: MapConfigFor<T>> IntoIterator for &'a mut GenMap<T, C> {
 
 /// Draining iterator over `(key, value)` pairs. It is created using
 /// [`GenMap::drain`]. Dropping it removes the values it has not yielded yet.
-pub struct Drain<'a, T, C: MapConfigFor<T>> {
+pub struct Drain<'a, T, C: GenMapConfig> {
     map: &'a mut GenMap<T, C>,
     position: usize,
 }
 
-impl<T, C: MapConfigFor<T>> Iterator for Drain<'_, T, C> {
+impl<T, C: GenMapConfig> Iterator for Drain<'_, T, C> {
     type Item = (Key<MapKeyConfig<C>>, T);
 
     #[inline]
@@ -1756,10 +1802,10 @@ impl<T, C: MapConfigFor<T>> Iterator for Drain<'_, T, C> {
     }
 }
 
-impl<T, C: MapConfigFor<T>> ExactSizeIterator for Drain<'_, T, C> {}
-impl<T, C: MapConfigFor<T>> FusedIterator for Drain<'_, T, C> {}
+impl<T, C: GenMapConfig> ExactSizeIterator for Drain<'_, T, C> {}
+impl<T, C: GenMapConfig> FusedIterator for Drain<'_, T, C> {}
 
-impl<T, C: MapConfigFor<T>> Drop for Drain<'_, T, C> {
+impl<T, C: GenMapConfig> Drop for Drain<'_, T, C> {
     fn drop(&mut self) {
         for _ in self.by_ref() {}
     }

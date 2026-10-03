@@ -1,6 +1,7 @@
 use core::fmt;
 
-/// Why a [`GenMap`](crate::GenMap) has no room for another value.
+/// Why a [`GenMap`](crate::GenMap) or a [`DenseGenMap`](crate::DenseGenMap)
+/// has no room for another value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FullError<S> {
     /// The map has a slot at every index it can use and none of them are
@@ -8,9 +9,9 @@ pub enum FullError<S> {
     /// value of the index type.
     IndexExhausted,
 
-    /// None of the slots are free and the storage could not make room for
-    /// another one. The field says why, which for a `Vec` is its
-    /// `TryReserveError`.
+    /// A storage could not make room for the value. For a `GenMap`, that is
+    /// the slot storage, and none of the slots are free. The field says why,
+    /// which for a `Vec` is its `TryReserveError`.
     StorageFull(S),
 }
 
@@ -37,11 +38,13 @@ impl<S: fmt::Display> fmt::Display for FullError<S> {
     }
 }
 
-/// Why [`GenMap::try_insert`](crate::GenMap::try_insert) could not insert.
-/// Each variant hands the value back so that the caller can keep it. `S` is
-/// the map's [`StorageError`](crate::StorageError).
+/// Why [`GenMap::try_insert`](crate::GenMap::try_insert) or
+/// [`DenseGenMap::try_insert`](crate::DenseGenMap::try_insert) could not
+/// insert. Each variant hands the value back so that the caller can keep it.
+/// `S` is the map's [`StorageError`](crate::StorageError), or the
+/// [`DenseStorageError`](crate::DenseStorageError) of a `DenseGenMap`.
 ///
-/// When the keys have no index left for a new slot and the storage is also
+/// When the keys have no index left for a new slot and a storage is also
 /// full, the error is [`IndexExhausted`](Self::IndexExhausted).
 pub enum InsertError<T, S> {
     /// The map has a slot at every index it can use and none of them are
@@ -49,8 +52,9 @@ pub enum InsertError<T, S> {
     /// value of the index type.
     IndexExhausted(T),
 
-    /// None of the slots are free and the storage could not make room for
-    /// another one. The second field says why.
+    /// A storage could not make room for the value. For a `GenMap`, that is
+    /// the slot storage, and none of the slots are free. The second field says
+    /// why.
     StorageFull(T, S),
 }
 
@@ -98,9 +102,12 @@ impl<T, S: fmt::Display> fmt::Display for InsertError<T, S> {
     }
 }
 
-/// Why [`SecondaryMap::insert`](crate::SecondaryMap::insert) could not
+/// Why [`SecondaryMap::insert`](crate::SecondaryMap::insert) or
+/// [`DenseSecondaryMap::insert`](crate::DenseSecondaryMap::insert) could not
 /// insert. Each variant hands the value back so that the caller can keep it.
-/// `S` is the map's [`SecondaryStorageError`](crate::SecondaryStorageError).
+/// `S` is the map's [`SecondaryStorageError`](crate::SecondaryStorageError),
+/// or the [`DenseSecondaryStorageError`](crate::DenseSecondaryStorageError)
+/// of a `DenseSecondaryMap`.
 pub enum SecondaryInsertError<T, S> {
     /// The slot at the key's index holds a value that was inserted under a
     /// different generation, and the config's
@@ -111,8 +118,9 @@ pub enum SecondaryInsertError<T, S> {
     /// a slot that index, so only a hand-built key can have it.
     IndexReserved(T),
 
-    /// The storage could not make room for a slot at the key's index. The
-    /// second field says why.
+    /// A storage could not make room for the value. For a `SecondaryMap`, it
+    /// is the storage of the slots up to the key's index. The second field says
+    /// why.
     StorageFull(T, S),
 }
 
@@ -155,11 +163,13 @@ impl<T, S: fmt::Display> fmt::Display for SecondaryInsertError<T, S> {
     }
 }
 
-/// Why [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key)
+/// Why [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key) or
+/// [`DenseGenMap::try_insert_with_key`](crate::DenseGenMap::try_insert_with_key)
 /// could not insert. The map can be full before the closure runs, or the
 /// closure can refuse to make a value, and the variant says which of the two
-/// happened. `E` is the closure's error and `S` is the map's
-/// [`StorageError`](crate::StorageError).
+/// happened. `E` is the closure's error, and `S` is the map's
+/// [`StorageError`](crate::StorageError), or the
+/// [`DenseStorageError`](crate::DenseStorageError) of a `DenseGenMap`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InsertWithError<E, S> {
     /// The map had no room, so the closure was never called.
@@ -245,9 +255,10 @@ impl<E: fmt::Display, S: fmt::Display> fmt::Display for InsertWithError<E, S> {
     }
 }
 
-/// Why [`GenMap::get_disjoint_mut`](crate::GenMap::get_disjoint_mut) or
-/// [`SecondaryMap::get_disjoint_mut`](crate::SecondaryMap::get_disjoint_mut)
-/// could not hand out its references.
+/// Why the `get_disjoint_mut` method of a [`GenMap`](crate::GenMap),
+/// [`SecondaryMap`](crate::SecondaryMap), [`DenseGenMap`](crate::DenseGenMap)
+/// or [`DenseSecondaryMap`](crate::DenseSecondaryMap) could not hand out
+/// its references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutError {
     /// The map has no value for one of the keys, meaning the map's
@@ -268,9 +279,10 @@ impl fmt::Display for GetDisjointMutError {
     }
 }
 
-/// Why [`GenMap::get_disjoint_mut_at`](crate::GenMap::get_disjoint_mut_at) or
-/// [`SecondaryMap::get_disjoint_mut_at`](crate::SecondaryMap::get_disjoint_mut_at)
-/// could not hand out its references.
+/// Why the `get_disjoint_mut_at` method of a [`GenMap`](crate::GenMap),
+/// [`SecondaryMap`](crate::SecondaryMap), [`DenseGenMap`](crate::DenseGenMap)
+/// or [`DenseSecondaryMap`](crate::DenseSecondaryMap) could not hand out
+/// its references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutAtError {
     /// There is no slot at one of the indices, or the slot holds no value,
@@ -286,6 +298,29 @@ impl fmt::Display for GetDisjointMutAtError {
         match self {
             Self::NoValue => f.write_str("one of the indices has no value"),
             Self::OverlappingIndices => f.write_str("two of the indices are the same"),
+        }
+    }
+}
+
+/// Which storage of a dense map could not make room, together with that
+/// storage's error. `S` is the error of the slot storage, `V` is the error of
+/// the value storage, and `K` is the error of the key storage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DenseError<S, V, K> {
+    /// The slot storage could not make room for another slot.
+    Slots(S),
+    /// The value storage could not make room for another value.
+    Values(V),
+    /// The key storage could not make room for another key.
+    Keys(K),
+}
+
+impl<S: fmt::Display, V: fmt::Display, K: fmt::Display> fmt::Display for DenseError<S, V, K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Slots(error) => write!(f, "the slot storage is full: {error}"),
+            Self::Values(error) => write!(f, "the value storage is full: {error}"),
+            Self::Keys(error) => write!(f, "the key storage is full: {error}"),
         }
     }
 }

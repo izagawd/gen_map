@@ -2,13 +2,14 @@ use crate::config::KeyConfig;
 use crate::parity::Odd;
 
 /// Decides whether a value inserted into a
-/// [`SecondaryMap`](crate::SecondaryMap) under a key replaces the value
-/// already in the slot at the key's index, when the value in the slot was
-/// inserted under a different generation.
+/// [`SecondaryMap`](crate::SecondaryMap) or a
+/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) under a key replaces the
+/// value already stored at the key's index, when that value was inserted
+/// under a different generation.
 ///
-/// [`SecondaryMap::insert`](crate::SecondaryMap::insert) only asks the
-/// strategy in that case. An empty slot always takes the value, and a slot
-/// whose generation is the key's always has its value replaced.
+/// The `insert` of either map only asks the strategy in that case. An empty
+/// slot always takes the value, and a value stored under the key's generation
+/// is always replaced.
 ///
 /// `K` is the key config of the map's keys. A strategy can read the key's
 /// limits through `K`, for example to find the largest generation with
@@ -43,17 +44,18 @@ pub trait ReplaceStrategy<K: KeyConfig> {
     fn replaces(slot: Odd<K::Gen>, key: Odd<K::Gen>) -> bool;
 }
 
-/// Replaces the slot's value when the key's generation is larger than the
-/// slot's. It is the
-/// [`ReplaceStrategy`](crate::SecondaryMapConfig::ReplaceStrategy) of
-/// [`DefaultMapConfig`](crate::DefaultMapConfig).
+/// Replaces the stored value when the key's generation is larger than the
+/// generation the value was stored under. It is the strategy
+/// [`DefaultMapConfig`](crate::DefaultMapConfig) picks for a
+/// [`SecondaryMap`](crate::SecondaryMap) and a
+/// [`DenseSecondaryMap`](crate::DenseSecondaryMap).
 ///
-/// A larger generation only means a newer key while the `GenMap` that hands out
-/// the keys never wraps a generation. A `GenMap` only wraps generations when
-/// [`WRAP_ON_OVERFLOW`](crate::GenMapConfig::WRAP_ON_OVERFLOW) is `true` in its
-/// config, which is not the default. Once a slot's generation wraps back to
-/// zero, a newer key can have a smaller generation than the key of the value in
-/// the slot, and the `SecondaryMap` refuses the newer key's insert.
+/// A larger generation only means a newer key while the map that hands out
+/// the keys never wraps a generation. A `GenMap` or a `DenseGenMap` only wraps
+/// generations when `WRAP_ON_OVERFLOW` is `true` in its config, which is not
+/// the default. Once a slot's generation wraps back to zero, a newer key can
+/// have a smaller generation than the key of the stored value, and the
+/// secondary map refuses the newer key's insert.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct NewerWins;
 

@@ -19,7 +19,7 @@ use crate::parity::Odd;
 /// assert_eq!(core::mem::size_of::<Key<Split>>(), 8);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Split<Idx: KeyPiece = u32, Gen: KeyPiece = u32> {
+pub struct Split<Idx = u32, Gen: KeyPiece = u32> {
     idx: Idx,
     /// An odd generation is never zero, and an [`Odd`] stores it as a
     /// `NonZero`, which lets `Option` use zero to represent `None` and gives
@@ -91,8 +91,8 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// value of that type. No map ever gives a slot that index, so such a map can hold
 /// one slot fewer than the index bits could address. When a value is removed
 /// from a slot that has the largest generation, the slot retires or its
-/// generation wraps back to zero, as
-/// [`WRAP_ON_OVERFLOW`](crate::GenMapConfig::WRAP_ON_OVERFLOW) decides.
+/// generation wraps back to zero, as the `WRAP_ON_OVERFLOW` of the map's
+/// config decides.
 ///
 /// # Examples
 ///
@@ -107,8 +107,8 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 ///     type KeyConfig = Packed<u32, 8>;
 /// }
 ///
-/// impl<S: GenSlotItem> GenMapConfig<S> for Compact {
-///     type Storage = Vec<S>;
+/// impl GenMapConfig for Compact {
+///     type Storage<S: GenSlotItem> = Vec<S>;
 /// }
 ///
 /// let mut map = GenMap::<&str, Compact>::new_with_config();

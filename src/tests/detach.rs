@@ -1,7 +1,5 @@
 use super::{assert_not_detached, Cfg, DropTracker};
-use crate::{
-    GenMap, GenMapConfig, GenSlotItem, Key, MapConfig, MapConfigFor, MapKeyConfig, Packed, Split,
-};
+use crate::{GenMap, GenMapConfig, GenSlotItem, Key, MapConfig, MapKeyConfig, Packed, Split};
 use std::vec::Vec;
 
 /// Keys whose generation is 4 bits, so the largest one is 15, well below the
@@ -12,9 +10,9 @@ impl MapConfig for Wrap4 {
     type KeyConfig = Packed<u16, 4>;
 }
 
-impl<S: GenSlotItem> GenMapConfig<S> for Wrap4 {
+impl GenMapConfig for Wrap4 {
     const WRAP_ON_OVERFLOW: bool = true;
-    type Storage = Vec<S>;
+    type Storage<S: GenSlotItem> = Vec<S>;
 }
 
 /// `u8` keys that use the whole generation type, in a map that wraps
@@ -25,14 +23,14 @@ impl MapConfig for WrapU8 {
     type KeyConfig = Split<u8, u8>;
 }
 
-impl<S: GenSlotItem> GenMapConfig<S> for WrapU8 {
+impl GenMapConfig for WrapU8 {
     const WRAP_ON_OVERFLOW: bool = true;
-    type Storage = Vec<S>;
+    type Storage<S: GenSlotItem> = Vec<S>;
 }
 
 /// A map whose only slot holds a value under the largest generation its key
 /// can hold, and the key of that value.
-fn at_the_largest_generation<C: MapConfigFor<i32>>() -> (GenMap<i32, C>, Key<MapKeyConfig<C>>) {
+fn at_the_largest_generation<C: GenMapConfig>() -> (GenMap<i32, C>, Key<MapKeyConfig<C>>) {
     let mut map = GenMap::<i32, C>::new_with_config();
     let mut key = map.insert(0);
     while !key.is_max_generation() {
@@ -258,6 +256,97 @@ fn reattach_fails_for_another_key_of_a_slot_detached_at_the_largest_generation()
     // The slot is still detached under `key`.
     map.reattach(key, 2).unwrap();
     assert_eq!(map[key], 2);
+}
+
+#[test]
+fn release_frees_a_detached_slot() {
+    let mut map = GenMap::new();
+    let key = map.insert(1);
+    map.detach(key).unwrap();
+    assert!(map.release(key));
+    assert_eq!(map.len(), 0);
+    assert!(map.get(key).is_none());
+    assert_eq!(map.reattach(key, 2), Err(2));
+
+    // The freed slot heads the free list, so the next insert takes it under
+    // a newer generation.
+    let other = map.insert(3);
+    assert_eq!(other.idx(), key.idx());
+    assert!(other.generation() > key.generation());
+    assert!(map.get(key).is_none());
+}
+
+#[test]
+fn release_fails_for_a_key_that_is_not_detached() {
+    let mut map = GenMap::new();
+    let live = map.insert(1);
+    let removed = map.insert(2);
+    map.remove(removed);
+    assert!(!map.release(live));
+    assert!(!map.release(removed));
+    assert_eq!(map[live], 1);
+    assert_eq!(map.len(), 1);
+    // The free list still holds only the removed slot.
+    assert_eq!(map.insert(3).idx(), removed.idx());
+    assert_eq!(map.insert(4).idx(), 2);
+}
+
+#[test]
+fn release_fails_for_another_key_of_a_detached_slot() {
+    let mut map = GenMap::new();
+    let old = map.insert(1);
+    map.remove(old);
+    let new = map.insert(2);
+    map.detach(new).unwrap();
+    assert!(!map.release(old));
+    // The slot is still detached under `new`.
+    map.reattach(new, 3).unwrap();
+    assert_eq!(map[new], 3);
+}
+
+#[test]
+fn releasing_twice_fails_the_second_time() {
+    let mut map = GenMap::new();
+    let key = map.insert(1);
+    map.detach(key).unwrap();
+    assert!(map.release(key));
+    assert!(!map.release(key));
+    // The slot went on the free list once, so the second insert needs a new
+    // slot.
+    assert_eq!(map.insert(2).idx(), key.idx());
+    assert_ne!(map.insert(3).idx(), key.idx());
+}
+
+#[test]
+fn release_fails_after_reset() {
+    let mut map = GenMap::new();
+    let key = map.insert(1);
+    map.detach(key).unwrap();
+    map.reset();
+    assert!(!map.release(key));
+    assert_eq!(map.slots_len(), 0);
+}
+
+#[test]
+fn release_retires_a_slot_whose_generation_ran_out() {
+    let (mut map, key) = at_the_largest_generation::<Cfg<u8, u8>>();
+    map.detach(key).unwrap();
+    assert!(map.release(key));
+    assert_eq!(map.generation_at(key.idx()), Some(0));
+    assert_eq!(map.reattach(key, 1), Err(1));
+    // The retired slot is skipped, so the next value gets a new slot.
+    assert_ne!(map.insert(1).idx(), key.idx());
+}
+
+#[test]
+fn release_wraps_a_slot_whose_generation_ran_out() {
+    let (mut map, key) = at_the_largest_generation::<Wrap4>();
+    map.detach(key).unwrap();
+    assert!(map.release(key));
+    assert_eq!(map.generation_at(key.idx()), Some(0));
+    let next = map.insert(1);
+    assert_eq!(next.idx(), key.idx());
+    assert_eq!(next.generation().get().get(), 1);
 }
 
 #[test]

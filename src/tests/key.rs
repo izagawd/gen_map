@@ -24,9 +24,9 @@ fn maps_whose_configs_share_a_key_config_share_a_key_type() {
         type KeyConfig = DefaultKeyConfig;
     }
 
-    impl<S: GenSlotItem> GenMapConfig<S> for Wrapping {
+    impl GenMapConfig for Wrapping {
         const WRAP_ON_OVERFLOW: bool = true;
-        type Storage = Vec<S>;
+        type Storage<S: GenSlotItem> = Vec<S>;
     }
 
     let mut retiring = GenMap::new();
@@ -82,8 +82,8 @@ fn every_integer_type_works_as_a_config() {
         type KeyConfig = Split<u64, u8>;
     }
 
-    impl<S: GenSlotItem> GenMapConfig<S> for Mixed {
-        type Storage = Vec<S>;
+    impl GenMapConfig for Mixed {
+        type Storage<S: GenSlotItem> = Vec<S>;
     }
 
     struct Wide;
@@ -91,8 +91,8 @@ fn every_integer_type_works_as_a_config() {
         type KeyConfig = Split<u128, usize>;
     }
 
-    impl<S: GenSlotItem> GenMapConfig<S> for Wide {
-        type Storage = Vec<S>;
+    impl GenMapConfig for Wide {
+        type Storage<S: GenSlotItem> = Vec<S>;
     }
 
     let mut mixed = GenMap::<i32, Mixed>::new_with_config();
@@ -121,8 +121,8 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
         type KeyConfig = Split<u128, u32>;
     }
 
-    impl<S: GenSlotItem> GenMapConfig<S> for Wide {
-        type Storage = Vec<S>;
+    impl GenMapConfig for Wide {
+        type Storage<S: GenSlotItem> = Vec<S>;
     }
 
     let mut map = GenMap::<i32, Wide>::new_with_config();

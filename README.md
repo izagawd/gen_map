@@ -53,9 +53,9 @@ impl MapConfig for CompactConfig {
     type KeyConfig = Packed<u32, 8>;
 }
 
-// `S` is the slot the map keeps each value in.
-impl<S: GenSlotItem> GenMapConfig<S> for CompactConfig {
-    type Storage = Vec<S>;
+impl GenMapConfig for CompactConfig {
+    // `S` is the type of the slots the map keeps its values in.
+    type Storage<S: GenSlotItem> = Vec<S>;
 }
 
 let mut map = GenMap::<&str, CompactConfig>::new_with_config();
@@ -64,8 +64,7 @@ assert_eq!(core::mem::size_of_val(&key), 4);
 ```
 
 The [documentation](https://docs.rs/gen_map) covers the rest, such as key
-configs, storage, what happens when a generation runs out, and limiting which
-maps can use a config.
+configs, storage, and what happens when a generation runs out.
 
 ## Secondary maps
 
@@ -84,15 +83,33 @@ ages.insert(alice, 30).unwrap();
 assert_eq!(ages[alice], 30);
 ```
 
+## Dense maps
+
+A `DenseGenMap` keeps its values one after another in a storage of their own,
+so iterating over them is as fast as iterating over a slice. Removing a value
+moves the last value into its place. A `DenseSecondaryMap` does the same for
+a `SecondaryMap`.
+
+```rust
+use gen_map::DenseGenMap;
+
+let mut map = DenseGenMap::new();
+let a = map.insert(1);
+map.insert(2);
+map.insert(3);
+map.remove(a);
+assert_eq!(map.values().copied().collect::<Vec<_>>(), [3, 2]);
+```
+
 ## Cargo features
 
 - `alloc` is on by default. It adds the `Vec` storage and the default
   config. Turn default features off and use `arrayvec` instead to run
   without an allocator.
-- `arrayvec` adds `ArrayVec` storage for a `GenMap` or a `SecondaryMap`. An
+- `arrayvec` adds `ArrayVec` storage for any of the maps. An
   `ArrayVec` has a fixed capacity and never allocates.
-- `smallvec` adds `SmallVec` storage for a `GenMap` or a `SecondaryMap`. A
-  `SmallVec` keeps a few slots inline before it allocates. The feature uses a
+- `smallvec` adds `SmallVec` storage for any of the maps. A
+  `SmallVec` keeps a few items inline before it allocates. The feature uses a
   beta of smallvec 2.0, so it is not covered by semver.
 
 ## License

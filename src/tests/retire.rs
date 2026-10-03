@@ -13,9 +13,9 @@ impl MapConfig for Wrapping {
     type KeyConfig = Packed<u8, 4>;
 }
 
-impl<S: GenSlotItem> GenMapConfig<S> for Wrapping {
+impl GenMapConfig for Wrapping {
     const WRAP_ON_OVERFLOW: bool = true;
-    type Storage = Vec<S>;
+    type Storage<S: GenSlotItem> = Vec<S>;
 }
 
 #[test]
