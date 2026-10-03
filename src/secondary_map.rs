@@ -915,7 +915,7 @@ impl<T, C: SecondaryMapConfig> IndexMut<Key<MapKeyConfig<C>>> for SecondaryMap<T
 
 /// Iterator over `(key, &value)` pairs, in index order. It is created using
 /// [`SecondaryMap::iter`].
-pub struct SecondaryIter<'a, T: 'a, C: SecondaryMapConfig + 'a> {
+pub struct SecondaryIter<'a, T, C: SecondaryMapConfig> {
     slots: Enumerate<slice::Iter<'a, SecondaryMapSlot<T, C>>>,
     remaining: usize,
 }
@@ -976,7 +976,7 @@ impl<T, C: SecondaryMapConfig> Clone for SecondaryIter<'_, T, C> {
 
 /// Iterator over `(key, &mut value)` pairs, in index order. It is created
 /// using [`SecondaryMap::iter_mut`].
-pub struct SecondaryIterMut<'a, T: 'a, C: SecondaryMapConfig + 'a> {
+pub struct SecondaryIterMut<'a, T, C: SecondaryMapConfig> {
     slots: Enumerate<slice::IterMut<'a, SecondaryMapSlot<T, C>>>,
     remaining: usize,
 }
@@ -1025,7 +1025,7 @@ impl<T, C: SecondaryMapConfig> FusedIterator for SecondaryIterMut<'_, T, C> {}
 
 /// Iterator over keys, in index order. It is created using
 /// [`SecondaryMap::keys`].
-pub struct SecondaryKeys<'a, T: 'a, C: SecondaryMapConfig + 'a> {
+pub struct SecondaryKeys<'a, T, C: SecondaryMapConfig> {
     inner: SecondaryIter<'a, T, C>,
 }
 
@@ -1064,7 +1064,7 @@ impl<T, C: SecondaryMapConfig> Clone for SecondaryKeys<'_, T, C> {
 
 /// Iterator over references to the values, in index order. It is created
 /// using [`SecondaryMap::values`].
-pub struct SecondaryValues<'a, T: 'a, C: SecondaryMapConfig + 'a> {
+pub struct SecondaryValues<'a, T, C: SecondaryMapConfig> {
     inner: SecondaryIter<'a, T, C>,
 }
 
@@ -1103,7 +1103,7 @@ impl<T, C: SecondaryMapConfig> Clone for SecondaryValues<'_, T, C> {
 
 /// Iterator over mutable references to the values, in index order. It is
 /// created using [`SecondaryMap::values_mut`].
-pub struct SecondaryValuesMut<'a, T: 'a, C: SecondaryMapConfig + 'a> {
+pub struct SecondaryValuesMut<'a, T, C: SecondaryMapConfig> {
     inner: SecondaryIterMut<'a, T, C>,
 }
 
@@ -1133,7 +1133,7 @@ impl<T, C: SecondaryMapConfig> FusedIterator for SecondaryValuesMut<'_, T, C> {}
 
 /// Iterator that takes each value out, with its key, in index order. It is
 /// created using [`SecondaryMap::drain`].
-pub struct SecondaryDrain<'a, T: 'a, C: SecondaryMapConfig + 'a> {
+pub struct SecondaryDrain<'a, T, C: SecondaryMapConfig> {
     map: &'a mut SecondaryMap<T, C>,
     /// The position of the slot the iterator checks next.
     position: usize,

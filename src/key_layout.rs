@@ -19,7 +19,7 @@ use crate::parity::Odd;
 /// assert_eq!(core::mem::size_of::<Key<Split>>(), 8);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Split<Idx: KeyPiece = u32, Gen: KeyPiece = u32> {
+pub struct Split<Idx = u32, Gen: KeyPiece = u32> {
     idx: Idx,
     /// An odd generation is never zero, and an [`Odd`] stores it as a
     /// `NonZero`, which lets `Option` use zero to represent `None` and gives

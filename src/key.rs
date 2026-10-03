@@ -7,7 +7,7 @@ use core::fmt;
 /// [`DenseGenMap`](crate::DenseGenMap), returned by `insert`.
 /// The key config `K` decides how the key stores its index and generation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Key<K: KeyConfig = DefaultKeyConfig> {
+pub struct Key<K = DefaultKeyConfig> {
     repr: K,
 }
 

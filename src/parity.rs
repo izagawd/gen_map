@@ -65,7 +65,7 @@ impl<G: KeyPiece> Odd<G> {
 
 /// An even number of type `G`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Even<G: KeyPiece>(G);
+pub struct Even<G>(G);
 
 impl<G: KeyPiece> Even<G> {
     /// The even number zero.

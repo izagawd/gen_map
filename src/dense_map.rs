@@ -1512,7 +1512,7 @@ impl<T, C: DenseGenMapConfig> Drop for DenseDrain<'_, T, C> {
 /// Iterator over `(key, &value)` pairs, in the order the values are stored.
 /// It is created using [`DenseGenMap::iter`] or
 /// [`DenseSecondaryMap::iter`](crate::DenseSecondaryMap::iter).
-pub struct DenseIter<'a, T, K: KeyConfig> {
+pub struct DenseIter<'a, T, K> {
     pub(crate) keys: core::slice::Iter<'a, Key<K>>,
     pub(crate) values: core::slice::Iter<'a, T>,
 }
@@ -1554,7 +1554,7 @@ impl<T, K: KeyConfig> Clone for DenseIter<'_, T, K> {
 /// Iterator over `(key, &mut value)` pairs, in the order the values are
 /// stored. It is created using [`DenseGenMap::iter_mut`] or
 /// [`DenseSecondaryMap::iter_mut`](crate::DenseSecondaryMap::iter_mut).
-pub struct DenseIterMut<'a, T, K: KeyConfig> {
+pub struct DenseIterMut<'a, T, K> {
     pub(crate) keys: core::slice::Iter<'a, Key<K>>,
     pub(crate) values: core::slice::IterMut<'a, T>,
 }
@@ -1586,7 +1586,7 @@ impl<T, K: KeyConfig> FusedIterator for DenseIterMut<'_, T, K> {}
 /// Iterator over the keys, in the order the values are stored. It is created
 /// using [`DenseGenMap::keys`] or
 /// [`DenseSecondaryMap::keys`](crate::DenseSecondaryMap::keys).
-pub struct DenseKeys<'a, K: KeyConfig>(pub(crate) core::slice::Iter<'a, Key<K>>);
+pub struct DenseKeys<'a, K>(pub(crate) core::slice::Iter<'a, Key<K>>);
 
 impl<K: KeyConfig> Iterator for DenseKeys<'_, K> {
     type Item = Key<K>;
