@@ -102,15 +102,16 @@ impl<T, S: fmt::Display> fmt::Display for InsertError<T, S> {
     }
 }
 
-/// Why [`SecondaryMap::insert`](crate::SecondaryMap::insert) or
-/// [`DenseSecondaryMap::insert`](crate::DenseSecondaryMap::insert) could not
-/// insert. Each variant hands the value back so that the caller can keep it.
-/// `S` is the map's [`SecondaryStorageError`](crate::SecondaryStorageError),
-/// or the [`DenseSecondaryStorageError`](crate::DenseSecondaryStorageError)
-/// of a `DenseSecondaryMap`.
+/// This error says why [`SecondaryMap::insert`](crate::SecondaryMap::insert),
+/// [`DenseSecondaryMap::insert`](crate::DenseSecondaryMap::insert) or
+/// `SparseSecondaryMap::insert` could not insert. Each variant hands the value
+/// back so that the caller can keep it. `S` is the map's
+/// [`SecondaryStorageError`](crate::SecondaryStorageError), the
+/// [`DenseSecondaryStorageError`](crate::DenseSecondaryStorageError) of a
+/// `DenseSecondaryMap`, or `TryReserveError` for a `SparseSecondaryMap`.
 pub enum SecondaryInsertError<T, S> {
-    /// The slot at the key's index holds a value that was inserted under a
-    /// different generation, and the config's
+    /// The value stored at the key's index was inserted under a different
+    /// generation, and the config's
     /// [`ReplaceStrategy`](crate::ReplaceStrategy) kept that value.
     Refused(T),
 
@@ -119,8 +120,9 @@ pub enum SecondaryInsertError<T, S> {
     IndexReserved(T),
 
     /// A storage could not make room for the value. For a `SecondaryMap`, it
-    /// is the storage of the slots up to the key's index. The second field says
-    /// why.
+    /// is the storage of the slots up to the key's index, and for a
+    /// `SparseSecondaryMap`, it is the `HashMap` of its values. The second
+    /// field says why.
     StorageFull(T, S),
 }
 
@@ -255,10 +257,11 @@ impl<E: fmt::Display, S: fmt::Display> fmt::Display for InsertWithError<E, S> {
     }
 }
 
-/// Why the `get_disjoint_mut` method of a [`GenMap`](crate::GenMap),
-/// [`SecondaryMap`](crate::SecondaryMap), [`DenseGenMap`](crate::DenseGenMap)
-/// or [`DenseSecondaryMap`](crate::DenseSecondaryMap) could not hand out
-/// its references.
+/// This error says why the `get_disjoint_mut` method of a
+/// [`GenMap`](crate::GenMap), [`SecondaryMap`](crate::SecondaryMap),
+/// [`DenseGenMap`](crate::DenseGenMap),
+/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) or `SparseSecondaryMap`
+/// could not hand out its references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutError {
     /// The map has no value for one of the keys, meaning the map's
@@ -279,10 +282,11 @@ impl fmt::Display for GetDisjointMutError {
     }
 }
 
-/// Why the `get_disjoint_mut_at` method of a [`GenMap`](crate::GenMap),
-/// [`SecondaryMap`](crate::SecondaryMap), [`DenseGenMap`](crate::DenseGenMap)
-/// or [`DenseSecondaryMap`](crate::DenseSecondaryMap) could not hand out
-/// its references.
+/// This error says why the `get_disjoint_mut_at` method of a
+/// [`GenMap`](crate::GenMap), [`SecondaryMap`](crate::SecondaryMap),
+/// [`DenseGenMap`](crate::DenseGenMap),
+/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) or `SparseSecondaryMap`
+/// could not hand out its references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutAtError {
     /// There is no slot at one of the indices, or the slot holds no value,

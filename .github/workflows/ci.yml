@@ -30,7 +30,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.79"
-      # The smallvec feature needs Rust 1.86, so it is left out here.
+      # The smallvec and std features need Rust 1.86, so they are left out here.
       - run: cargo test --features arrayvec
 
   no-std:

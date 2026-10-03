@@ -4,7 +4,8 @@ A customizable generational map that returns a `Key` upon inserting a value.
 The key can be used to later access or remove the value, and removing a value bumps its slot's generation, so the old key no longer matches the slot.
 The operations for inserting, removing and accessing a value are all O(1).
 
-The crate never uses `std`, so it also works on targets that do not have it.
+The crate only uses `std` when the `std` feature is on, so without that
+feature it also works on targets that do not have `std`.
 
 ```toml
 [dependencies]
@@ -83,6 +84,10 @@ ages.insert(alice, 30).unwrap();
 assert_eq!(ages[alice], 30);
 ```
 
+A `SparseSecondaryMap` keeps its values in a `HashMap` under the indices of
+their keys, so it uses less memory than a `SecondaryMap` when only a few of a
+`GenMap`'s keys have a value in it. It needs the `std` feature.
+
 ## Dense maps
 
 A `DenseGenMap` keeps its values one after another in a storage of their own,
@@ -111,6 +116,8 @@ assert_eq!(map.values().copied().collect::<Vec<_>>(), [3, 2]);
 - `smallvec` adds `SmallVec` storage for any of the maps. A
   `SmallVec` keeps a few items inline before it allocates. The feature uses a
   beta of smallvec 2.0, so it is not covered by semver.
+- `std` adds `SparseSecondaryMap`, which keeps its values in std's
+  `HashMap`.
 
 ## License
 
