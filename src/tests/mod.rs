@@ -22,6 +22,7 @@ mod key_piece;
 mod model;
 mod overflow;
 mod packed;
+mod panic_fuzz;
 mod parity;
 mod reset;
 mod retain;

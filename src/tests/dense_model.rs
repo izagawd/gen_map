@@ -80,7 +80,7 @@ impl DenseSecondaryMapConfig for Keep {
 }
 
 /// Packed keys with four index bits and four generation bits. The keys run
-/// out of indices once a map has 15 slots, and a slot retires once its eighth
+/// out of indices once a map has 16 slots, and a slot retires once its eighth
 /// value is removed.
 struct Tiny;
 
