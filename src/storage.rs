@@ -328,7 +328,7 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
 // the next `additional` pushes cannot fail.
 unsafe impl<S, const N: usize> SliceStorage for smallvec::SmallVec<S, N> {
     type Item = S;
-    type Error = smallvec::CollectionAllocErr;
+    type Error = smallvec::SmallVecError;
 
     #[inline]
     fn empty() -> Self {
@@ -356,7 +356,7 @@ unsafe impl<S, const N: usize> SliceStorage for smallvec::SmallVec<S, N> {
     }
 
     #[inline]
-    fn ensure_room(&mut self, additional: usize) -> Result<(), smallvec::CollectionAllocErr> {
+    fn ensure_room(&mut self, additional: usize) -> Result<(), smallvec::SmallVecError> {
         smallvec::SmallVec::try_reserve(self, additional)
     }
 
