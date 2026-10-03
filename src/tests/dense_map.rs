@@ -1,10 +1,12 @@
 //! Tests for `DenseGenMap`. The parts it shares with `GenMap` are checked
-//! against a `GenMap` in `dense_model`, so these tests cover the order of the
-//! values, the iterators, drops and storage errors.
+//! against a `GenMap` in `dense_model`, so these tests cover what that check
+//! cannot, such as the order of the values, the iterators, drops, panics and
+//! storage errors.
 
 use super::{Bomb, DropTracker};
 use crate::{
-    DenseError, DenseGenMap, DenseGenMapConfig, GenSlotItem, InsertWithError, Key, MapConfig, Split,
+    DenseError, DenseGenMap, DenseGenMapConfig, GenSlotItem, InsertError, InsertWithError, Key,
+    MapConfig, Packed, Split,
 };
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -18,6 +20,20 @@ impl MapConfig for Small {
 }
 
 impl DenseGenMapConfig for Small {
+    type SlotStorage<S: GenSlotItem> = Vec<S>;
+    type ValueStorage<V> = Vec<V>;
+    type KeyStorage<K> = Vec<K>;
+}
+
+/// Packed keys with a 4 bit generation, so a slot retires once its eighth
+/// value is removed.
+struct Retiring;
+
+impl MapConfig for Retiring {
+    type KeyConfig = Packed<u16, 4>;
+}
+
+impl DenseGenMapConfig for Retiring {
     type SlotStorage<S: GenSlotItem> = Vec<S>;
     type ValueStorage<V> = Vec<V>;
     type KeyStorage<K> = Vec<K>;
@@ -167,6 +183,29 @@ fn iterators_agree_with_each_other_and_run_both_ways() {
     assert_eq!(map.keys().next_back(), Some(keys[3]));
     assert_eq!(map.values().next_back(), Some(&3));
 
+    // A clone of an iterator goes on from where the original is.
+    let mut iter = map.iter();
+    iter.next();
+    let rest: Vec<_> = iter.clone().map(|(key, _)| key).collect();
+    assert_eq!(rest, [keys[4], keys[2], keys[3]]);
+    assert_eq!(iter.len(), 3);
+    let mut key_iter = map.keys();
+    key_iter.next();
+    assert_eq!(key_iter.clone().collect::<Vec<_>>(), rest);
+    let mut value_iter = map.values();
+    value_iter.next();
+    assert_eq!(value_iter.clone().copied().collect::<Vec<_>>(), [4, 2, 3]);
+
+    let mut iter_mut = map.iter_mut();
+    assert_eq!(iter_mut.len(), 4);
+    let last = iter_mut.next_back().map(|(key, value)| (key, *value));
+    assert_eq!(last, Some((keys[3], 3)));
+    assert_eq!(iter_mut.len(), 3);
+    let mut values_mut = map.values_mut();
+    assert_eq!(values_mut.len(), 4);
+    assert_eq!(values_mut.next_back().copied(), Some(3));
+    assert_eq!(values_mut.len(), 3);
+
     for (_, value) in map.iter_mut() {
         *value += 100;
     }
@@ -309,10 +348,72 @@ fn insert_panics_when_the_keys_run_out() {
     }
 }
 
+#[test]
+fn try_insert_hands_the_value_back_when_the_keys_run_out() {
+    let mut map = DenseGenMap::<u32, Small>::new_with_config();
+    for i in 0..255 {
+        map.insert(i);
+    }
+    assert!(matches!(
+        map.try_insert(255),
+        Err(InsertError::IndexExhausted(255))
+    ));
+    assert_eq!(map.len(), 255);
+}
+
+#[test]
+fn a_slot_retires_once_its_generations_run_out() {
+    let mut map = DenseGenMap::<u32, Retiring>::new_with_config();
+    for i in 0..8 {
+        let key = map.insert(i);
+        assert_eq!(key.idx(), 0);
+        assert_eq!(map.remove(key), Some(i));
+    }
+    // The retired slot stays out of use, so the next value gets a new slot.
+    assert_eq!(map.generation_at(0), Some(0));
+    assert_eq!(map.insert(8).idx(), 1);
+    assert_eq!(map.slots_len(), 2);
+}
+
+#[test]
+#[should_panic(expected = "DenseGenMap cannot make room for")]
+fn reserve_panics_when_a_storage_cannot_make_room() {
+    DenseGenMap::<u32>::new().reserve(usize::MAX);
+}
+
+#[test]
+fn default_is_empty_and_an_entry_shows_its_key() {
+    let mut map = DenseGenMap::<u32>::default();
+    assert!(map.is_empty());
+    let entry = map.vacant_entry().unwrap();
+    let key = entry.key();
+    assert_eq!(
+        format!("{entry:?}"),
+        format!("DenseVacantEntry {{ key: {key:?} }}")
+    );
+}
+
+#[test]
+fn a_dense_error_says_which_storage_is_full() {
+    let errors: [DenseError<&str, &str, &str>; 3] = [
+        DenseError::Slots("a"),
+        DenseError::Values("b"),
+        DenseError::Keys("c"),
+    ];
+    let messages: Vec<_> = errors.iter().map(|error| format!("{error}")).collect();
+    assert_eq!(
+        messages,
+        [
+            "the slot storage is full: a",
+            "the value storage is full: b",
+            "the key storage is full: c",
+        ]
+    );
+}
+
 #[cfg(feature = "arrayvec")]
 mod capped {
     use super::*;
-    use crate::InsertError;
     use arrayvec::ArrayVec;
 
     /// A dense config whose slot, value and key storages hold `S`, `V` and
@@ -372,6 +473,24 @@ mod capped {
         let next = map.try_insert(9).unwrap();
         assert_eq!(next.idx(), 1);
         assert!(map.try_insert(10).is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "one of its storages cannot make room for another value")]
+    fn insert_panics_when_a_storage_is_full() {
+        let (mut map, _) = fill::<2, 4, 4>();
+        map.insert(99);
+    }
+
+    #[test]
+    fn reattach_hands_the_value_back_when_the_keys_are_full() {
+        let mut map = DenseGenMap::<u32, Caps<4, 4, 2>>::new_with_config();
+        let a = map.insert(1);
+        map.insert(2);
+        map.detach(a).unwrap();
+        map.insert(3);
+        assert_eq!(map.reattach(a, 4), Err(4));
+        assert!(map.release(a));
     }
 
     #[test]

@@ -1,17 +1,18 @@
-//! Maps whose slots live in a `SmallVec`, which keeps a few slots inline and
-//! moves them to the heap once there are more. The randomized model test
-//! covers them too.
+//! Maps whose storages are `SmallVec`s, which keep a few items inline and
+//! move them to the heap once there are more. The randomized model tests
+//! cover them too.
 
 use super::{key_from_parts, Bomb, DropTracker};
 use crate::{
-    GenMap, GenMapConfig, GenSlotItem, MapConfig, NewerWins, SecondaryMap, SecondaryMapConfig,
+    DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap,
+    GenMapConfig, GenSlotItem, MapConfig, NewerWins, SecondaryMap, SecondaryMapConfig,
     SecondarySlotItem, Split,
 };
 use smallvec::SmallVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
 
-/// Room for four slots inline before the storage moves to the heap.
+/// Room for four items inline in each storage before it moves to the heap.
 struct Four;
 
 impl MapConfig for Four {
@@ -25,6 +26,42 @@ impl GenMapConfig for Four {
 impl SecondaryMapConfig for Four {
     type ReplaceStrategy = NewerWins;
     type Storage<S: SecondarySlotItem> = SmallVec<S, 4>;
+}
+
+impl DenseGenMapConfig for Four {
+    type SlotStorage<S: GenSlotItem> = SmallVec<S, 4>;
+    type ValueStorage<V> = SmallVec<V, 4>;
+    type KeyStorage<K> = SmallVec<K, 4>;
+}
+
+impl DenseSecondaryMapConfig for Four {
+    type ReplaceStrategy = NewerWins;
+    type SlotStorage<S: GenSlotItem> = SmallVec<S, 4>;
+    type ValueStorage<V> = SmallVec<V, 4>;
+    type KeyStorage<K> = SmallVec<K, 4>;
+}
+
+#[test]
+fn dense_maps_in_small_vecs_keep_working_after_they_move_to_the_heap() {
+    let mut map = DenseGenMap::<u32, Four>::new_with_config();
+    assert_eq!(map.capacity(), 4);
+    let keys: Vec<_> = (0..20).map(|i| map.insert(i)).collect();
+    assert!(map.capacity() >= 20);
+    assert_eq!(map.remove(keys[7]), Some(7));
+    assert_eq!(map[keys[19]], 19);
+    map.reserve(50);
+    assert!(map.capacity() >= 69);
+
+    let mut secondary = DenseSecondaryMap::<u32, Four>::new_with_config();
+    for (key, value) in &map {
+        secondary.insert(key, *value * 10).unwrap();
+    }
+    assert_eq!(secondary.len(), 19);
+    assert_eq!(secondary[keys[19]], 190);
+
+    let owned: Vec<_> = map.into_iter().rev().collect();
+    assert_eq!(owned.len(), 19);
+    assert_eq!(owned[0], (keys[18], 18));
 }
 
 #[test]

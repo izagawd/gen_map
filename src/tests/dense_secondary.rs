@@ -1,6 +1,7 @@
 //! Tests for `DenseSecondaryMap`. The parts it shares with `SecondaryMap` are
-//! checked against a `SecondaryMap` in `dense_model`, so these tests cover the
-//! order of the values, drops and storage errors.
+//! checked against a `SecondaryMap` in `dense_model`, so these tests cover
+//! what that check cannot, such as the order of the values, drops, panics and
+//! storage errors.
 
 use super::{key_from_parts, DropTracker};
 use crate::{
@@ -166,6 +167,27 @@ fn capacity_and_reserve_cover_every_storage() {
     ));
 }
 
+#[test]
+fn values_mut_and_index_mut_change_the_values_in_place() {
+    let k = keys(3);
+    let mut map = DenseSecondaryMap::<u32>::default();
+    assert!(map.is_empty());
+    for (i, key) in (0..).zip(&k) {
+        map.insert(*key, i).unwrap();
+    }
+    for value in map.values_mut() {
+        *value *= 10;
+    }
+    map[k[1]] += 1;
+    assert_eq!(map.values().copied().collect::<Vec<_>>(), [0, 11, 20]);
+}
+
+#[test]
+#[should_panic(expected = "DenseSecondaryMap cannot make room for")]
+fn reserve_panics_when_a_storage_cannot_make_room() {
+    DenseSecondaryMap::<u32>::new().reserve(usize::MAX);
+}
+
 #[cfg(feature = "arrayvec")]
 mod capped {
     use super::*;
@@ -215,5 +237,20 @@ mod capped {
         assert_eq!(fill::<2, 4, 4>(), (2, "slots"));
         assert_eq!(fill::<4, 2, 4>(), (2, "values"));
         assert_eq!(fill::<4, 4, 2>(), (2, "keys"));
+    }
+
+    #[test]
+    fn an_insert_that_fails_adds_no_slots() {
+        let mut map = DenseSecondaryMap::<u32, Caps<8, 2, 8>>::new_with_config();
+        for i in 0..2 {
+            let key = key_from_parts::<Split<u8, u8>>(i, 1);
+            map.insert(key, u32::from(i)).unwrap();
+        }
+        let far = key_from_parts::<Split<u8, u8>>(6, 1);
+        assert!(matches!(
+            map.insert(far, 6),
+            Err(SecondaryInsertError::StorageFull(6, DenseError::Values(_)))
+        ));
+        assert_eq!(map.slots_len(), 2);
     }
 }
