@@ -1432,12 +1432,12 @@ impl<T: Clone, C: GenMapConfig> Clone for GenMap<T, C> {
 }
 
 /// Iterator over `(key, &value)` pairs. It is created using [`GenMap::iter`].
-pub struct Iter<'a, T, C: GenMapConfig> {
+pub struct Iter<'a, T, C: MapConfig> {
     slots: Enumerate<core::slice::Iter<'a, MapSlot<T, C>>>,
     remaining: usize,
 }
 
-impl<'a, T, C: GenMapConfig> Iterator for Iter<'a, T, C> {
+impl<'a, T, C: MapConfig> Iterator for Iter<'a, T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a T);
 
     #[inline]
@@ -1462,7 +1462,7 @@ impl<'a, T, C: GenMapConfig> Iterator for Iter<'a, T, C> {
     }
 }
 
-impl<T, C: GenMapConfig> DoubleEndedIterator for Iter<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for Iter<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
@@ -1480,10 +1480,10 @@ impl<T, C: GenMapConfig> DoubleEndedIterator for Iter<'_, T, C> {
     }
 }
 
-impl<T, C: GenMapConfig> ExactSizeIterator for Iter<'_, T, C> {}
-impl<T, C: GenMapConfig> FusedIterator for Iter<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for Iter<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for Iter<'_, T, C> {}
 
-impl<T, C: GenMapConfig> Clone for Iter<'_, T, C> {
+impl<T, C: MapConfig> Clone for Iter<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             slots: self.slots.clone(),
@@ -1494,12 +1494,12 @@ impl<T, C: GenMapConfig> Clone for Iter<'_, T, C> {
 
 /// Iterator over `(key, &mut value)` pairs. It is created using
 /// [`GenMap::iter_mut`].
-pub struct IterMut<'a, T, C: GenMapConfig> {
+pub struct IterMut<'a, T, C: MapConfig> {
     slots: Enumerate<core::slice::IterMut<'a, MapSlot<T, C>>>,
     remaining: usize,
 }
 
-impl<'a, T, C: GenMapConfig> Iterator for IterMut<'a, T, C> {
+impl<'a, T, C: MapConfig> Iterator for IterMut<'a, T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a mut T);
 
     #[inline]
@@ -1524,7 +1524,7 @@ impl<'a, T, C: GenMapConfig> Iterator for IterMut<'a, T, C> {
     }
 }
 
-impl<T, C: GenMapConfig> DoubleEndedIterator for IterMut<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for IterMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
@@ -1542,15 +1542,15 @@ impl<T, C: GenMapConfig> DoubleEndedIterator for IterMut<'_, T, C> {
     }
 }
 
-impl<T, C: GenMapConfig> ExactSizeIterator for IterMut<'_, T, C> {}
-impl<T, C: GenMapConfig> FusedIterator for IterMut<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for IterMut<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for IterMut<'_, T, C> {}
 
 /// Iterator over keys. It is created using [`GenMap::keys`].
-pub struct Keys<'a, T, C: GenMapConfig> {
+pub struct Keys<'a, T, C: MapConfig> {
     inner: Iter<'a, T, C>,
 }
 
-impl<T, C: GenMapConfig> Iterator for Keys<'_, T, C> {
+impl<T, C: MapConfig> Iterator for Keys<'_, T, C> {
     type Item = Key<MapKeyConfig<C>>;
 
     #[inline]
@@ -1564,17 +1564,17 @@ impl<T, C: GenMapConfig> Iterator for Keys<'_, T, C> {
     }
 }
 
-impl<T, C: GenMapConfig> DoubleEndedIterator for Keys<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for Keys<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(key, _)| key)
     }
 }
 
-impl<T, C: GenMapConfig> ExactSizeIterator for Keys<'_, T, C> {}
-impl<T, C: GenMapConfig> FusedIterator for Keys<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for Keys<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for Keys<'_, T, C> {}
 
-impl<T, C: GenMapConfig> Clone for Keys<'_, T, C> {
+impl<T, C: MapConfig> Clone for Keys<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -1584,11 +1584,11 @@ impl<T, C: GenMapConfig> Clone for Keys<'_, T, C> {
 
 /// Iterator over shared references to values. It is created using
 /// [`GenMap::values`].
-pub struct Values<'a, T, C: GenMapConfig> {
+pub struct Values<'a, T, C: MapConfig> {
     inner: Iter<'a, T, C>,
 }
 
-impl<'a, T, C: GenMapConfig> Iterator for Values<'a, T, C> {
+impl<'a, T, C: MapConfig> Iterator for Values<'a, T, C> {
     type Item = &'a T;
 
     #[inline]
@@ -1602,17 +1602,17 @@ impl<'a, T, C: GenMapConfig> Iterator for Values<'a, T, C> {
     }
 }
 
-impl<T, C: GenMapConfig> DoubleEndedIterator for Values<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for Values<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(_, value)| value)
     }
 }
 
-impl<T, C: GenMapConfig> ExactSizeIterator for Values<'_, T, C> {}
-impl<T, C: GenMapConfig> FusedIterator for Values<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for Values<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for Values<'_, T, C> {}
 
-impl<T, C: GenMapConfig> Clone for Values<'_, T, C> {
+impl<T, C: MapConfig> Clone for Values<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -1622,11 +1622,11 @@ impl<T, C: GenMapConfig> Clone for Values<'_, T, C> {
 
 /// Iterator over mutable references to values. It is created using
 /// [`GenMap::values_mut`].
-pub struct ValuesMut<'a, T, C: GenMapConfig> {
+pub struct ValuesMut<'a, T, C: MapConfig> {
     inner: IterMut<'a, T, C>,
 }
 
-impl<'a, T, C: GenMapConfig> Iterator for ValuesMut<'a, T, C> {
+impl<'a, T, C: MapConfig> Iterator for ValuesMut<'a, T, C> {
     type Item = &'a mut T;
 
     #[inline]
@@ -1640,15 +1640,15 @@ impl<'a, T, C: GenMapConfig> Iterator for ValuesMut<'a, T, C> {
     }
 }
 
-impl<T, C: GenMapConfig> DoubleEndedIterator for ValuesMut<'_, T, C> {
+impl<T, C: MapConfig> DoubleEndedIterator for ValuesMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(_, value)| value)
     }
 }
 
-impl<T, C: GenMapConfig> ExactSizeIterator for ValuesMut<'_, T, C> {}
-impl<T, C: GenMapConfig> FusedIterator for ValuesMut<'_, T, C> {}
+impl<T, C: MapConfig> ExactSizeIterator for ValuesMut<'_, T, C> {}
+impl<T, C: MapConfig> FusedIterator for ValuesMut<'_, T, C> {}
 
 /// Owning iterator over `(key, value)` pairs. It is created by consuming a map
 /// with `into_iter`, which a map only has when its storage implements
