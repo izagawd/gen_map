@@ -415,9 +415,7 @@ mod sealed {
 /// type in the `SlotStorage` of the dense configs, whose slots store the
 /// position of each value instead of the value.
 ///
-/// Every value in a map sits in a slot, together with the slot's
-/// generation. The slots of a `GenMap<T, C>` are
-/// [`MapSlot<T, C>`](crate::MapSlot).
+/// The slots of a `GenMap<T, C>` are [`MapSlot<T, C>`](crate::MapSlot).
 ///
 /// Only [`Slot`] implements `GenSlotItem`. The trait is sealed, so no type
 /// outside this crate can implement it.

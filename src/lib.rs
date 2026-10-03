@@ -184,9 +184,9 @@
 //!
 //! - `alloc` is on by default. It adds the `Vec` storage and
 //!   [`DefaultMapConfig`]. Without it, every map needs a config of its own.
-//! - `arrayvec` lets a config use `arrayvec::ArrayVec` as its storage. An
+//! - `arrayvec` lets a config use `arrayvec::ArrayVec` as a storage. An
 //!   `ArrayVec` has a fixed capacity and never allocates.
-//! - `smallvec` lets a config use `smallvec::SmallVec` as its storage. A
+//! - `smallvec` lets a config use `smallvec::SmallVec` as a storage. A
 //!   `SmallVec` keeps its first items inline and allocates when it needs room
 //!   for more. This feature uses the 2.0 beta of `smallvec`. Until `smallvec`
 //!   2.0 is released, a newer beta or a new release of `gen_map` may break
