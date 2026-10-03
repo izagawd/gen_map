@@ -187,7 +187,7 @@
 //! - `arrayvec` lets a config use `arrayvec::ArrayVec` as its storage. An
 //!   `ArrayVec` has a fixed capacity and never allocates.
 //! - `smallvec` lets a config use `smallvec::SmallVec` as its storage. A
-//!   `SmallVec` keeps its first slots inline and allocates when it needs room
+//!   `SmallVec` keeps its first items inline and allocates when it needs room
 //!   for more. This feature uses the 2.0 beta of `smallvec`. Until `smallvec`
 //!   2.0 is released, a newer beta or a new release of `gen_map` may break
 //!   this feature, so it is not covered by semver.

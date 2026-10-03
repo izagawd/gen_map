@@ -109,7 +109,7 @@ assert_eq!(map.values().copied().collect::<Vec<_>>(), [3, 2]);
 - `arrayvec` adds `ArrayVec` storage for any of the maps. An
   `ArrayVec` has a fixed capacity and never allocates.
 - `smallvec` adds `SmallVec` storage for any of the maps. A
-  `SmallVec` keeps a few slots inline before it allocates. The feature uses a
+  `SmallVec` keeps a few items inline before it allocates. The feature uses a
   beta of smallvec 2.0, so it is not covered by semver.
 
 ## License

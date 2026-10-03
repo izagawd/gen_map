@@ -54,8 +54,8 @@ fn occupied<C: DenseSecondaryMapConfig>(
 /// # Safety
 ///
 /// `slot_index` must fit in the key's index type, and that index and
-/// `generation` must fit the key config together. Both hold for the position
-/// and generation of a slot that holds a value.
+/// `generation` must fit the key config together. Both are true for the
+/// position and generation of a slot that holds a value.
 #[inline]
 unsafe fn key_from_parts_unchecked<C: MapConfig>(
     slot_index: usize,

@@ -38,11 +38,11 @@ impl<S: fmt::Display> fmt::Display for FullError<S> {
     }
 }
 
-/// Why [`GenMap::try_insert`](crate::GenMap::try_insert) could not insert.
-/// Each variant hands the value back so that the caller can keep it. `S` is
-/// the map's [`StorageError`](crate::StorageError), or the
-/// [`DenseStorageError`](crate::DenseStorageError) of a
-/// [`DenseGenMap`](crate::DenseGenMap).
+/// Why [`GenMap::try_insert`](crate::GenMap::try_insert) or
+/// [`DenseGenMap::try_insert`](crate::DenseGenMap::try_insert) could not
+/// insert. Each variant hands the value back so that the caller can keep it.
+/// `S` is the map's [`StorageError`](crate::StorageError), or the
+/// [`DenseStorageError`](crate::DenseStorageError) of a `DenseGenMap`.
 ///
 /// When the keys have no index left for a new slot and the storage is also
 /// full, the error is [`IndexExhausted`](Self::IndexExhausted).
@@ -162,11 +162,13 @@ impl<T, S: fmt::Display> fmt::Display for SecondaryInsertError<T, S> {
     }
 }
 
-/// Why [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key)
+/// Why [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key) or
+/// [`DenseGenMap::try_insert_with_key`](crate::DenseGenMap::try_insert_with_key)
 /// could not insert. The map can be full before the closure runs, or the
 /// closure can refuse to make a value, and the variant says which of the two
-/// happened. `E` is the closure's error and `S` is the map's
-/// [`StorageError`](crate::StorageError).
+/// happened. `E` is the closure's error, and `S` is the map's
+/// [`StorageError`](crate::StorageError), or the
+/// [`DenseStorageError`](crate::DenseStorageError) of a `DenseGenMap`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InsertWithError<E, S> {
     /// The map had no room, so the closure was never called.
@@ -252,9 +254,10 @@ impl<E: fmt::Display, S: fmt::Display> fmt::Display for InsertWithError<E, S> {
     }
 }
 
-/// Why [`GenMap::get_disjoint_mut`](crate::GenMap::get_disjoint_mut) or
-/// [`SecondaryMap::get_disjoint_mut`](crate::SecondaryMap::get_disjoint_mut)
-/// could not hand out its references.
+/// Why the `get_disjoint_mut` method of a [`GenMap`](crate::GenMap),
+/// [`SecondaryMap`](crate::SecondaryMap), [`DenseGenMap`](crate::DenseGenMap)
+/// or [`DenseSecondaryMap`](crate::DenseSecondaryMap) could not hand out
+/// its references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutError {
     /// The map has no value for one of the keys, meaning the map's
@@ -275,9 +278,10 @@ impl fmt::Display for GetDisjointMutError {
     }
 }
 
-/// Why [`GenMap::get_disjoint_mut_at`](crate::GenMap::get_disjoint_mut_at) or
-/// [`SecondaryMap::get_disjoint_mut_at`](crate::SecondaryMap::get_disjoint_mut_at)
-/// could not hand out its references.
+/// Why the `get_disjoint_mut_at` method of a [`GenMap`](crate::GenMap),
+/// [`SecondaryMap`](crate::SecondaryMap), [`DenseGenMap`](crate::DenseGenMap)
+/// or [`DenseSecondaryMap`](crate::DenseSecondaryMap) could not hand out
+/// its references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GetDisjointMutAtError {
     /// There is no slot at one of the indices, or the slot holds no value,

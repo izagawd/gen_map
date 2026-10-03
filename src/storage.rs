@@ -13,10 +13,11 @@ use core::fmt;
 ///
 /// A storage whose capacity can grow past what it was created with also
 /// implements the [`ReserveStorage`] marker. A storage that implements
-/// `IntoIterator` gives either map an owning
-/// `into_iter`. The iterator that `into_iter` returns implements
-/// `DoubleEndedIterator` when the storage's iterator implements both
-/// `DoubleEndedIterator` and `ExactSizeIterator`.
+/// `IntoIterator` gives a map an owning `into_iter`, and a dense map needs both
+/// its key and value storages to implement it. The iterator that `into_iter`
+/// returns implements `DoubleEndedIterator` when every storage it reads from
+/// has an iterator that implements both `DoubleEndedIterator` and
+/// `ExactSizeIterator`.
 ///
 /// # Safety
 ///
@@ -197,17 +198,21 @@ unsafe impl<S> SliceStorage for Vec<S> {
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<S> ReserveStorage for Vec<S> {}
 
-/// Storage from the `arrayvec` crate that keeps up to `CAP` slots inline
-/// and never allocates. It needs the `arrayvec` feature.
+/// Storage from the `arrayvec` crate that keeps up to `CAP` items inline and
+/// never allocates. It needs the `arrayvec` feature.
 ///
-/// The storage cannot grow, so once all `CAP` slots exist and none of them
-/// are free, inserting fails with
-/// [`FullError::StorageFull`](crate::FullError::StorageFull). In a
+/// The storage cannot grow. When it holds the slots of a
+/// [`GenMap`](crate::GenMap), inserting fails with
+/// [`FullError::StorageFull`](crate::FullError::StorageFull) once all `CAP`
+/// slots exist and none of them are free. When it holds the slots of a
 /// [`SecondaryMap`](crate::SecondaryMap), inserting under a key whose index
 /// is `CAP` or more fails with
 /// [`SecondaryInsertError::StorageFull`](crate::SecondaryInsertError::StorageFull),
 /// unless the index is the largest value of the index type, which fails with
 /// [`SecondaryInsertError::IndexReserved`](crate::SecondaryInsertError::IndexReserved).
+/// A dense map can keep its slots, values or keys in an `ArrayVec`, and the
+/// [`DenseError`](crate::DenseError) in its storage error says which of them
+/// was full.
 ///
 /// ```
 /// use arrayvec::ArrayVec;
@@ -291,7 +296,7 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
     }
 }
 
-/// Storage from the `smallvec` crate that keeps up to `N` slots inline and
+/// Storage from the `smallvec` crate that keeps up to `N` items inline and
 /// moves them to the heap once there are more. It needs the `smallvec`
 /// feature, which uses the 2.0 beta of `smallvec` and needs Rust 1.86.
 /// Until smallvec 2.0 is released, a newer smallvec beta or a new release of
