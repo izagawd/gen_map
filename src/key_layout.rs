@@ -107,8 +107,8 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 ///     type KeyConfig = Packed<u32, 8>;
 /// }
 ///
-/// impl<S: GenSlotItem> GenMapConfig<S> for Compact {
-///     type Storage = Vec<S>;
+/// impl GenMapConfig for Compact {
+///     type Storage<S: GenSlotItem> = Vec<S>;
 /// }
 ///
 /// let mut map = GenMap::<&str, Compact>::new_with_config();

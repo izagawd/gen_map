@@ -1,17 +1,17 @@
-//! Storages that implement `SlotStorage` and little else, to check that a
+//! Storages that implement `SliceStorage` and little else, to check that a
 //! map only asks for more where a method needs it.
 
-use crate::{GenMap, GenMapConfig, GenSlotItem, MapConfig, SlotStorage, Split};
+use crate::{GenMap, GenMapConfig, GenSlotItem, MapConfig, SliceStorage, Split};
 use std::vec::Vec;
 
-/// A `Vec` behind `SlotStorage` alone. With `ITER` it also has an owning
+/// A `Vec` behind `SliceStorage` alone. With `ITER` it also has an owning
 /// iterator, which implements `Iterator` but not `DoubleEndedIterator` or
 /// `ExactSizeIterator`.
 struct Bare<S, const ITER: bool>(Vec<S>);
 
 // SAFETY: every method forwards to the `Vec`, which behaves as the trait
 // describes.
-unsafe impl<S, const ITER: bool> SlotStorage for Bare<S, ITER> {
+unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
     type Item = S;
     type Error = ();
 
@@ -42,6 +42,10 @@ unsafe impl<S, const ITER: bool> SlotStorage for Bare<S, ITER> {
     fn try_push(&mut self, item: S) -> Result<(), S> {
         self.0.push(item);
         Ok(())
+    }
+
+    fn pop(&mut self) -> Option<S> {
+        self.0.pop()
     }
 
     fn clear(&mut self) {
@@ -77,8 +81,8 @@ impl MapConfig for NoIter {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl<S: GenSlotItem> GenMapConfig<S> for NoIter {
-    type Storage = Bare<S, false>;
+impl GenMapConfig for NoIter {
+    type Storage<S: GenSlotItem> = Bare<S, false>;
 }
 
 /// Its storage's owning iterator is a `Forwards`.
@@ -88,8 +92,8 @@ impl MapConfig for ForwardIter {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl<S: GenSlotItem> GenMapConfig<S> for ForwardIter {
-    type Storage = Bare<S, true>;
+impl GenMapConfig for ForwardIter {
+    type Storage<S: GenSlotItem> = Bare<S, true>;
 }
 
 #[test]

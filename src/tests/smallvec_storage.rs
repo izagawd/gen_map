@@ -18,13 +18,13 @@ impl MapConfig for Four {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl<S: GenSlotItem> GenMapConfig<S> for Four {
-    type Storage = SmallVec<S, 4>;
+impl GenMapConfig for Four {
+    type Storage<S: GenSlotItem> = SmallVec<S, 4>;
 }
 
-impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Four {
+impl SecondaryMapConfig for Four {
     type ReplaceStrategy = NewerWins;
-    type Storage = SmallVec<S, 4>;
+    type Storage<S: SecondarySlotItem> = SmallVec<S, 4>;
 }
 
 #[test]

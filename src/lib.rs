@@ -68,8 +68,8 @@
 //!     type KeyConfig = Split<u8, u8>;
 //! }
 //!
-//! impl<S: GenSlotItem> GenMapConfig<S> for Tiny {
-//!     type Storage = Vec<S>;
+//! impl GenMapConfig for Tiny {
+//!     type Storage<S: GenSlotItem> = Vec<S>;
 //! }
 //!
 //! let mut map = GenMap::<u64, Tiny>::new_with_config();
@@ -129,7 +129,7 @@
 //!   at zero.
 //! - [`Storage`](GenMapConfig::Storage) is the collection the map keeps its
 //!   slots in. It can be a `Vec`, an `ArrayVec`, a `SmallVec` or any other
-//!   type that implements [`SlotStorage`].
+//!   type that implements [`SliceStorage`].
 //!
 //! When its `C` parameter is left out, as in `GenMap<T>`, a map uses
 //! [`DefaultMapConfig`]. Maps with that config hand out keys with a `u32`
@@ -156,6 +156,29 @@
 //! [`ReplaceStrategy`](SecondaryMapConfig::ReplaceStrategy) of the
 //! `SecondaryMap`'s config decides whether a value inserted under that newer
 //! key replaces the old value.
+//!
+//! # Dense maps
+//!
+//! A [`DenseGenMap`] works like a [`GenMap`], but it keeps its values one
+//! after another in a storage of their own, and each slot only stores the
+//! position of its value. Iterating over the values is then as fast as
+//! iterating over a slice, and a lookup takes one more step. A
+//! [`DenseSecondaryMap`] does the same for a [`SecondaryMap`].
+//!
+//! Removing a value from a dense map moves its last value into the place of
+//! the removed one. The map reads the moved value's key to point that value's
+//! slot at its new position, so a dense map also keeps the key of each value.
+//!
+//! ```
+//! use gen_map::DenseGenMap;
+//!
+//! let mut map = DenseGenMap::new();
+//! let a = map.insert(1);
+//! map.insert(2);
+//! map.insert(3);
+//! map.remove(a);
+//! assert_eq!(map.values().copied().collect::<Vec<_>>(), [3, 2]);
+//! ```
 //!
 //! # Cargo features
 //!
@@ -198,6 +221,8 @@ extern crate alloc;
 extern crate std;
 
 mod config;
+mod dense_map;
+mod dense_secondary_map;
 mod error;
 mod key;
 mod key_layout;
@@ -213,12 +238,19 @@ mod storage;
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use config::DefaultMapConfig;
 pub use config::{
-    DefaultKeyConfig, GenMapConfig, KeyConfig, MapConfig, MapConfigFor, SecondaryMapConfig,
-    SecondaryMapConfigFor,
+    DefaultKeyConfig, DenseGenMapConfig, DenseSecondaryMapConfig, GenMapConfig, KeyConfig,
+    MapConfig, SecondaryMapConfig,
+};
+pub use dense_map::{
+    DenseDrain, DenseGenMap, DenseIntoIter, DenseIter, DenseIterMut, DenseKeys, DenseMapSlot,
+    DenseStorageError, DenseVacantEntry, DenseValues, DenseValuesMut,
+};
+pub use dense_secondary_map::{
+    DenseSecondaryDrain, DenseSecondaryMap, DenseSecondaryMapSlot, DenseSecondaryStorageError,
 };
 pub use error::{
-    FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
-    SecondaryInsertError,
+    DenseError, FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError,
+    InsertWithError, SecondaryInsertError,
 };
 pub use key::Key;
 pub use key_layout::{Packed, Split};
@@ -234,7 +266,7 @@ pub use secondary_map::{
     SecondaryMap, SecondaryMapSlot, SecondaryStorageError, SecondaryValues, SecondaryValuesMut,
 };
 pub use slot::{GenSlotItem, Parity, SecondarySlot, SecondarySlotItem, Slot};
-pub use storage::{ReserveStorage, SlotStorage};
+pub use storage::{ReserveStorage, SliceStorage};
 
 // The tests use `Vec` storage and the default config, so they need `alloc`.
 #[cfg(all(test, feature = "alloc"))]

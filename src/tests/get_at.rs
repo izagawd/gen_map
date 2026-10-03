@@ -81,8 +81,8 @@ fn get_at_with_an_index_that_does_not_fit_in_usize_is_none() {
         type KeyConfig = Split<u128, u32>;
     }
 
-    impl<S: GenSlotItem> GenMapConfig<S> for Wide {
-        type Storage = Vec<S>;
+    impl GenMapConfig for Wide {
+        type Storage<S: GenSlotItem> = Vec<S>;
     }
 
     let mut map = GenMap::<i32, Wide>::new_with_config();

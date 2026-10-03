@@ -5,7 +5,7 @@ use super::key_from_parts;
 use crate::{
     FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, MapConfig,
     NewerWins, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem,
-    SecondaryStorageError, SlotStorage, Split, StorageError,
+    SecondaryStorageError, SliceStorage, Split, StorageError,
 };
 use std::vec::Vec;
 
@@ -28,7 +28,7 @@ impl<S> IntoIterator for Capped<S> {
 
 // SAFETY: this is a `Vec` that refuses pushes past `CAP`, and it behaves as
 // the trait describes.
-unsafe impl<S> SlotStorage for Capped<S> {
+unsafe impl<S> SliceStorage for Capped<S> {
     type Item = S;
     type Error = CapReached;
 
@@ -69,6 +69,10 @@ unsafe impl<S> SlotStorage for Capped<S> {
         }
     }
 
+    fn pop(&mut self) -> Option<S> {
+        self.0.pop()
+    }
+
     fn clear(&mut self) {
         self.0.clear();
     }
@@ -80,13 +84,13 @@ impl MapConfig for Four {
     type KeyConfig = Split<u8, u8>;
 }
 
-impl<S: GenSlotItem> GenMapConfig<S> for Four {
-    type Storage = Capped<S>;
+impl GenMapConfig for Four {
+    type Storage<S: GenSlotItem> = Capped<S>;
 }
 
-impl<S: SecondarySlotItem> SecondaryMapConfig<S> for Four {
+impl SecondaryMapConfig for Four {
     type ReplaceStrategy = NewerWins;
-    type Storage = Capped<S>;
+    type Storage<S: SecondarySlotItem> = Capped<S>;
 }
 
 fn full_map() -> GenMap<i32, Four> {

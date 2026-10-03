@@ -407,141 +407,19 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// Describes the slot a [`GenMap`](crate::GenMap) keeps each of its values in,
-/// for use as a bound in a [`GenMapConfig`](crate::GenMapConfig) impl.
+/// Describes the slot a [`GenMap`](crate::GenMap) keeps each of its values in.
+/// It is the bound on the slot type `S` in
+/// [`GenMapConfig::Storage`](crate::GenMapConfig::Storage), as in
+/// `type Storage<S: GenSlotItem> = Vec<S>;`. It is also the bound on the slot
+/// type in the `SlotStorage` of the dense configs, whose slots store the
+/// position of each value instead of the value.
 ///
 /// Every value in a map sits in a slot, together with the slot's
 /// generation. The slots of a `GenMap<T, C>` are
-/// [`MapSlot<T, C>`](crate::MapSlot). A config implements `GenMapConfig<S>`
-/// for the slot types `S` it supports, usually for all of them at once with
-/// `impl<S: GenSlotItem> GenMapConfig<S> for YourConfig`. Inside that impl, `S`
-/// is the slot and `S::Value` is the type of the value in it, so for a
-/// `GenMap<T, C>` it is `T`.
+/// [`MapSlot<T, C>`](crate::MapSlot).
 ///
 /// Only [`Slot`] implements `GenSlotItem`. The trait is sealed, so no type
 /// outside this crate can implement it.
-///
-/// # Bounds on the value and the slot
-///
-/// A config can limit which maps can use it with bounds on the value type
-/// or on the slot type. A map whose values or slots do not meet the bounds
-/// fails to compile.
-///
-/// A bound on the value limits the value types, as in the example below.
-///
-/// ```
-/// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, MapConfig};
-///
-/// /// Maps with this config can only hold values that are `Copy`.
-/// struct CopyValues;
-///
-/// impl MapConfig for CopyValues {
-///     type KeyConfig = DefaultKeyConfig;
-/// }
-///
-/// impl<S: GenSlotItem> GenMapConfig<S> for CopyValues
-/// where
-///     S::Value: Copy,
-/// {
-///     type Storage = Vec<S>;
-/// }
-///
-/// let mut map = GenMap::<u32, CopyValues>::new_with_config();
-/// let key = map.insert(5);
-/// assert_eq!(map[key], 5);
-///
-/// // `String` is not `Copy`, so the next line does not compile.
-/// // let map = GenMap::<String, CopyValues>::new_with_config();
-/// ```
-///
-/// To allow only `u32` values, implement `GenMapConfig` only for slots whose
-/// `Value` is `u32`.
-///
-/// ```
-/// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, MapConfig};
-///
-/// /// Maps with this config can only hold `u32` values.
-/// struct U32Values;
-///
-/// impl MapConfig for U32Values {
-///     type KeyConfig = DefaultKeyConfig;
-/// }
-///
-/// impl<S: GenSlotItem<Value = u32>> GenMapConfig<S> for U32Values {
-///     type Storage = Vec<S>;
-/// }
-///
-/// let mut map = GenMap::<u32, U32Values>::new_with_config();
-/// let key = map.insert(5);
-/// assert_eq!(map[key], 5);
-///
-/// // The values are `u64`, not `u32`, so the next line does not compile.
-/// // let map = GenMap::<u64, U32Values>::new_with_config();
-/// ```
-///
-/// A bound on `S` limits the slots. It is what a config needs when its
-/// storage type requires something of the items it holds, because those
-/// items are slots, not bare values. A slot is `Clone`, `Debug`, `Send` or
-/// `Sync` when its value is, and it is never `Copy`.
-///
-/// ```
-/// use gen_map::{DefaultKeyConfig, GenMap, GenMapConfig, GenSlotItem, SlotStorage, MapConfig};
-///
-/// /// A storage that only holds items that can be cloned. Its `SlotStorage`
-/// /// impl, which forwards every method to the `Vec`, is hidden here.
-/// struct ClonePool<S: Clone>(Vec<S>);
-/// # // SAFETY: every method forwards to the `Vec`.
-/// # unsafe impl<S: Clone> SlotStorage for ClonePool<S> {
-/// #     type Item = S;
-/// #     type Error = ();
-/// #     fn empty() -> Self {
-/// #         ClonePool(Vec::new())
-/// #     }
-/// #     fn with_capacity(capacity: usize) -> Self {
-/// #         ClonePool(Vec::with_capacity(capacity))
-/// #     }
-/// #     fn capacity(&self) -> usize {
-/// #         self.0.capacity()
-/// #     }
-/// #     fn as_slice(&self) -> &[S] {
-/// #         &self.0
-/// #     }
-/// #     fn as_mut_slice(&mut self) -> &mut [S] {
-/// #         &mut self.0
-/// #     }
-/// #     fn ensure_room(&mut self, _additional: usize) -> Result<(), ()> {
-/// #         Ok(())
-/// #     }
-/// #     fn try_push(&mut self, item: S) -> Result<(), S> {
-/// #         self.0.push(item);
-/// #         Ok(())
-/// #     }
-/// #     fn clear(&mut self) {
-/// #         self.0.clear();
-/// #     }
-/// # }
-///
-/// /// Maps with this config need slots that can be cloned, since
-/// /// `ClonePool<S>` needs `S: Clone`.
-/// struct Cloneable;
-///
-/// impl MapConfig for Cloneable {
-///     type KeyConfig = DefaultKeyConfig;
-/// }
-///
-/// impl<S: GenSlotItem + Clone> GenMapConfig<S> for Cloneable {
-///     type Storage = ClonePool<S>;
-/// }
-///
-/// // `String` is `Clone`, so a slot holding one is too.
-/// let mut map = GenMap::<String, Cloneable>::new_with_config();
-/// let key = map.insert("a".to_string());
-/// assert_eq!(map[key], "a");
-///
-/// // `Mutex` is not `Clone`, so neither is a slot holding one, and the next
-/// // line does not compile.
-/// // let map = GenMap::<std::sync::Mutex<u32>, Cloneable>::new_with_config();
-/// ```
 pub trait GenSlotItem: sealed::Sealed {
     /// The type of the value in the slot. For the slots of a
     /// `GenMap<T, C>`, it is `T`.
@@ -555,10 +433,9 @@ impl<G: KeyPiece, T, U> GenSlotItem for Slot<G, T, U> {
 }
 
 /// Describes the slot a [`SecondaryMap`](crate::SecondaryMap) keeps each of its
-/// values in, for use as a bound in a
-/// [`SecondaryMapConfig`](crate::SecondaryMapConfig) impl. Inside
-/// `impl<S: SecondarySlotItem> SecondaryMapConfig<S> for YourConfig`, `S` is
-/// the slot and `S::Value` is the type of the value in it.
+/// values in. It is the bound on the slot type `S` in
+/// [`SecondaryMapConfig::Storage`](crate::SecondaryMapConfig::Storage), as in
+/// `type Storage<S: SecondarySlotItem> = Vec<S>;`.
 ///
 /// Only [`SecondarySlot`] implements `SecondarySlotItem`. The trait is sealed,
 /// so no type outside this crate can implement it.

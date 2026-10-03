@@ -11,8 +11,8 @@ impl MapConfig for Byte {
     type KeyConfig = Split<u8, u8>;
 }
 
-impl<S: GenSlotItem> GenMapConfig<S> for Byte {
-    type Storage = Vec<S>;
+impl GenMapConfig for Byte {
+    type Storage<S: GenSlotItem> = Vec<S>;
 }
 
 /// A map with a value in every slot a `u8` index allows. That is 255 slots,
