@@ -295,7 +295,7 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
 
 /// Storage from the `smallvec` crate that keeps up to `N` items inline and
 /// moves them to the heap once there are more. It needs the `smallvec`
-/// feature, which uses the 2.0 beta of `smallvec` and needs Rust 1.86.
+/// feature, which uses the 2.0 beta of `smallvec`.
 /// Until smallvec 2.0 is released, a newer smallvec beta or a new release of
 /// `gen_map` may break this feature, so it is not covered by semver.
 ///

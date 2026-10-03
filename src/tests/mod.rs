@@ -34,6 +34,8 @@ mod size;
 mod slot;
 #[cfg(feature = "smallvec")]
 mod smallvec_storage;
+#[cfg(feature = "std")]
+mod sparse_secondary;
 mod storage_contract;
 mod try_insert;
 mod unchecked;

@@ -4,7 +4,8 @@ A customizable generational map that returns a `Key` upon inserting a value.
 The key can be used to later access or remove the value, and removing a value bumps its slot's generation, so the old key no longer matches the slot.
 The operations for inserting, removing and accessing a value are all O(1).
 
-The crate never uses `std`, so it also works on targets that do not have it.
+Only the `std` feature uses `std`, so with default features off, the crate
+also works on targets that do not have `std`.
 
 ```toml
 [dependencies]
@@ -83,6 +84,10 @@ ages.insert(alice, 30).unwrap();
 assert_eq!(ages[alice], 30);
 ```
 
+A `SparseSecondaryMap` keeps its values in a `HashMap` under the indices of
+their keys, so it uses less memory than a `SecondaryMap` when only a few of a
+`GenMap`'s keys have a value in it. It needs the `std` feature.
+
 ## Dense maps
 
 A `DenseGenMap` keeps its values one after another in a storage of their own,
@@ -103,9 +108,11 @@ assert_eq!(map.values().copied().collect::<Vec<_>>(), [3, 2]);
 
 ## Cargo features
 
-- `alloc` is on by default. It adds the `Vec` storage and the default
-  config. Turn default features off and use `arrayvec` instead to run
-  without an allocator.
+- `std` is on by default, and it turns `alloc` on too. It adds
+  `SparseSecondaryMap`, which keeps its values in std's `HashMap`. Turn
+  default features off and `alloc` on to run without `std`.
+- `alloc` adds the `Vec` storage and the default config. Turn default
+  features off and use `arrayvec` instead to run without an allocator.
 - `arrayvec` adds `ArrayVec` storage for any of the maps. An
   `ArrayVec` has a fixed capacity and never allocates.
 - `smallvec` adds `SmallVec` storage for any of the maps. A

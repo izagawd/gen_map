@@ -10,9 +10,9 @@
 //! [How it works](#how-it-works) lists the few cases where a key can match a
 //! value other than the one it was handed out for.
 //!
-//! Inserting, removing and looking up a value are all O(1). The crate never
-//! uses `std`, and [Cargo features](#cargo-features) lists the features that
-//! need an allocator.
+//! Inserting, removing and looking up a value are all O(1). Only the `std`
+//! feature uses `std`, and [Cargo features](#cargo-features) shows how to use
+//! the crate without `std` or without an allocator.
 //!
 //! # Examples
 //!
@@ -157,6 +157,13 @@
 //! `SecondaryMap`'s config decides whether a value inserted under that newer
 //! key replaces the old value.
 //!
+//! A `SecondaryMap` keeps a slot at every index up to the highest index that
+//! an insert has used. A [`SparseSecondaryMap`] keeps its values in a `HashMap`
+//! under the indices of their keys instead, so it uses less memory when only
+//! a few of a `GenMap`'s keys have a value in it. Its lookups hash the key's
+//! index, so they take longer than a `SecondaryMap`'s. It needs the `std`
+//! feature.
+//!
 //! # Dense maps
 //!
 //! A [`DenseGenMap`] works like a [`GenMap`], but it keeps its values one
@@ -182,8 +189,10 @@
 //!
 //! # Cargo features
 //!
-//! - `alloc` is on by default. It adds the `Vec` storage and
-//!   [`DefaultMapConfig`]. Without it, every map needs a config of its own.
+//! - `std` is on by default, and it turns `alloc` on too. It adds
+//!   [`SparseSecondaryMap`], which keeps its values in std's `HashMap`.
+//! - `alloc` adds the `Vec` storage and [`DefaultMapConfig`]. Without it,
+//!   every map needs a config of its own.
 //! - `arrayvec` lets a config use `arrayvec::ArrayVec` as a storage. An
 //!   `ArrayVec` has a fixed capacity and never allocates.
 //! - `smallvec` lets a config use `smallvec::SmallVec` as a storage. A
@@ -192,9 +201,9 @@
 //!   2.0 is released, a newer beta or a new release of `gen_map` may break
 //!   this feature, so it is not covered by semver.
 //!
-//! The crate only needs an allocator when `alloc` or `smallvec` is on. To use
-//! the crate without any allocator, turn default features off and `arrayvec`
-//! on.
+//! To use the crate without `std`, turn default features off and `alloc` on.
+//! The crate only needs an allocator when `alloc` or `smallvec` is on, so to
+//! use it without any allocator, turn default features off and `arrayvec` on.
 //!
 //! ```toml
 //! [dependencies]
@@ -203,8 +212,7 @@
 //!
 //! # Minimum supported Rust version
 //!
-//! The crate builds on Rust 1.79 and later. The `smallvec` feature needs
-//! Rust 1.86, because the 2.0 beta of `smallvec` does.
+//! The crate builds on Rust 1.86 and later.
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -217,7 +225,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "std"))]
 extern crate std;
 
 mod config;
@@ -232,11 +240,16 @@ mod parity;
 mod replace_strategy;
 mod secondary_map;
 mod slot;
+#[cfg(feature = "std")]
+mod sparse_secondary_map;
 mod storage;
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use config::DefaultMapConfig;
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+pub use config::SparseSecondaryMapConfig;
 pub use config::{
     DefaultKeyConfig, DenseGenMapConfig, DenseSecondaryMapConfig, GenMapConfig, KeyConfig,
     MapConfig, SecondaryMapConfig,
@@ -266,6 +279,12 @@ pub use secondary_map::{
     SecondaryMap, SecondaryMapSlot, SecondaryStorageError, SecondaryValues, SecondaryValuesMut,
 };
 pub use slot::{GenSlotItem, Parity, SecondarySlot, SecondarySlotItem, Slot};
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+pub use sparse_secondary_map::{
+    SparseSecondaryDrain, SparseSecondaryIntoIter, SparseSecondaryIter, SparseSecondaryIterMut,
+    SparseSecondaryKeys, SparseSecondaryMap, SparseSecondaryValues, SparseSecondaryValuesMut,
+};
 pub use storage::{ReserveStorage, SliceStorage};
 
 // The tests use `Vec` storage and the default config, so they need `alloc`.

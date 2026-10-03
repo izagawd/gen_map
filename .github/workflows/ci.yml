@@ -20,18 +20,18 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test
+      - run: cargo test --no-default-features --features alloc
       - run: cargo test --all-features
 
   msrv:
-    name: Test (MSRV 1.79)
+    name: Test (MSRV 1.86)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.79"
-      # The smallvec feature needs Rust 1.86, so it is left out here.
-      - run: cargo test --features arrayvec
+          toolchain: "1.86"
+      - run: cargo test --all-features
 
   no-std:
     name: Build for a target without std
@@ -44,7 +44,7 @@ jobs:
       - name: Without an allocator
         run: cargo build --target thumbv7m-none-eabi --no-default-features --features arrayvec
       - name: With alloc
-        run: cargo build --target thumbv7m-none-eabi
+        run: cargo build --target thumbv7m-none-eabi --no-default-features --features alloc
 
   lint:
     name: Clippy and rustfmt

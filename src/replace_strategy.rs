@@ -1,15 +1,16 @@
 use crate::config::KeyConfig;
 use crate::parity::Odd;
 
-/// Decides whether a value inserted into a
-/// [`SecondaryMap`](crate::SecondaryMap) or a
-/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) under a key replaces the
-/// value already stored at the key's index, when that value was inserted
-/// under a different generation.
+/// A replace strategy decides whether a value inserted into a
+/// [`SecondaryMap`](crate::SecondaryMap), a
+/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) or a
+/// [`SparseSecondaryMap`](crate::SparseSecondaryMap) under a key replaces the
+/// value already stored at the key's index, when that value was inserted under
+/// a different generation.
 ///
-/// The `insert` of either map only asks the strategy in that case. An empty
-/// slot always takes the value, and a value stored under the key's generation
-/// is always replaced.
+/// The `insert` of each of these maps only asks the strategy in that case.
+/// An empty slot always takes the value, and a value stored under the key's
+/// generation is always replaced.
 ///
 /// `K` is the key config of the map's keys. A strategy can read the key's
 /// limits through `K`, for example to find the largest generation with
@@ -47,8 +48,9 @@ pub trait ReplaceStrategy<K: KeyConfig> {
 /// Replaces the stored value when the key's generation is larger than the
 /// generation the value was stored under. It is the strategy
 /// [`DefaultMapConfig`](crate::DefaultMapConfig) picks for a
-/// [`SecondaryMap`](crate::SecondaryMap) and a
-/// [`DenseSecondaryMap`](crate::DenseSecondaryMap).
+/// [`SecondaryMap`](crate::SecondaryMap), a
+/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) and a
+/// [`SparseSecondaryMap`](crate::SparseSecondaryMap).
 ///
 /// A larger generation only means a newer key while the map that hands out
 /// the keys never wraps a generation. A `GenMap` or a `DenseGenMap` only wraps

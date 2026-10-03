@@ -103,8 +103,10 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
 /// [`GenMapConfig`], and the config of a
 /// [`SecondaryMap`](crate::SecondaryMap) also implements
 /// [`SecondaryMapConfig`]. The configs of the dense maps implement
-/// [`DenseGenMapConfig`] and [`DenseSecondaryMapConfig`]. All four traits
-/// have `MapConfig` as a supertrait.
+/// [`DenseGenMapConfig`] and [`DenseSecondaryMapConfig`], and the config of a
+/// [`SparseSecondaryMap`](crate::SparseSecondaryMap) implements
+/// [`SparseSecondaryMapConfig`]. All five traits have `MapConfig` as a
+/// supertrait.
 ///
 /// # Examples
 ///
@@ -332,6 +334,55 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     type KeyStorage<K>: SliceStorage<Item = K>;
 }
 
+/// This trait is used to choose the [`ReplaceStrategy`] of a
+/// [`SparseSecondaryMap`](crate::SparseSecondaryMap).
+///
+/// [`MapConfig`] is a supertrait, and its key config is the key config of
+/// the keys the map works with. The map keeps its values in a `HashMap`, so
+/// the config does not pick a storage.
+///
+/// # Examples
+///
+/// A map with the config below keeps each value until it is removed, even
+/// when a value is inserted under a newer key for the same index.
+///
+/// ```
+/// use gen_map::{
+///     DefaultKeyConfig, ExistingWins, GenMap, MapConfig, SparseSecondaryMap,
+///     SparseSecondaryMapConfig,
+/// };
+///
+/// struct Keep;
+///
+/// impl MapConfig for Keep {
+///     type KeyConfig = DefaultKeyConfig;
+/// }
+///
+/// impl SparseSecondaryMapConfig for Keep {
+///     type ReplaceStrategy = ExistingWins;
+/// }
+///
+/// let mut people = GenMap::new();
+/// let mut ages = SparseSecondaryMap::<u32, Keep>::new_with_config();
+/// let alice = people.insert("Alice");
+/// ages.insert(alice, 30).unwrap();
+///
+/// // Bob gets Alice's slot, but her age stays until it is removed.
+/// people.remove(alice);
+/// let bob = people.insert("Bob");
+/// assert!(ages.insert(bob, 25).is_err());
+/// assert_eq!(ages[alice], 30);
+/// ```
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+pub trait SparseSecondaryMapConfig: MapConfig {
+    /// Decides whether a value inserted under a key replaces the value
+    /// already stored at the key's index, when that value was inserted under a
+    /// different generation. It works the same way as
+    /// [`SecondaryMapConfig::ReplaceStrategy`].
+    type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
+}
+
 /// The key config a [`Key`](crate::Key) uses when its `K` parameter is left
 /// out.
 ///
@@ -340,12 +391,14 @@ pub type DefaultKeyConfig = Split<u32, u32>;
 
 /// The config of a [`GenMap<T>`](crate::GenMap), a
 /// [`SecondaryMap<T>`](crate::SecondaryMap), a
-/// [`DenseGenMap<T>`](crate::DenseGenMap) and a
-/// [`DenseSecondaryMap<T>`](crate::DenseSecondaryMap), which leave out their
-/// config parameter `C`.
+/// [`DenseGenMap<T>`](crate::DenseGenMap), a
+/// [`DenseSecondaryMap<T>`](crate::DenseSecondaryMap) and a
+/// [`SparseSecondaryMap<T>`](crate::SparseSecondaryMap), which leave out
+/// their config parameter `C`.
 ///
 /// Keys use the [`DefaultKeyConfig`], and slots, values and keys live in a
-/// `Vec` each. A slot retires when its generation runs out. The secondary
+/// `Vec` each, except in a `SparseSecondaryMap`, which keeps its values in a
+/// `HashMap`. A slot retires when its generation runs out. The secondary
 /// maps use [`NewerWins`](crate::NewerWins) to decide whether an insert
 /// replaces a value that was inserted under a different generation.
 /// This config needs the `alloc` feature.
@@ -383,4 +436,9 @@ impl DenseSecondaryMapConfig for DefaultMapConfig {
     type SlotStorage<S: GenSlotItem> = Vec<S>;
     type ValueStorage<V> = Vec<V>;
     type KeyStorage<K> = Vec<K>;
+}
+
+#[cfg(feature = "std")]
+impl SparseSecondaryMapConfig for DefaultMapConfig {
+    type ReplaceStrategy = NewerWins;
 }
