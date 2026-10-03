@@ -54,7 +54,7 @@ impl MapConfig for CompactConfig {
 }
 
 impl GenMapConfig for CompactConfig {
-    // `S` is the slot the map keeps each value in.
+    // `S` is the type of the slots the map keeps its values in.
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 

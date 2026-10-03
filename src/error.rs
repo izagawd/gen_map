@@ -298,8 +298,8 @@ impl fmt::Display for GetDisjointMutAtError {
 }
 
 /// Which storage of a dense map could not make room, together with that
-/// storage's error. `S` is the error of the slot storage, `V` the error of the
-/// value storage and `K` the error of the key storage.
+/// storage's error. `S` is the error of the slot storage, `V` is the error of
+/// the value storage, and `K` is the error of the key storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DenseError<S, V, K> {
     /// The slot storage could not make room for another slot.

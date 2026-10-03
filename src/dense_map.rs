@@ -25,8 +25,11 @@ type Keys<C> = <C as DenseGenMapConfig>::KeyStorage<Key<MapKeyConfig<C>>>;
 
 /// The [`Slot`] a [`DenseGenMap<T, C>`](DenseGenMap) keeps for each index.
 /// While the slot holds a value, its `T` is the position of that value in the
-/// value storage. Otherwise its `U` links free slots, as the `U` of a
-/// [`MapSlot`](crate::MapSlot) does.
+/// value storage. Otherwise its `U` holds what the `U` of a
+/// [`MapSlot`](crate::MapSlot) holds. A free slot stores the index of the next
+/// free slot there, or the largest value of the index type if it is the last
+/// free slot. A detached slot stores its own index, and a retired slot stores
+/// the largest value of the index type.
 pub type DenseMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, MapIdx<C>>;
 
 /// The error a `DenseGenMap<T, C>` gives when one of its storages cannot make
@@ -252,7 +255,8 @@ impl<T, C: DenseGenMapConfig> DenseVacantEntry<'_, T, C> {
     #[inline]
     pub fn insert(self, value: T) -> Key<MapKeyConfig<C>> {
         // SAFETY: `target` came from `next_target`, and this entry has held
-        // `&mut` on the map since, so nothing has touched it.
+        // `&mut` on the map since, so nothing has touched it. `vacant_entry`
+        // also made room for one more value and key.
         unsafe { self.map.fill(self.target, value) }
     }
 }
@@ -269,12 +273,11 @@ impl<T, C: DenseGenMapConfig> fmt::Debug for DenseVacantEntry<'_, T, C> {
 /// no gaps, and is configured by `C`.
 ///
 /// Its slots, and so its keys, work the same way as those of a
-/// [`GenMap`](crate::GenMap)
-/// with the same config. The difference is where the values live. A
-/// `GenMap` keeps each value in its slot, while a `DenseGenMap` keeps its
-/// values in a storage of their own, and each slot only stores the position of
-/// its value. Iterating over the values is then as fast as iterating over a
-/// slice, and a lookup takes one more step.
+/// [`GenMap`](crate::GenMap) with the same config. The difference is where the
+/// values live. A `GenMap` keeps each value in its slot, while a `DenseGenMap`
+/// keeps its values in a storage of their own, and each slot only stores the
+/// position of its value. Iterating over the values is then as fast as
+/// iterating over a slice, and a lookup takes one more step.
 ///
 /// The map also keeps the key of each value, at the same position as the
 /// value. Removing a value moves the last value into its place, and the map
@@ -334,7 +337,7 @@ impl<T> DenseGenMap<T> {
     }
 
     /// Creates an empty map with the [`DefaultMapConfig`] and room for
-    /// `capacity` values.
+    /// `capacity` values, slots and keys.
     #[inline]
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
@@ -409,9 +412,9 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         }
     }
 
-    /// The smallest capacity among the map's storages. The map can hold that
-    /// many values before one of its storages has to grow, or in total if they
-    /// cannot grow.
+    /// The smallest capacity among the map's slot, value and key storages. The
+    /// map can hold that many slots and values before one of its storages has
+    /// to grow, or in total if they cannot grow.
     #[inline]
     pub fn capacity(&self) -> usize {
         self.slots
@@ -521,7 +524,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     #[inline]
     pub fn key_at(&self, idx: MapIdx<C>) -> Option<Key<MapKeyConfig<C>>> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
-            // SAFETY: `idx` is the slot's position.
+            // SAFETY: `idx` is the index of the slot just read.
             Parity::Odd(generation, _) => Some(unsafe { slot_key::<C>(idx, generation) }),
             Parity::Even(..) => None,
         }
@@ -554,8 +557,8 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &T)> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
             Parity::Odd(generation, &stored_position) => {
-                // SAFETY: `idx` is the slot's position, and the position the
-                // slot stores is below the number of values.
+                // SAFETY: `idx` is the index of the slot just read, and the
+                // position the slot stores is below the number of values.
                 Some(unsafe {
                     (
                         slot_key::<C>(idx, generation),
@@ -806,7 +809,8 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     }
 
     /// Returns a mutable reference to the value at each stored position, paired
-    /// with the item that came with that position.
+    /// with the item that came with that position. The item is the value's key
+    /// for the `_at` methods, and `()` for the others.
     ///
     /// # Safety
     ///
@@ -1364,8 +1368,7 @@ impl<T, C: DenseGenMapConfig> IndexMut<Key<MapKeyConfig<C>>> for DenseGenMap<T, 
 }
 
 impl<T: fmt::Debug, C: DenseGenMapConfig> fmt::Debug for DenseGenMap<T, C> {
-    /// Lists every key with its value, in slot order, whether or not the map
-    /// keeps its keys.
+    /// Lists every key with its value, in slot order.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let values = self.values.as_slice();
         let entries = self
@@ -1684,9 +1687,9 @@ impl<T> FusedIterator for DenseValuesMut<'_, T> {}
 /// Owning iterator over `(key, value)` pairs, in the order the values were
 /// stored. It is created by consuming a dense map with `into_iter`, which a
 /// dense map only has when both its key and value storages implement
-/// `IntoIterator`. `K` is the key storage and `V` the value
-/// storage. It implements `DoubleEndedIterator` when the iterators of both
-/// storages implement `DoubleEndedIterator` and `ExactSizeIterator`.
+/// `IntoIterator`. `K` is the key storage, and `V` is the value storage. It
+/// implements `DoubleEndedIterator` when the iterators of both storages
+/// implement `DoubleEndedIterator` and `ExactSizeIterator`.
 pub struct DenseIntoIter<K: IntoIterator, V: IntoIterator> {
     pub(crate) keys: K::IntoIter,
     pub(crate) values: V::IntoIter,

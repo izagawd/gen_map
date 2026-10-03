@@ -329,8 +329,9 @@ mod capped {
         type KeyStorage<T> = ArrayVec<T, K>;
     }
 
-    /// Inserts until the map is full, and returns the map with the storage
-    /// that refused the last insert.
+    /// Inserts until the map is full, and returns the map with the storage that
+    /// refused the last insert, or `"index"` if the keys ran out of indices
+    /// first.
     fn fill<const S: usize, const V: usize, const K: usize>(
     ) -> (DenseGenMap<u32, Caps<S, V, K>>, &'static str) {
         let mut map = DenseGenMap::<u32, Caps<S, V, K>>::new_with_config();

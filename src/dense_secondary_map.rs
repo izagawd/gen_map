@@ -113,7 +113,9 @@ type InsertResult<T, C> =
 /// reads the moved value's key to point that value's slot at the new
 /// position. So the order of the values changes when one is removed.
 ///
-/// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`].
+/// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`]. To use
+/// your own config, implement [`MapConfig`] and [`DenseSecondaryMapConfig`]
+/// for it.
 ///
 /// # Examples
 ///
@@ -162,7 +164,7 @@ impl<T> DenseSecondaryMap<T> {
     }
 
     /// Creates an empty map with the [`DefaultMapConfig`] and room for
-    /// `capacity` values.
+    /// `capacity` values, slots and keys.
     #[inline]
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
@@ -237,7 +239,9 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         }
     }
 
-    /// The smallest capacity among the map's slot, value and key storages.
+    /// The smallest capacity among the map's slot, value and key storages. The
+    /// map can hold that many slots and values before one of its storages has
+    /// to grow, or in total if they cannot grow.
     #[inline]
     pub fn capacity(&self) -> usize {
         self.slots
@@ -630,7 +634,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     }
 
     /// Returns a mutable reference to the value at each stored position, paired
-    /// with the item that came with that position.
+    /// with the item that came with that position. The item is the value's key
+    /// for the `_at` methods, and `()` for the others.
     ///
     /// # Safety
     ///
@@ -721,8 +726,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         // stores.
         let value_position = unsafe { to_position::<C>(stored_position) };
         if existing_generation != new_generation {
-            // The value keeps its place, and its slot and its key now belong to
-            // `key`.
+            // The value keeps its place. Its slot now belongs to `key`, and
+            // `key` replaces the key stored for the value.
             // SAFETY: the slot at the key's index exists, since it was just
             // read.
             unsafe { self.slot_unchecked_mut(key) }.set_odd(new_generation, stored_position);
@@ -866,8 +871,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// There must be a slot at the key's index, which holds whenever a value is
-    /// stored under `key`.
+    /// There must be a slot at the key's index, which is the case whenever a
+    /// value is stored under `key`.
     #[inline]
     unsafe fn slot_unchecked_mut(
         &mut self,
@@ -1032,8 +1037,7 @@ impl<T: Clone, C: DenseSecondaryMapConfig> Clone for DenseSecondaryMap<T, C> {
 }
 
 impl<T: fmt::Debug, C: DenseSecondaryMapConfig> fmt::Debug for DenseSecondaryMap<T, C> {
-    /// Lists every key with its value, in index order, whether or not the map
-    /// keeps its keys.
+    /// Lists every key with its value, in index order.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let values = self.values.as_slice();
         let entries = self

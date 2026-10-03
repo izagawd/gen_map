@@ -125,7 +125,8 @@ pub unsafe trait SliceStorage {
 /// Marks a [`SliceStorage`] whose capacity can grow past what it was created
 /// with. [`ensure_room`](SliceStorage::ensure_room) grows such a storage when
 /// it needs more room. A map has `with_capacity_and_config`, `reserve` and
-/// `try_reserve` only when its storages implement this trait.
+/// `try_reserve` only when its slot storage implements this trait, and a dense
+/// map also needs it on its value storage.
 pub trait ReserveStorage: SliceStorage {}
 
 #[cfg(feature = "alloc")]
