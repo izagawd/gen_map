@@ -11,8 +11,11 @@ use crate::{
     SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, SparseSecondaryMap,
     SparseSecondaryMapConfig, Split,
 };
-use core::hash::{BuildHasherDefault, Hasher};
+use core::cell::Cell;
+use core::hash::{BuildHasher, BuildHasherDefault, Hasher};
 use std::format;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::rc::Rc;
 use std::vec::Vec;
 
 /// This config gives keys a `u8` index and a `u8` generation, and its
@@ -63,6 +66,51 @@ impl Hasher for Colliding {
 }
 
 type Collide = BuildHasherDefault<Colliding>;
+
+/// This hasher hashes correctly until it has built `good` hashers. After that,
+/// it flips every bit of each hash, so the `HashMap` stops finding the values
+/// it holds. The `BuildHasher` docs ask for hashers that do not change, but a
+/// safe trait cannot promise it, so the map's safe methods must stay sound
+/// with this one.
+#[derive(Clone)]
+struct Flaky {
+    good: usize,
+    built: Rc<Cell<usize>>,
+}
+
+impl BuildHasher for Flaky {
+    type Hasher = FlakyHasher;
+
+    fn build_hasher(&self) -> FlakyHasher {
+        let built = self.built.get();
+        self.built.set(built + 1);
+        FlakyHasher {
+            hash: 0,
+            broken: built >= self.good,
+        }
+    }
+}
+
+struct FlakyHasher {
+    hash: u64,
+    broken: bool,
+}
+
+impl Hasher for FlakyHasher {
+    fn finish(&self) -> u64 {
+        if self.broken {
+            !self.hash
+        } else {
+            self.hash
+        }
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.hash = (self.hash ^ u64::from(byte)).wrapping_mul(0x100_0000_01B3);
+        }
+    }
+}
 
 /// Hands out `n` keys from a `GenMap`.
 fn keys(n: usize) -> Vec<Key> {
@@ -367,6 +415,69 @@ fn shrinking_frees_room_and_keeps_every_value() {
 }
 
 #[test]
+fn remove_hashes_the_index_once() {
+    // A `Flaky` hasher that never breaks counts how many hashes the map makes.
+    let built = Rc::new(Cell::new(0));
+    let hasher = Flaky {
+        good: usize::MAX,
+        built: built.clone(),
+    };
+    let mut map = SparseSecondaryMap::<u32, Newer, Flaky>::with_hasher_and_config(hasher);
+    // With room to spare, a miss does not make the map grow and rehash its
+    // values.
+    map.reserve(10);
+    map.insert(key8(0, 1), 0).unwrap();
+    map.insert(key8(1, 1), 1).unwrap();
+    for (key, expected) in [
+        (key8(0, 1), Some(0)),
+        (key8(5, 1), None),
+        (key8(1, 3), None),
+    ] {
+        built.set(0);
+        assert_eq!(map.remove(key), expected);
+        assert_eq!(built.get(), 1);
+    }
+    assert_eq!(map[key8(1, 1)], 1);
+}
+
+#[test]
+fn a_hasher_that_changes_its_hashes_cannot_cause_undefined_behavior() {
+    let a = key8(1, 1);
+    let b = key8(2, 1);
+    // Each run lets the hasher give one more correct hash than the run before,
+    // so some run breaks it between a method's check and the lookup after that
+    // check. The safe methods may panic or give a wrong answer then, but they
+    // must stay sound.
+    for good in 0..64 {
+        let hasher = Flaky {
+            good,
+            built: Rc::new(Cell::new(0)),
+        };
+        let mut map = SparseSecondaryMap::<u32, Newer, Flaky>::with_hasher_and_config(hasher);
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            let _ = map.insert(a, 1);
+            let _ = map.insert(b, 2);
+            let _ = map.get_disjoint_mut([a, b]);
+            let _ = map.get_disjoint_mut_at([1, 2]);
+            let _ = (
+                map.contains_key(a),
+                map.get(a),
+                map.key_at(1),
+                map.get_at(2),
+            );
+            let _ = (map.get_mut(b).is_some(), map.get_at_mut(1).is_some());
+            let _ = map.insert(key8(1, 3), 3);
+            let _ = format!("{:?}", map.clone());
+            let _ = map.iter().count() + map.keys().count() + map.values().count();
+            map.retain(|_, value| *value != 2);
+            map.shrink_to_fit();
+            let _ = map.remove(a);
+            let _ = map.drain().count();
+        }));
+    }
+}
+
+#[test]
 #[should_panic(expected = "SparseSecondaryMap cannot make room")]
 fn reserve_panics_when_the_map_cannot_make_room() {
     SparseSecondaryMap::<u8>::new().reserve(usize::MAX);
@@ -497,12 +608,13 @@ where
                 }
                 2 => {
                     if let Some(key) = pick(&known, &mut rng) {
-                        if let Some(old) = secondary.get_mut(key) {
-                            *old = value;
-                            // SAFETY: the `SecondaryMap` has a value for `key`,
-                            // and `check` confirmed after the last step that
-                            // both maps hold the same keys.
-                            *unsafe { sparse.get_unchecked_mut(key) } = value;
+                        match (secondary.get_mut(key), sparse.get_mut(key)) {
+                            (Some(old), Some(sparse_old)) => {
+                                *old = value;
+                                *sparse_old = value;
+                            }
+                            (None, None) => {}
+                            _ => panic!("the maps disagree on get_mut at {context:?}"),
                         }
                     }
                 }
@@ -519,15 +631,11 @@ where
                     );
                 }
                 4 => {
-                    let idx = pick_idx(&mut rng);
-                    if let Some((key, old)) = secondary.get_at_mut(idx) {
-                        *old = value;
-                        // SAFETY: the `SecondaryMap` has a value at `idx`, and
-                        // `check` confirmed after the last step that both maps
-                        // hold the same keys.
-                        let (sparse_key, sparse_old) = unsafe { sparse.get_at_unchecked_mut(idx) };
-                        assert_eq!(key, sparse_key, "{context:?}");
-                        *sparse_old = value;
+                    for (key, old) in secondary.iter_mut() {
+                        *old = old.wrapping_add(u32::from(key.idx()));
+                    }
+                    for (key, old) in sparse.iter_mut() {
+                        *old = old.wrapping_add(u32::from(key.idx()));
                     }
                 }
                 _ => {
@@ -646,17 +754,7 @@ fn check<C, S>(
     for idx in (0..=21).chain([u8::MAX]) {
         let key = secondary.key_at(idx);
         assert_eq!(key, sparse.key_at(idx), "{context:?}");
-        let found = secondary.get_at(idx);
-        assert_eq!(found, sparse.get_at(idx), "{context:?}");
-        if let (Some(key), Some(found)) = (key, found) {
-            // SAFETY: the `SparseSecondaryMap` was just found to have a value
-            // for `key` at `idx`.
-            unsafe {
-                assert_eq!(sparse.key_at_unchecked(idx), key, "{context:?}");
-                assert_eq!(sparse.get_at_unchecked(idx), found, "{context:?}");
-                assert_eq!(sparse.get_unchecked(key), found.1, "{context:?}");
-            }
-        }
+        assert_eq!(secondary.get_at(idx), sparse.get_at(idx), "{context:?}");
     }
     for key in known {
         assert_eq!(secondary.get(*key), sparse.get(*key), "{context:?}");

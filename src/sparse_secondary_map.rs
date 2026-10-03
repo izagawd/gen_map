@@ -242,38 +242,6 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         (slot.generation == key.generation()).then_some(&mut slot.value)
     }
 
-    /// Returns a reference to the value stored under `key`, like
-    /// [`get`](Self::get), but without checking that there is one. It still
-    /// hashes the key's index to find the value.
-    ///
-    /// # Safety
-    ///
-    /// A value must be stored under `key`, meaning
-    /// [`contains_key`](Self::contains_key) returns `true` for it.
-    #[inline]
-    pub unsafe fn get_unchecked(&self, key: Key<MapKeyConfig<C>>) -> &T {
-        debug_assert!(self.contains_key(key));
-        // SAFETY: the caller promises that a value is stored under `key`, so
-        // the `HashMap` holds a slot under the key's index.
-        unsafe { &self.slots.get(&key.idx()).unwrap_unchecked().value }
-    }
-
-    /// Returns a mutable reference to the value stored under `key`, like
-    /// [`get_mut`](Self::get_mut), but without checking that there is one.
-    /// It still hashes the key's index to find the value.
-    ///
-    /// # Safety
-    ///
-    /// A value must be stored under `key`, meaning
-    /// [`contains_key`](Self::contains_key) returns `true` for it.
-    #[inline]
-    pub unsafe fn get_unchecked_mut(&mut self, key: Key<MapKeyConfig<C>>) -> &mut T {
-        debug_assert!(self.contains_key(key));
-        // SAFETY: the caller promises that a value is stored under `key`, so
-        // the `HashMap` holds a slot under the key's index.
-        unsafe { &mut self.slots.get_mut(&key.idx()).unwrap_unchecked().value }
-    }
-
     /// Returns the key of the value at index `idx`, or `None` if there is no
     /// value at that index.
     #[inline]
@@ -282,25 +250,6 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         // SAFETY: `idx` and the slot's generation come from the key the value
         // was inserted under, so they fit the key config.
         Some(unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) })
-    }
-
-    /// Returns the key of the value at index `idx`, like
-    /// [`key_at`](Self::key_at), but without checking that there is one.
-    ///
-    /// # Safety
-    ///
-    /// There must be a value at `idx`, meaning [`key_at`](Self::key_at)
-    /// returns `Some` for it.
-    #[inline]
-    pub unsafe fn key_at_unchecked(&self, idx: MapIdx<C>) -> Key<MapKeyConfig<C>> {
-        debug_assert!(self.key_at(idx).is_some());
-        // SAFETY: the caller promises a value at `idx`, so the `HashMap` holds
-        // a slot under `idx`. The slot's generation and `idx` come from the key
-        // the value was inserted under, so they fit the key config.
-        unsafe {
-            let slot = self.slots.get(&idx).unwrap_unchecked();
-            key_from_parts_unchecked::<C>(idx, slot.generation)
-        }
     }
 
     /// Returns the key and a reference to the value at index `idx`, or `None`
@@ -323,50 +272,6 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         // was inserted under, so they fit the key config.
         let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
         Some((key, &mut slot.value))
-    }
-
-    /// Returns the key and a reference to the value at index `idx`, like
-    /// [`get_at`](Self::get_at), but without checking that there is one.
-    ///
-    /// # Safety
-    ///
-    /// There must be a value at `idx`, meaning [`key_at`](Self::key_at)
-    /// returns `Some` for it.
-    #[inline]
-    pub unsafe fn get_at_unchecked(&self, idx: MapIdx<C>) -> (Key<MapKeyConfig<C>>, &T) {
-        debug_assert!(self.key_at(idx).is_some());
-        // SAFETY: the caller promises a value at `idx`, so the `HashMap` holds
-        // a slot under `idx`. The slot's generation and `idx` come from the key
-        // the value was inserted under, so they fit the key config.
-        unsafe {
-            let slot = self.slots.get(&idx).unwrap_unchecked();
-            let key = key_from_parts_unchecked::<C>(idx, slot.generation);
-            (key, &slot.value)
-        }
-    }
-
-    /// Returns the key and a mutable reference to the value at index `idx`,
-    /// like [`get_at_mut`](Self::get_at_mut), but without checking that there
-    /// is one.
-    ///
-    /// # Safety
-    ///
-    /// There must be a value at `idx`, meaning [`key_at`](Self::key_at)
-    /// returns `Some` for it.
-    #[inline]
-    pub unsafe fn get_at_unchecked_mut(
-        &mut self,
-        idx: MapIdx<C>,
-    ) -> (Key<MapKeyConfig<C>>, &mut T) {
-        debug_assert!(self.key_at(idx).is_some());
-        // SAFETY: the caller promises a value at `idx`, so the `HashMap` holds
-        // a slot under `idx`. The slot's generation and `idx` come from the key
-        // the value was inserted under, so they fit the key config.
-        unsafe {
-            let slot = self.slots.get_mut(&idx).unwrap_unchecked();
-            let key = key_from_parts_unchecked::<C>(idx, slot.generation);
-            (key, &mut slot.value)
-        }
     }
 
     /// Returns the key and a mutable reference to the value at each index,
@@ -393,9 +298,25 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
                 return Err(GetDisjointMutAtError::OverlappingIndices);
             }
         }
-        // SAFETY: a value was just found at every index, and every index is
-        // distinct.
-        Ok(unsafe { self.get_disjoint_mut_at_unchecked(idxs) })
+        // SAFETY: the loop above found that no two of the indices are the
+        // same.
+        let mut slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };
+        // The loop above found a value at every index, so the `HashMap` only
+        // misses one here if the hasher gave an index a different hash.
+        if slots.iter().any(Option::is_none) {
+            return Err(GetDisjointMutAtError::NoValue);
+        }
+        Ok(core::array::from_fn(|i| {
+            // SAFETY: every slot was just found to be `Some`, and `from_fn`
+            // takes each one once. The index and the slot's generation come
+            // from the key the value was inserted under, so they fit the key
+            // config.
+            unsafe {
+                let slot = slots[i].take().unwrap_unchecked();
+                let key = key_from_parts_unchecked::<C>(idxs[i], slot.generation);
+                (key, &mut slot.value)
+            }
+        }))
     }
 
     /// Returns the key and a mutable reference to the value at each index,
@@ -406,7 +327,8 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     ///
     /// There must be a value at every index, meaning [`key_at`](Self::key_at)
     /// returns `Some` for every one of them, and no two of the indices may be
-    /// the same.
+    /// the same. The map's hasher must also give each index the same hash every
+    /// time, which every correct `BuildHasher` does.
     #[inline]
     pub unsafe fn get_disjoint_mut_at_unchecked<const N: usize>(
         &mut self,
@@ -420,10 +342,11 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         // SAFETY: the caller promises that no two of the indices are the same.
         let mut slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };
         core::array::from_fn(|i| {
-            // SAFETY: the caller promises a value at every index, so the
-            // `HashMap` found a slot for each of them. Each slot's generation
-            // and index come from the key its value was inserted under, so they
-            // fit the key config.
+            // SAFETY: the caller promises a value at every index and a hasher
+            // that gives each index the same hash as before, so the `HashMap`
+            // found every value, and `from_fn` takes each one once. The index
+            // and the slot's generation come from the key the value was
+            // inserted under, so they fit the key config.
             unsafe {
                 let slot = slots[i].take().unwrap_unchecked();
                 let key = key_from_parts_unchecked::<C>(idxs[i], slot.generation);
@@ -477,9 +400,18 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
                 return Err(GetDisjointMutError::OverlappingKeys);
             }
         }
-        // SAFETY: every key was just found to have a value, and every index is
-        // distinct.
-        Ok(unsafe { self.get_disjoint_mut_unchecked(keys) })
+        let idxs = keys.map(|key| key.idx());
+        // SAFETY: the loop above found that no two keys have the same index.
+        let slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };
+        // The loop above found every key's value, so the `HashMap` only misses
+        // one here if the hasher gave an index a different hash.
+        if slots.iter().any(Option::is_none) {
+            return Err(GetDisjointMutError::InvalidKey);
+        }
+        Ok(slots.map(|slot| {
+            // SAFETY: every slot was just found to be `Some`.
+            unsafe { &mut slot.unwrap_unchecked().value }
+        }))
     }
 
     /// Returns a mutable reference to the value stored under each key, like
@@ -490,7 +422,9 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     ///
     /// A value must be stored under every key, meaning
     /// [`contains_key`](Self::contains_key) returns `true` for each of them,
-    /// and no two keys may have the same index.
+    /// and no two keys may have the same index. The map's hasher must also give
+    /// each index the same hash every time, which every correct `BuildHasher`
+    /// does.
     #[inline]
     pub unsafe fn get_disjoint_mut_unchecked<const N: usize>(
         &mut self,
@@ -506,7 +440,8 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         let slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };
         slots.map(|slot| {
             // SAFETY: the caller promises that a value is stored under every
-            // key, so the `HashMap` found a slot for each key's index.
+            // key and that the hasher gives each index the same hash as before,
+            // so the `HashMap` found every value.
             unsafe { &mut slot.unwrap_unchecked().value }
         })
     }
@@ -585,10 +520,12 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// if there is none.
     #[inline]
     pub fn remove(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
-        if self.slots.get(&key.idx())?.generation != key.generation() {
-            return None;
+        match self.slots.entry(key.idx()) {
+            hash_map::Entry::Occupied(entry) if entry.get().generation == key.generation() => {
+                Some(entry.remove().value)
+            }
+            _ => None,
         }
-        self.slots.remove(&key.idx()).map(|slot| slot.value)
     }
 
     /// Keeps only the values `f` returns `true` for, and removes the rest.
