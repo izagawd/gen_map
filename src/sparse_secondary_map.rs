@@ -307,15 +307,19 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
             return Err(GetDisjointMutAtError::NoValue);
         }
         Ok(core::array::from_fn(|i| {
-            // SAFETY: every slot was just found to be `Some`, and `from_fn`
-            // takes each one once. The index and the slot's generation come
-            // from the key the value was inserted under, so they fit the key
-            // config.
-            unsafe {
-                let slot = slots[i].take().unwrap_unchecked();
-                let key = key_from_parts_unchecked::<C>(idxs[i], slot.generation);
-                (key, &mut slot.value)
-            }
+            // SAFETY: `from_fn` calls this closure once with each index below
+            // `N`, so `i` is in bounds of both arrays and each slot is taken
+            // once. Every slot was just found to be `Some`.
+            let (idx, slot) = unsafe {
+                (
+                    *idxs.get_unchecked(i),
+                    slots.get_unchecked_mut(i).take().unwrap_unchecked(),
+                )
+            };
+            // SAFETY: `idx` and the slot's generation come from the key the
+            // value was inserted under, so they fit the key config.
+            let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
+            (key, &mut slot.value)
         }))
     }
 
@@ -342,16 +346,21 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         // SAFETY: the caller promises that no two of the indices are the same.
         let mut slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };
         core::array::from_fn(|i| {
-            // SAFETY: the caller promises a value at every index and a hasher
+            // SAFETY: `from_fn` calls this closure once with each index below
+            // `N`, so `i` is in bounds of both arrays and each slot is taken
+            // once. The caller promises a value at every index and a hasher
             // that gives each index the same hash as before, so the `HashMap`
-            // found every value, and `from_fn` takes each one once. The index
-            // and the slot's generation come from the key the value was
-            // inserted under, so they fit the key config.
-            unsafe {
-                let slot = slots[i].take().unwrap_unchecked();
-                let key = key_from_parts_unchecked::<C>(idxs[i], slot.generation);
-                (key, &mut slot.value)
-            }
+            // found every value.
+            let (idx, slot) = unsafe {
+                (
+                    *idxs.get_unchecked(i),
+                    slots.get_unchecked_mut(i).take().unwrap_unchecked(),
+                )
+            };
+            // SAFETY: `idx` and the slot's generation come from the key the
+            // value was inserted under, so they fit the key config.
+            let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
+            (key, &mut slot.value)
         })
     }
 
