@@ -335,6 +335,38 @@ fn reserving_more_than_any_map_can_hold_is_an_error() {
 }
 
 #[test]
+fn shrinking_frees_room_and_keeps_every_value() {
+    let k = keys(1000);
+    let mut map = SparseSecondaryMap::new();
+    for (i, key) in k.iter().enumerate() {
+        map.insert(*key, i).unwrap();
+    }
+    map.retain(|_, value| *value < 5);
+    let before = map.capacity();
+    map.shrink_to(100);
+    assert!(map.capacity() >= 100);
+    assert!(map.capacity() < before);
+    map.shrink_to_fit();
+    assert!(map.capacity() >= 5);
+    assert!(map.capacity() < 100);
+    assert_eq!(map.len(), 5);
+    for (i, key) in k[..5].iter().enumerate() {
+        assert_eq!(map[*key], i);
+    }
+
+    // Shrinking to more than the current capacity changes nothing.
+    let capacity = map.capacity();
+    map.shrink_to(10_000);
+    assert_eq!(map.capacity(), capacity);
+
+    map.clear();
+    map.shrink_to_fit();
+    assert_eq!(map.capacity(), 0);
+    map.insert(k[0], 0).unwrap();
+    assert_eq!(map[k[0]], 0);
+}
+
+#[test]
 #[should_panic(expected = "SparseSecondaryMap cannot make room")]
 fn reserve_panics_when_the_map_cannot_make_room() {
     SparseSecondaryMap::<u8>::new().reserve(usize::MAX);
@@ -582,9 +614,18 @@ where
                 b.sort_unstable();
                 assert_eq!(a, b, "{context:?}");
             }
-            _ => {
+            96..=97 => {
                 secondary.clear();
                 sparse.clear();
+            }
+            // Only the sparse map can shrink, and shrinking must not change
+            // what it holds.
+            _ => {
+                if rng.chance(50) {
+                    sparse.shrink_to_fit();
+                } else {
+                    sparse.shrink_to(rng.below(40));
+                }
             }
         }
         check(&secondary, &sparse, &known, context);

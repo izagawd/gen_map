@@ -684,6 +684,21 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError> {
         self.slots.try_reserve(additional)
     }
+
+    /// Shrinks the map's capacity as much as possible. The map keeps room for
+    /// every value it holds, and may keep a little more.
+    #[inline]
+    pub fn shrink_to_fit(&mut self) {
+        self.slots.shrink_to_fit();
+    }
+
+    /// Shrinks the map's capacity, but not below `min_capacity`. The map keeps
+    /// room for every value it holds, and may keep a little more. If the
+    /// capacity is already below `min_capacity`, nothing changes.
+    #[inline]
+    pub fn shrink_to(&mut self, min_capacity: usize) {
+        self.slots.shrink_to(min_capacity);
+    }
 }
 
 impl<T, C: SparseSecondaryMapConfig, S: BuildHasher + Default> Default
