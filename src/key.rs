@@ -29,8 +29,7 @@ impl<K: KeyConfig> Key<K> {
     /// can hold. The slot's generation cannot go up past that one, so removing
     /// the key's value either wraps the slot's generation back to zero or
     /// retires the slot, depending on the `WRAP_ON_OVERFLOW` of the map's
-    /// config, which [`GenMapConfig`](crate::GenMapConfig) and
-    /// [`DenseGenMapConfig`](crate::DenseGenMapConfig) both have.
+    /// config.
     #[inline]
     pub fn is_max_generation(&self) -> bool {
         self.generation() == K::max_generation()

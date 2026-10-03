@@ -210,9 +210,6 @@ impl<S> ReserveStorage for Vec<S> {}
 /// [`SecondaryInsertError::StorageFull`](crate::SecondaryInsertError::StorageFull),
 /// unless the index is the largest value of the index type, which fails with
 /// [`SecondaryInsertError::IndexReserved`](crate::SecondaryInsertError::IndexReserved).
-/// A dense map can keep its slots, values or keys in an `ArrayVec`, and the
-/// [`DenseError`](crate::DenseError) in its storage error says which of them
-/// was full.
 ///
 /// ```
 /// use arrayvec::ArrayVec;

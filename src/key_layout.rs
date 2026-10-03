@@ -92,8 +92,7 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// one slot fewer than the index bits could address. When a value is removed
 /// from a slot that has the largest generation, the slot retires or its
 /// generation wraps back to zero, as the `WRAP_ON_OVERFLOW` of the map's
-/// config decides. [`GenMapConfig`](crate::GenMapConfig) and
-/// [`DenseGenMapConfig`](crate::DenseGenMapConfig) both have it.
+/// config decides.
 ///
 /// # Examples
 ///

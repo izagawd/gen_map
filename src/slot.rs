@@ -420,10 +420,9 @@ mod sealed {
 /// Only [`Slot`] implements `GenSlotItem`. The trait is sealed, so no type
 /// outside this crate can implement it.
 pub trait GenSlotItem: sealed::Sealed {
-    /// The type of the value in the slot. For the slots of a
-    /// `GenMap<T, C>`, it is `T`. The slots of a dense map store the position
-    /// of each value instead, so for them it is the index type of the map's
-    /// keys.
+    /// The type of the value in the slot. For the slots of a `GenMap<T, C>`,
+    /// it is `T`, and for the slots of a dense map, it is the index type of the
+    /// map's keys.
     type Value;
 }
 
