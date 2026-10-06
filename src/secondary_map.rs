@@ -169,16 +169,13 @@ pub struct SecondaryMap<
     #[cfg(feature = "alloc")] C: SecondaryMapConfig = DefaultMapConfig,
     #[cfg(not(feature = "alloc"))] C: SecondaryMapConfig,
 > {
-    // A slot that holds a value always sits at the index of the key the value
-    // was inserted under, and has that key's generation. `insert` is the only
-    // method that puts a value in a slot, and `clone` copies each slot to the
-    // same position. The map builds keys from its slots without checks because
-    // of this.
+    // The position and the generation of every slot that holds a value fit
+    // the key config together. The map builds keys from its slots without
+    // checks because of this.
     slots: Slots<T, C>,
-    // The number of values. `insert` rejects a key whose index is the largest
-    // value of the index type, so no slot has that index, there are at most as
-    // many slots as that largest value, and the count of values always fits in
-    // the index type.
+    // `len` is the number of values. No slot has the largest value of the
+    // index type as its index, so there are at most as many slots as that
+    // largest value, and the count of values always fits in the index type.
     len: MapIdx<C>,
 }
 
