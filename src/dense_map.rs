@@ -23,13 +23,17 @@ type Values<T, C> = <C as DenseGenMapConfig>::ValueStorage<T>;
 /// The storage a config gives the map for its keys.
 type Keys<C> = <C as DenseGenMapConfig>::KeyStorage<Key<MapKeyConfig<C>>>;
 
-/// The [`Slot`] a [`DenseGenMap<T, C>`](DenseGenMap) keeps for each index.
-/// While the slot holds a value, its `T` is the position of that value in the
-/// value storage. Otherwise its `U` holds what the `U` of a
-/// [`MapSlot`](crate::MapSlot) holds. A free slot stores the index of the next
-/// free slot there, or the largest value of the index type if it is the last
-/// free slot. A detached slot stores its own index, and a retired slot stores
-/// the largest value of the index type.
+/// A [`DenseGenMap`] keeps one [`Slot`] of this type for each index. While the
+/// slot holds a value, its generation is odd and it stores the position of that
+/// value in the value storage. While it holds no value, its generation is even
+/// and it stores an index instead. A free slot stores the index of the next
+/// free slot, or the largest value of the index type if it is the last free
+/// slot. A detached slot stores its own index, which is how
+/// [`DenseGenMap::reattach`] tells a detached slot apart from a free or retired
+/// one. When the map retires a slot, it stores the largest value of the index
+/// type there, so the slot never looks detached. [`Slot::as_parity`] checks the
+/// parity of the generation and returns either the position in [`Parity::Odd`]
+/// or the index in [`Parity::Even`].
 pub type DenseMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, MapIdx<C>>;
 
 /// The error a `DenseGenMap<T, C>` gives when one of its storages cannot make

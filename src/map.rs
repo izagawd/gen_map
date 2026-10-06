@@ -26,13 +26,17 @@ pub type MapGen<C> = <MapKeyConfig<C> as KeyConfig>::Gen;
 pub(crate) type Idx<C> = MapIdx<C>;
 pub(crate) type Gen<C> = MapGen<C>;
 
-/// The [`Slot`] a [`GenMap<T, C>`](GenMap) keeps each value in. While a slot is
-/// on the free list, its `U` is the index of the next free slot, or the largest
-/// value of the index type if it is the last free slot. No slot ever has that
-/// index, so it can't be mistaken for the index of a real slot. A retired
-/// slot's `U` is also the largest value of the index type. A detached slot's
-/// `U` is its own index, which is how [`GenMap::reattach`] tells a detached
-/// slot apart from a free or retired one.
+/// A [`GenMap`] keeps each of its values in a [`Slot`] of this type. While the
+/// slot holds a value, its generation is odd. While it holds no value, its
+/// generation is even and it stores an index instead. A slot on the free list
+/// stores the index of the next free slot, or the largest value of the index
+/// type if it is the last free slot. No slot ever has that index, so it can't
+/// be mistaken for the index of a real slot. A detached slot stores its own
+/// index, which is how [`GenMap::reattach`] tells a detached slot apart from a
+/// free or retired one. When the map retires a slot, it stores the largest
+/// value of the index type there, so the slot never looks detached.
+/// [`Slot::as_parity`] checks the parity of the generation and returns either
+/// the value in [`Parity::Odd`] or the index in [`Parity::Even`].
 pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 
 /// Returns the key of the value in the slot at `idx`, given the slot's current
