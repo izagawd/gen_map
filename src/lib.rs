@@ -255,11 +255,12 @@ pub use config::{
     MapConfig, SecondaryMapConfig,
 };
 pub use dense_map::{
-    DenseDrain, DenseGenMap, DenseIntoIter, DenseIter, DenseIterMut, DenseKeys, DenseMapSlot,
-    DenseStorageError, DenseVacantEntry, DenseValues, DenseValuesMut,
+    DenseDrain, DenseGenMap, DenseGenMapRawParts, DenseIntoIter, DenseIter, DenseIterMut,
+    DenseKeys, DenseMapSlot, DenseStorageError, DenseVacantEntry, DenseValues, DenseValuesMut,
 };
 pub use dense_secondary_map::{
-    DenseSecondaryDrain, DenseSecondaryMap, DenseSecondaryMapSlot, DenseSecondaryStorageError,
+    DenseSecondaryDrain, DenseSecondaryMap, DenseSecondaryMapRawParts, DenseSecondaryMapSlot,
+    DenseSecondaryStorageError,
 };
 pub use error::{
     DenseError, FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError,
@@ -269,21 +270,23 @@ pub use key::Key;
 pub use key_layout::{Packed, Split};
 pub use key_piece::KeyPiece;
 pub use map::{
-    Drain, GenMap, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig, MapSlot,
-    StorageError, VacantEntry, Values, ValuesMut,
+    Drain, GenMap, GenMapRawParts, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig,
+    MapSlot, StorageError, VacantEntry, Values, ValuesMut,
 };
 pub use parity::{Even, Odd};
 pub use replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
 pub use secondary_map::{
     SecondaryDrain, SecondaryIntoIter, SecondaryIter, SecondaryIterMut, SecondaryKeys,
-    SecondaryMap, SecondaryMapSlot, SecondaryStorageError, SecondaryValues, SecondaryValuesMut,
+    SecondaryMap, SecondaryMapRawParts, SecondaryMapSlot, SecondaryStorageError, SecondaryValues,
+    SecondaryValuesMut,
 };
 pub use slot::{GenSlotItem, Parity, SecondarySlot, SecondarySlotItem, Slot};
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub use sparse_secondary_map::{
     SparseSecondaryDrain, SparseSecondaryIntoIter, SparseSecondaryIter, SparseSecondaryIterMut,
-    SparseSecondaryKeys, SparseSecondaryMap, SparseSecondaryValues, SparseSecondaryValuesMut,
+    SparseSecondaryKeys, SparseSecondaryMap, SparseSecondaryMapRawParts, SparseSecondaryMapSlot,
+    SparseSecondaryValues, SparseSecondaryValuesMut, SparseSlot,
 };
 pub use storage::{ReserveStorage, SliceStorage};
 

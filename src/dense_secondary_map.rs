@@ -1169,3 +1169,116 @@ impl<T, C: DenseSecondaryMapConfig> Drop for DenseSecondaryDrain<'_, T, C> {
         for _ in self.by_ref() {}
     }
 }
+
+/// `DenseSecondaryMapRawParts` holds the fields of a [`DenseSecondaryMap`].
+/// [`into_raw_parts`](DenseSecondaryMap::into_raw_parts) takes a map apart into
+/// these fields, and [`from_raw_parts`](DenseSecondaryMap::from_raw_parts)
+/// builds a map from them.
+///
+/// The parts given to `from_raw_parts` must follow every rule below, and the
+/// parts that `into_raw_parts` returns always do.
+///
+/// The values are the data that the map stores under its keys, and `values`
+/// holds them. Editing or replacing an item in `values` never breaks a rule,
+/// and neither does changing the capacity of `slots`, `values` or `keys`.
+///
+/// # Rules
+///
+/// - No slot sits at a position above the largest index the map's keys can
+///   hold, or at the largest value of the index type.
+/// - A slot that holds a value has a generation no larger than the largest
+///   one the map's keys can hold, and a slot that holds no value has
+///   generation zero.
+/// - `values` and `keys` are the same length, and that length is the number
+///   of slots that hold a value.
+/// - Each slot that holds a value stores the position of its value in
+///   `values`, and no two of those slots store the same position.
+/// - The key at each position in `keys` is the key of the value at the same
+///   position in `values`. The key has the index of the slot that stores that
+///   position, and the generation of that slot.
+///
+/// # Examples
+///
+/// ```
+/// use gen_map::{DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap, Slot};
+///
+/// let mut people = GenMap::new();
+/// let alice = people.insert("Alice");
+/// let bob = people.insert("Bob");
+///
+/// // Only Bob has an age, so the slot at Alice's index holds no value.
+/// let parts = DenseSecondaryMapRawParts {
+///     slots: vec![Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), 0)],
+///     values: vec![25],
+///     keys: vec![bob],
+/// };
+/// // SAFETY: both slots sit at indices that a `GenMap` hands out, and the slot
+/// // without a value has generation zero. Bob's slot stores position zero,
+/// // where `values` holds his age and `keys` holds his key.
+/// let ages: DenseSecondaryMap<u32> = unsafe { DenseSecondaryMap::from_raw_parts(parts) };
+/// assert_eq!(ages.get(alice), None);
+/// assert_eq!(ages[bob], 25);
+/// ```
+pub struct DenseSecondaryMapRawParts<
+    T,
+    #[cfg(feature = "alloc")] C: DenseSecondaryMapConfig = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: DenseSecondaryMapConfig,
+> {
+    // These fields are in the same order as the fields of `DenseSecondaryMap`
+    // on purpose, so that the two structs can be read side by side.
+    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
+    // so the compiler catches a field that only one of them has, but nothing
+    // catches a change in order. Think twice before removing this comment,
+    // because it is the only thing that keeps the two orders the same.
+    /// The map keeps its slots in this storage, which the map's config picks.
+    /// A slot's index is its position in the storage, and a slot that holds a
+    /// value stores the position of that value in `values`.
+    pub slots: <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>,
+    /// The map keeps its values in this storage, one after another.
+    pub values: <C as DenseSecondaryMapConfig>::ValueStorage<T>,
+    /// The map keeps the key of each value in this storage, at the position
+    /// of the value.
+    pub keys: <C as DenseSecondaryMapConfig>::KeyStorage<Key<MapKeyConfig<C>>>,
+}
+
+impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
+    /// Takes the map apart into its fields.
+    /// [`from_raw_parts`](Self::from_raw_parts) builds a map from them again,
+    /// and [`DenseSecondaryMapRawParts`] lists the rules they follow.
+    #[inline]
+    pub fn into_raw_parts(self) -> DenseSecondaryMapRawParts<T, C> {
+        let Self {
+            slots,
+            values,
+            keys,
+        } = self;
+        DenseSecondaryMapRawParts {
+            slots,
+            values,
+            keys,
+        }
+    }
+
+    /// Builds a map from the fields that
+    /// [`into_raw_parts`](Self::into_raw_parts) takes a map apart into.
+    ///
+    /// # Safety
+    ///
+    /// `parts` must follow every rule listed on [`DenseSecondaryMapRawParts`].
+    /// The map's methods rely on those rules, and parts that break one can
+    /// make them cause undefined behavior.
+    #[inline]
+    #[must_use]
+    pub unsafe fn from_raw_parts(parts: DenseSecondaryMapRawParts<T, C>) -> Self {
+        let DenseSecondaryMapRawParts {
+            slots,
+            values,
+            keys,
+        } = parts;
+        Self {
+            slots,
+            values,
+            keys,
+        }
+    }
+}

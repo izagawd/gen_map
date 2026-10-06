@@ -24,6 +24,7 @@ mod overflow;
 mod packed;
 mod panic_fuzz;
 mod parity;
+mod raw_parts;
 mod reset;
 mod retain;
 mod retire;

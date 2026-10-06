@@ -1810,3 +1810,139 @@ impl<T, C: GenMapConfig> Drop for Drain<'_, T, C> {
         for _ in self.by_ref() {}
     }
 }
+
+/// `GenMapRawParts` holds the fields of a [`GenMap`].
+/// [`into_raw_parts`](GenMap::into_raw_parts) takes a map apart into these
+/// fields, and [`from_raw_parts`](GenMap::from_raw_parts) builds a map from
+/// them.
+///
+/// The parts given to `from_raw_parts` must follow every rule below, and the
+/// parts that `into_raw_parts` returns always do.
+///
+/// The values are the data that the map stores under its keys, and each one
+/// sits in a slot. Editing or replacing a value in its slot never breaks a
+/// rule, and neither does changing the capacity of `slots`.
+///
+/// # Rules
+///
+/// - No slot sits at a position above the largest index the map's keys can
+///   hold, or at the largest value of the index type.
+/// - A slot that holds a value has a generation no larger than the largest
+///   one the map's keys can hold.
+/// - The free list starts at the slot whose index is in `next_free`. Each
+///   slot on the list stores the index of the next slot on the list, and the
+///   last one stores the largest value of the index type, which `next_free`
+///   also holds when the list is empty. Every slot on the list holds no value
+///   and has a generation below the largest one the map's keys can hold, and
+///   no slot is on the list twice.
+/// - `len` is the number of slots that hold a value.
+///
+/// The rules say nothing about slots that hold no value and are not on the
+/// free list, such as detached and retired ones. [`MapSlot`] explains what a
+/// free, detached or retired slot stores in place of a value.
+///
+/// # Examples
+///
+/// ```
+/// use gen_map::{GenMap, GenMapRawParts, Odd, Slot};
+///
+/// // The only slot holds "a" under generation one, so no slot is free.
+/// let parts = GenMapRawParts {
+///     slots: vec![Slot::new_odd(Odd::new(1).unwrap(), "a")],
+///     next_free: u32::MAX,
+///     len: 1,
+/// };
+/// // SAFETY: the slot's position and generation fit the default key config,
+/// // the free list is empty, and `len` counts the one value.
+/// let map: GenMap<&str> = unsafe { GenMap::from_raw_parts(parts) };
+/// let key = map.key_at(0).unwrap();
+/// assert_eq!(map[key], "a");
+/// ```
+pub struct GenMapRawParts<
+    T,
+    #[cfg(feature = "alloc")] C: GenMapConfig = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: GenMapConfig,
+> {
+    // These fields are in the same order as the fields of `GenMap` on
+    // purpose, so that the two structs can be read side by side.
+    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
+    // so the compiler catches a field that only one of them has, but nothing
+    // catches a change in order. Think twice before removing this comment,
+    // because it is the only thing that keeps the two orders the same.
+    /// The map keeps its slots in this storage, which the map's config picks.
+    /// A slot's index is its position in the storage.
+    pub slots: <C as GenMapConfig>::Storage<MapSlot<T, C>>,
+    /// `next_free` holds the index of the first slot on the free list, or the
+    /// largest value of the index type if no slot is free.
+    pub next_free: MapIdx<C>,
+    /// `len` is the number of values in the map.
+    pub len: MapIdx<C>,
+}
+
+impl<T, C: GenMapConfig> GenMap<T, C> {
+    /// Takes the map apart into its fields.
+    /// [`from_raw_parts`](Self::from_raw_parts) builds a map from them again,
+    /// and [`GenMapRawParts`] lists the rules they follow.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::GenMap;
+    ///
+    /// let mut map = GenMap::new();
+    /// let a = map.insert(1);
+    /// let b = map.insert(2);
+    /// map.remove(a);
+    ///
+    /// let mut parts = map.into_raw_parts();
+    /// assert_eq!(parts.slots.len(), 2);
+    /// assert_eq!(parts.len, 1);
+    /// // The slot that held 1 is the only free slot.
+    /// assert_eq!(parts.next_free, a.idx());
+    ///
+    /// // Changing the value stored under `b` keeps the parts following the
+    /// // rules.
+    /// *parts.slots[1].get_odd_mut(b.generation()).unwrap() += 10;
+    /// // SAFETY: the parts came from `into_raw_parts`, and only the value
+    /// // stored under `b` changed.
+    /// let map = unsafe { GenMap::from_raw_parts(parts) };
+    /// assert_eq!(map[b], 12);
+    /// assert!(map.get(a).is_none());
+    /// ```
+    #[inline]
+    pub fn into_raw_parts(self) -> GenMapRawParts<T, C> {
+        let Self {
+            slots,
+            next_free,
+            len,
+        } = self;
+        GenMapRawParts {
+            slots,
+            next_free,
+            len,
+        }
+    }
+
+    /// Builds a map from the fields that
+    /// [`into_raw_parts`](Self::into_raw_parts) takes a map apart into.
+    ///
+    /// # Safety
+    ///
+    /// `parts` must follow every rule listed on [`GenMapRawParts`]. The map's
+    /// methods rely on those rules, and parts that break one can make them
+    /// cause undefined behavior.
+    #[inline]
+    #[must_use]
+    pub unsafe fn from_raw_parts(parts: GenMapRawParts<T, C>) -> Self {
+        let GenMapRawParts {
+            slots,
+            next_free,
+            len,
+        } = parts;
+        Self {
+            slots,
+            next_free,
+            len,
+        }
+    }
+}
