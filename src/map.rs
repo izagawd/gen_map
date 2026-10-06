@@ -223,8 +223,8 @@ impl<C: MapConfig> Target<C> {
     /// The key that a value gets when it is put at this target.
     #[inline]
     fn key(&self) -> Key<MapKeyConfig<C>> {
-        // SAFETY: a `Target` only ever comes from `next_target`, which checks
-        // that both parts fit the key config.
+        // SAFETY: a `Target` only ever comes from `next_target`, which picks an
+        // index and a generation that a key can hold.
         Key::from_repr(unsafe {
             <MapKeyConfig<C> as KeyConfig>::pack_unchecked(self.idx, self.generation)
         })
@@ -988,8 +988,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             (idx, position, Even::ZERO, false)
         };
 
-        // The largest generation a key can hold is odd, so it is above every
-        // even one, and the generation after an even one still fits.
+        // A new slot has generation zero, and a free slot has a generation
+        // below the largest one a key can hold, so a key can hold the
+        // generation after either one.
         let generation = generation.next();
 
         Ok(Target {
@@ -1841,9 +1842,8 @@ impl<T, C: GenMapConfig> Drop for Drain<'_, T, C> {
 ///   no slot is on the list twice.
 /// - `len` is the number of slots that hold a value.
 ///
-/// The rules say nothing about slots that hold no value and are not on the
-/// free list, such as detached and retired ones. [`MapSlot`] explains what a
-/// free, detached or retired slot stores in place of a value.
+/// [`MapSlot`] explains what a free, detached or retired slot stores in place
+/// of a value.
 ///
 /// # Examples
 ///
