@@ -204,7 +204,10 @@ impl<S> ReserveStorage for Vec<S> {}
 /// The storage cannot grow. When it holds the slots of a
 /// [`GenMap`](crate::GenMap), inserting fails with
 /// [`FullError::StorageFull`](crate::FullError::StorageFull) once all `CAP`
-/// slots exist and none of them are free. When it holds the slots of a
+/// slots exist and none of them are free. If the map's keys run out of
+/// indices for new slots first, or at the same time, inserting fails with
+/// [`FullError::IndexExhausted`](crate::FullError::IndexExhausted) instead.
+/// When it holds the slots of a
 /// [`SecondaryMap`](crate::SecondaryMap), inserting under a key whose index
 /// is `CAP` or more fails with
 /// [`SecondaryInsertError::StorageFull`](crate::SecondaryInsertError::StorageFull),

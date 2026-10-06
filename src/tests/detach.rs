@@ -125,9 +125,9 @@ fn reattach_fails_for_a_removed_key() {
     let key = map.insert(1);
     map.remove(key);
     // Like a detached slot, the removed slot now has a generation one above
-    // the key's. It is the only slot on the free list, so its link to the
-    // next free slot is `None`. A detached slot links to itself instead,
-    // which is how `reattach` tells the two apart.
+    // the key's. It is the only slot on the free list, so its link is the
+    // largest value of the index type, which ends the list. A detached slot
+    // links to itself instead, which is how `reattach` tells the two apart.
     assert_not_detached(&mut map, key, 2);
 }
 

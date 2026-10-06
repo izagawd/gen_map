@@ -135,8 +135,8 @@ pub(crate) fn increment_len<I: KeyPiece>(len: &mut I) {
     *len = len.wrapping_add(I::ONE);
 }
 
-/// Takes one off a map's `len`. The map only calls this after taking out a
-/// value it held, so `len` is above zero beforehand.
+/// Takes one off a map's `len`. The map only calls this when it takes out a
+/// value it holds, so `len` is above zero beforehand.
 #[inline]
 pub(crate) fn decrement_len<I: KeyPiece>(len: &mut I) {
     debug_assert!(*len > I::ZERO, "a map only removes a value it holds");
@@ -204,7 +204,7 @@ fn freed_parts<C: GenMapConfig>(
 
 /// The error the storage of a `GenMap<T, C>` gives when it cannot make room
 /// for another slot. It is `TryReserveError` for a `Vec`, `CapacityError` for
-/// an `ArrayVec` and `CollectionAllocErr` for a `SmallVec`.
+/// an `ArrayVec` and `SmallVecError` for a `SmallVec`.
 pub type StorageError<T, C> = <<C as GenMapConfig>::Storage<MapSlot<T, C>> as SliceStorage>::Error;
 
 /// Where the next inserted value will go, worked out before anything is
@@ -895,8 +895,6 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     where
         F: FnOnce(Key<MapKeyConfig<C>>) -> T,
     {
-        // Nothing is written until `f` has returned, so a panicking `f`
-        // leaves the map untouched.
         let entry = match self.vacant_entry() {
             Ok(entry) => entry,
             Err(full) => panic_full::<T, C>(full, self.slots.len()),
@@ -1190,10 +1188,10 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     }
 
     /// Frees the slot of a key whose value [`detach`](Self::detach) took out,
-    /// without putting a value back. The slot goes on the free list as if the
-    /// value had been removed, so the key never matches again and
-    /// [`reattach`](Self::reattach) fails for it. Returns `false`, and leaves
-    /// the map as it was, if the key is not detached.
+    /// without putting a value back. The slot goes on the free list or retires,
+    /// just as it would if the value had been removed, so
+    /// [`reattach`](Self::reattach) fails for the key. Returns `false`, and
+    /// leaves the map as it was, if the key is not detached.
     ///
     /// # Examples
     ///

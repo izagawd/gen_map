@@ -286,7 +286,7 @@ impl<T, C: DenseGenMapConfig> fmt::Debug for DenseVacantEntry<'_, T, C> {
 /// The map also keeps the key of each value, at the same position as the
 /// value. Removing a value moves the last value into its place, and the map
 /// reads the moved value's key to point that value's slot at the new
-/// position. So the order of the values changes when one is removed.
+/// position.
 ///
 /// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`]. To use
 /// your own config, implement [`MapConfig`] and [`DenseGenMapConfig`] for it.
@@ -884,8 +884,6 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     where
         F: FnOnce(Key<MapKeyConfig<C>>) -> T,
     {
-        // Nothing is written until `f` has returned, so a panicking `f` leaves
-        // the map untouched.
         let slots_len = self.slots_len();
         let entry = match self.vacant_entry() {
             Ok(entry) => entry,

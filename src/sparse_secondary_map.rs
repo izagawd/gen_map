@@ -56,8 +56,9 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// map, and `S` is the hasher of the `HashMap`.
 ///
 /// It accepts the same keys as a [`SecondaryMap`](crate::SecondaryMap) with
-/// the same key config, and decides the same way whether an insert replaces a
-/// value. The difference is where the values live. A `SecondaryMap` keeps a
+/// the same key config, and the [`ReplaceStrategy`](crate::ReplaceStrategy)
+/// of its config decides whether an insert replaces a value.
+/// The difference is where the values live. A `SecondaryMap` keeps a
 /// slot at every index up to the highest index that an insert has used, even
 /// where no value is stored. A `SparseSecondaryMap` keeps each value in a
 /// `HashMap` under the index of its key, together with the key's generation,

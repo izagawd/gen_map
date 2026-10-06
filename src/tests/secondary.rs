@@ -582,9 +582,12 @@ where
 }
 
 /// Runs the same random inserts, removes and retains on a map with config
-/// `C` and on the model above, and checks that the two agree after every
-/// step. When the storage holds at most `capacity` slots, an insert at that
-/// index or past it must fail with `StorageFull` and leave the map as it was.
+/// `C` and on the model above. After every step, it checks that the map and
+/// the model gave the same result and hold the same number of values. Every
+/// hundred steps and after the last step, it also checks that they hold the
+/// same keys and values. When the storage holds at most `capacity` slots, an
+/// insert at that index or past it must fail with `StorageFull` and leave the
+/// map as it was.
 fn run_model<C>(seed: u64, steps: u32, capacity: Option<usize>, coverage: &mut Coverage)
 where
     C: SecondaryMapConfig + MapConfig<KeyConfig = DefaultKeyConfig>,
@@ -1037,7 +1040,7 @@ fn get_disjoint_mut_hands_out_every_value() {
 #[test]
 fn get_disjoint_mut_rejects_missing_stale_and_repeated_keys() {
     let (mut map, all) = map_with_a_gap();
-    // The first key has an empty slot, and the second has no slot at all.
+    // `all[1]` has an empty slot, and `all[3]` has no slot at all.
     assert_eq!(
         map.get_disjoint_mut([all[0], all[1]]),
         Err(GetDisjointMutError::InvalidKey)

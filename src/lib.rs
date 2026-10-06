@@ -7,8 +7,6 @@
 //! the map later puts in that slot either. That makes keys safe to hold on to
 //! where plain indices or references are not, such as in graphs, entity
 //! systems and anything else that refers to values by handle.
-//! [How it works](#how-it-works) lists the few cases where a key can match a
-//! value other than the one it was handed out for.
 //!
 //! Inserting, removing and looking up a value are all O(1). Only the `std`
 //! feature uses `std`, and [Cargo features](#cargo-features) shows how to use
