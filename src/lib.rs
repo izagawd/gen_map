@@ -280,7 +280,7 @@ pub use secondary_map::{
     SecondaryMap, SecondaryMapRawParts, SecondaryMapSlot, SecondaryStorageError, SecondaryValues,
     SecondaryValuesMut,
 };
-pub use slot::{GenSlotItem, Parity, SecondarySlot, SecondarySlotItem, Slot};
+pub use slot::{GenSlotItem, Parity, SecondarySlotItem, Slot};
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub use sparse_secondary_map::{

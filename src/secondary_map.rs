@@ -5,22 +5,78 @@ use crate::error::{GetDisjointMutAtError, GetDisjointMutError, SecondaryInsertEr
 use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use crate::map::{decrement_len, increment_len, MapGen, MapIdx, MapKeyConfig};
-use crate::parity::Odd;
+use crate::parity::{Even, Odd};
 use crate::replace_strategy::ReplaceStrategy;
-use crate::slot::SecondarySlot;
+use crate::slot::{Parity, Slot};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
 use core::slice;
 
-/// A [`SecondaryMap`] keeps one [`SecondarySlot`] of this type for each index.
-/// While the slot holds a value, its generation is the generation of the
-/// value's key, which is odd, and it stores that value. While it holds no
-/// value, its generation is zero, which is even, and it stores nothing in place
-/// of a value. [`SecondarySlot::get`] returns the generation and the value
-/// while the slot holds one, and `None` while it holds none.
-pub type SecondaryMapSlot<T, C> = SecondarySlot<MapKeyConfig<C>, T>;
+/// A [`SecondaryMap`] keeps one [`Slot`] of this type for each index. While
+/// the slot holds a value, its generation is the generation of the value's
+/// key, which is odd, and it stores that value. While it holds no value, its
+/// generation is zero, which is even, and it stores nothing in place of a
+/// value. [`Slot::as_parity`] checks the parity of the generation and returns
+/// either the value in [`Parity::Odd`] or `()` in [`Parity::Even`].
+pub type SecondaryMapSlot<T, C> = Slot<MapGen<C>, T, ()>;
+
+/// Returns the generation and a reference to the value of `slot` if it holds
+/// a value, or `None` if it holds none.
+#[inline]
+fn occupied<G: KeyPiece, T>(slot: &Slot<G, T, ()>) -> Option<(Odd<G>, &T)> {
+    match slot.as_parity() {
+        Parity::Odd(generation, value) => Some((generation, value)),
+        Parity::Even(..) => None,
+    }
+}
+
+/// Returns the generation and a mutable reference to the value of `slot` if it
+/// holds a value, or `None` if it holds none.
+#[inline]
+fn occupied_mut<G: KeyPiece, T>(slot: &mut Slot<G, T, ()>) -> Option<(Odd<G>, &mut T)> {
+    match slot.as_parity_mut() {
+        Parity::Odd(generation, value) => Some((generation, value)),
+        Parity::Even(..) => None,
+    }
+}
+
+/// Puts `value` in `slot` under `generation`, and returns the value the slot
+/// held before, if it held one.
+#[inline]
+fn replace<G: KeyPiece, T>(slot: &mut Slot<G, T, ()>, generation: Odd<G>, value: T) -> Option<T> {
+    match slot.set_odd(generation, value) {
+        Parity::Odd(_, old) => Some(old),
+        Parity::Even(..) => None,
+    }
+}
+
+/// Takes the value out of `slot` and leaves the slot with generation zero and
+/// no value. Returns `None` if the slot held no value.
+#[inline]
+fn take<G: KeyPiece, T>(slot: &mut Slot<G, T, ()>) -> Option<T> {
+    match slot.set_even(Even::ZERO, ()) {
+        Parity::Odd(_, value) => Some(value),
+        Parity::Even(..) => None,
+    }
+}
+
+/// Takes the generation and the value out of `slot`, or returns `None` if it
+/// holds no value.
+#[inline]
+fn into_parts<G: KeyPiece, T>(slot: Slot<G, T, ()>) -> Option<(Odd<G>, T)> {
+    match slot.into_parity() {
+        Parity::Odd(generation, value) => Some((generation, value)),
+        Parity::Even(..) => None,
+    }
+}
+
+/// Returns a slot with generation zero, which holds no value.
+#[inline]
+fn empty_slot<G: KeyPiece, T>() -> Slot<G, T, ()> {
+    Slot::new_even(Even::ZERO, ())
+}
 
 /// The storage a config gives the map for its slots.
 type Slots<T, C> = <C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>>;
@@ -270,7 +326,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     #[inline]
     pub fn key_at(&self, idx: MapIdx<C>) -> Option<Key<MapKeyConfig<C>>> {
         let position = idx.into_usize()?;
-        let (generation, _) = self.slots.as_slice().get(position)?.get()?;
+        let (generation, _) = occupied(self.slots.as_slice().get(position)?)?;
         // SAFETY: the slot at `position` holds a value under `generation`, so
         // the two fit the key.
         Some(unsafe { key_from_parts_unchecked::<C>(position, generation) })
@@ -305,7 +361,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     #[inline]
     pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &T)> {
         let position = idx.into_usize()?;
-        let (generation, value) = self.slots.as_slice().get(position)?.get()?;
+        let (generation, value) = occupied(self.slots.as_slice().get(position)?)?;
         // SAFETY: the slot at `position` holds a value under `generation`, so
         // the two fit the key.
         let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
@@ -318,7 +374,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     #[inline]
     pub fn get_at_mut(&mut self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &mut T)> {
         let position = idx.into_usize()?;
-        let (generation, value) = self.slots.as_mut_slice().get_mut(position)?.get_mut()?;
+        let (generation, value) = occupied_mut(self.slots.as_mut_slice().get_mut(position)?)?;
         // SAFETY: the slot at `position` holds a value under `generation`, so
         // the two fit the key.
         let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
@@ -640,9 +696,9 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         if let Some(old) = slot.get_odd_mut(generation) {
             return Ok(Some(core::mem::replace(old, value)));
         }
-        match slot.get().map(|(current, _)| current) {
+        match occupied(slot).map(|(current, _)| current) {
             None => {
-                slot.replace(generation, value);
+                replace(slot, generation, value);
                 increment_len(&mut self.len);
                 Ok(None)
             }
@@ -651,7 +707,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
                     current, generation,
                 ) =>
             {
-                Ok(slot.replace(generation, value))
+                Ok(replace(slot, generation, value))
             }
             Some(_) => Err(SecondaryInsertError::Refused(value)),
         }
@@ -692,7 +748,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
                 // `SliceStorage` promises that the pushes succeed after
                 // that. A push that fails here means the storage broke that
                 // promise.
-                if slots.try_push(SecondarySlot::empty()).is_err() {
+                if slots.try_push(empty_slot()).is_err() {
                     panic!("SliceStorage::try_push failed although ensure_room returned Ok");
                 }
             }
@@ -713,7 +769,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         let position = key.idx().into_usize()?;
         let slot = self.slots.as_mut_slice().get_mut(position)?;
         slot.get_odd(key.generation())?;
-        let value = slot.take()?;
+        let value = take(slot)?;
         decrement_len(&mut self.len);
         Some(value)
     }
@@ -736,13 +792,13 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// ```
     pub fn retain<F: FnMut(Key<MapKeyConfig<C>>, &mut T) -> bool>(&mut self, mut f: F) {
         for (position, slot) in self.slots.as_mut_slice().iter_mut().enumerate() {
-            if let Some((generation, value)) = slot.get_mut() {
+            if let Some((generation, value)) = occupied_mut(slot) {
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
                 let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
                 if !f(key, value) {
                     decrement_len(&mut self.len);
-                    drop(slot.take());
+                    drop(take(slot));
                 }
             }
         }
@@ -752,9 +808,9 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// [`remove`](Self::remove).
     pub fn clear(&mut self) {
         for slot in self.slots.as_mut_slice() {
-            if slot.get().is_some() {
+            if slot.is_odd() {
                 decrement_len(&mut self.len);
-                drop(slot.take());
+                drop(take(slot));
             }
         }
     }
@@ -930,7 +986,7 @@ impl<'a, T, C: MapConfig> Iterator for SecondaryIter<'a, T, C> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
-            if let Some((generation, value)) = slot.get() {
+            if let Some((generation, value)) = occupied(slot) {
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
@@ -951,7 +1007,7 @@ impl<T, C: MapConfig> DoubleEndedIterator for SecondaryIter<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
-            if let Some((generation, value)) = slot.get() {
+            if let Some((generation, value)) = occupied(slot) {
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
@@ -991,7 +1047,7 @@ impl<'a, T, C: MapConfig> Iterator for SecondaryIterMut<'a, T, C> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
-            if let Some((generation, value)) = slot.get_mut() {
+            if let Some((generation, value)) = occupied_mut(slot) {
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
@@ -1012,7 +1068,7 @@ impl<T, C: MapConfig> DoubleEndedIterator for SecondaryIterMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
-            if let Some((generation, value)) = slot.get_mut() {
+            if let Some((generation, value)) = occupied_mut(slot) {
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
@@ -1151,9 +1207,7 @@ impl<T, C: SecondaryMapConfig> Iterator for SecondaryDrain<'_, T, C> {
         while let Some(slot) = self.map.slots.as_mut_slice().get_mut(self.position) {
             let position = self.position;
             self.position += 1;
-            if let Some((generation, value)) =
-                core::mem::replace(slot, SecondarySlot::empty()).into_inner()
-            {
+            if let Some((generation, value)) = into_parts(core::mem::replace(slot, empty_slot())) {
                 decrement_len(&mut self.map.len);
                 // SAFETY: the slot at `position` held this value under
                 // `generation`, so the two fit the key.
@@ -1202,7 +1256,7 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
-            if let Some((generation, value)) = slot.into_inner() {
+            if let Some((generation, value)) = into_parts(slot) {
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` holds a value under
                 // `generation`, so the two fit the key.
@@ -1230,7 +1284,7 @@ where
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
-            if let Some((generation, value)) = slot.into_inner() {
+            if let Some((generation, value)) = into_parts(slot) {
                 self.remaining -= 1;
                 // SAFETY: the slot at `position` held this value under
                 // `generation`, so the two fit the key.
@@ -1304,13 +1358,14 @@ impl<'a, T, C: SecondaryMapConfig> IntoIterator for &'a mut SecondaryMap<T, C> {
 /// - No slot sits at a position above the largest index the map's keys can
 ///   hold, or at the largest value of the index type.
 /// - A slot that holds a value has a generation no larger than the largest
-///   one the map's keys can hold.
+///   one the map's keys can hold, and a slot that holds no value has
+///   generation zero.
 /// - `len` is the number of slots that hold a value.
 ///
 /// # Examples
 ///
 /// ```
-/// use gen_map::{GenMap, SecondaryMap, SecondaryMapRawParts, SecondarySlot};
+/// use gen_map::{Even, GenMap, SecondaryMap, SecondaryMapRawParts, Slot};
 ///
 /// let mut people = GenMap::new();
 /// let alice = people.insert("Alice");
@@ -1318,12 +1373,12 @@ impl<'a, T, C: SecondaryMapConfig> IntoIterator for &'a mut SecondaryMap<T, C> {
 ///
 /// // Only Bob has an age, so the slot at Alice's index holds no value.
 /// let parts = SecondaryMapRawParts {
-///     slots: vec![SecondarySlot::empty(), SecondarySlot::new(bob.generation(), 25)],
+///     slots: vec![Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), 25)],
 ///     len: 1,
 /// };
 /// // SAFETY: both slots sit at indices that a `GenMap` hands out, the slot
-/// // that holds a value has the generation of a key, and `len` counts the one
-/// // value.
+/// // without a value has generation zero, the slot that holds a value has the
+/// // generation of a key, and `len` counts the one value.
 /// let ages: SecondaryMap<u32> = unsafe { SecondaryMap::from_raw_parts(parts) };
 /// assert_eq!(ages.get(alice), None);
 /// assert_eq!(ages[bob], 25);

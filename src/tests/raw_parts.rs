@@ -7,7 +7,7 @@ use crate::{
     DenseGenMap, DenseGenMapConfig, DenseGenMapRawParts, DenseSecondaryMap,
     DenseSecondaryMapConfig, DenseSecondaryMapRawParts, Even, GenMap, GenMapConfig, GenMapRawParts,
     GenSlotItem, Key, MapConfig, NewerWins, Odd, Packed, Parity, SecondaryMap, SecondaryMapConfig,
-    SecondaryMapRawParts, SecondarySlot, SecondarySlotItem, Slot, Split,
+    SecondaryMapRawParts, SecondarySlotItem, Slot, Split,
 };
 use std::vec;
 use std::vec::Vec;
@@ -298,8 +298,16 @@ fn the_parts_of_a_secondary_map_hold_its_slots_and_count() {
 
     let parts = map.into_raw_parts();
     assert_eq!(parts.len, 1);
-    let slots: Vec<_> = parts.slots.iter().map(SecondarySlot::get).collect();
-    assert_eq!(slots, [None, Some((odd(3), &"a")), None, None]);
+    let slots: Vec<_> = parts.slots.iter().map(parity).collect();
+    assert_eq!(
+        slots,
+        [
+            Parity::Even(even(0), ()),
+            Parity::Odd(odd(3), "a"),
+            Parity::Even(even(0), ()),
+            Parity::Even(even(0), ()),
+        ]
+    );
 
     let map = unsafe { SecondaryMap::from_raw_parts(parts) };
     assert_eq!(map.len(), 1);
@@ -310,7 +318,7 @@ fn the_parts_of_a_secondary_map_hold_its_slots_and_count() {
 #[test]
 fn a_secondary_map_built_by_hand_lets_a_newer_key_replace_its_value() {
     let parts = SecondaryMapRawParts::<&str, Byte> {
-        slots: vec![SecondarySlot::new(odd(5), "old"), SecondarySlot::empty()],
+        slots: vec![Slot::new_odd(odd(5), "old"), Slot::new_even(Even::ZERO, ())],
         len: 1,
     };
     let mut map = unsafe { SecondaryMap::from_raw_parts(parts) };

@@ -4,8 +4,7 @@ use super::{key_from_parts, Bomb, Cfg, DropItem, DropTracker};
 use crate::{
     DefaultKeyConfig, ExistingWins, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
     GetDisjointMutError, Key, MapConfig, MapKeyConfig, NewerWins, Odd, Packed, ReplaceStrategy,
-    SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlot, SecondarySlotItem,
-    Split,
+    SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Split,
 };
 use core::marker::PhantomData;
 use std::collections::HashMap;
@@ -468,31 +467,6 @@ fn the_strategies_compare_generations_as_documented() {
         assert_eq!(newer(odd(slot), odd(key)), replaces, "{slot} to {key}");
         assert!(!keep(odd(slot), odd(key)));
     }
-}
-
-#[test]
-fn a_secondary_slot_holds_a_value_only_while_its_generation_is_odd() {
-    let mut slot = SecondarySlot::<Split<u8, u8>, u32>::new(odd(3), 7);
-    assert_eq!(
-        format!("{slot:?}"),
-        "SecondarySlot { generation: 3, value: Some(7) }"
-    );
-    *slot.get_mut().unwrap().1 += 1;
-    assert_eq!(slot.get_odd(odd(3)), Some(&8));
-    assert_eq!(slot.get_odd(odd(5)), None);
-    *slot.get_odd_mut(odd(3)).unwrap() -= 1;
-    assert_eq!(slot.get_odd_mut(odd(5)), None);
-    *slot.get_odd_mut(odd(3)).unwrap() += 1;
-    assert_eq!(slot.replace(odd(5), 9), Some(8));
-    assert_eq!(slot.clone().into_inner(), Some((odd(5), 9)));
-    assert_eq!(slot.take(), Some(9));
-    assert_eq!(slot.take(), None);
-    assert_eq!(
-        format!("{slot:?}"),
-        "SecondarySlot { generation: 0, value: None }"
-    );
-    assert_eq!(slot.into_inner(), None);
-    assert!(SecondarySlot::<Split<u8, u8>, u32>::empty().get().is_none());
 }
 
 /// A small random number generator, so the test below is the same on every

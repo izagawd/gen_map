@@ -1,4 +1,3 @@
-use crate::config::KeyConfig;
 use crate::key_piece::KeyPiece;
 use crate::parity::{Even, Odd};
 use core::fmt;
@@ -437,169 +436,15 @@ impl<G: KeyPiece, T, U> GenSlotItem for Slot<G, T, U> {
 /// [`SecondaryMapConfig::Storage`](crate::SecondaryMapConfig::Storage), as in
 /// `type Storage<S: SecondarySlotItem> = Vec<S>;`.
 ///
-/// Only [`SecondarySlot`] implements `SecondarySlotItem`. The trait is sealed,
-/// so no type outside this crate can implement it.
+/// Only a [`Slot`] that stores `()` while it holds no value implements
+/// `SecondarySlotItem`. The trait is sealed, so no type outside this crate can
+/// implement it.
 pub trait SecondarySlotItem: sealed::Sealed {
     /// The type of the value in the slot. For the slots of a
     /// `SecondaryMap<T, C>`, it is `T`.
     type Value;
 }
 
-/// The slot a [`SecondaryMap`](crate::SecondaryMap) keeps each of its values
-/// in. It has a generation, and it holds a `T` while the generation is odd
-/// and no value while it is even.
-///
-/// `K` is the key config of the map's keys, and its `Gen` is the slot's
-/// generation type. The slots of a `SecondaryMap<T, C>` are
-/// [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot).
-///
-/// # Examples
-///
-/// ```
-/// use gen_map::{DefaultKeyConfig, GenMap, SecondarySlot};
-///
-/// let mut map = GenMap::new();
-/// let key = map.insert("a");
-///
-/// let mut slot = SecondarySlot::<DefaultKeyConfig, u64>::empty();
-/// assert_eq!(slot.get(), None);
-///
-/// assert_eq!(slot.replace(key.generation(), 10), None);
-/// assert_eq!(slot.get(), Some((key.generation(), &10)));
-/// assert_eq!(slot.take(), Some(10));
-/// assert_eq!(slot.get(), None);
-/// ```
-pub struct SecondarySlot<K: KeyConfig, T>(Slot<K::Gen, T, ()>);
-
-impl<K: KeyConfig, T> SecondarySlot<K, T> {
-    /// Creates a slot with generation zero and no value.
-    #[inline]
-    pub fn empty() -> Self {
-        Self(Slot::new_even(Even::ZERO, ()))
-    }
-
-    /// Creates a slot that holds `value` under `generation`.
-    #[inline]
-    pub fn new(generation: Odd<K::Gen>, value: T) -> Self {
-        Self(Slot::new_odd(generation, value))
-    }
-
-    /// Returns the generation and a reference to the value, or `None` if
-    /// the slot is empty.
-    #[inline]
-    pub fn get(&self) -> Option<(Odd<K::Gen>, &T)> {
-        match self.0.as_parity() {
-            Parity::Odd(generation, value) => Some((generation, value)),
-            Parity::Even(..) => None,
-        }
-    }
-
-    /// Returns the generation and a mutable reference to the value, or
-    /// `None` if the slot is empty.
-    #[inline]
-    pub fn get_mut(&mut self) -> Option<(Odd<K::Gen>, &mut T)> {
-        match self.0.as_parity_mut() {
-            Parity::Odd(generation, value) => Some((generation, value)),
-            Parity::Even(..) => None,
-        }
-    }
-
-    /// Returns a reference to the value if the slot's generation is
-    /// `generation`.
-    #[inline]
-    pub fn get_odd(&self, generation: Odd<K::Gen>) -> Option<&T> {
-        self.0.get_odd(generation)
-    }
-
-    /// Returns a mutable reference to the value if the slot's generation is
-    /// `generation`.
-    #[inline]
-    pub fn get_odd_mut(&mut self, generation: Odd<K::Gen>) -> Option<&mut T> {
-        self.0.get_odd_mut(generation)
-    }
-
-    /// Returns the slot's generation. It is odd while the slot holds a value,
-    /// and zero while it holds none, since only [`empty`](Self::empty) and
-    /// [`take`](Self::take) leave a slot without a value.
-    #[inline]
-    pub(crate) fn generation(&self) -> K::Gen {
-        self.0.generation()
-    }
-
-    /// Returns a reference to the value without checking that there is one.
-    ///
-    /// # Safety
-    ///
-    /// The slot must hold a value.
-    #[inline]
-    pub(crate) unsafe fn get_odd_unchecked(&self) -> &T {
-        // SAFETY: the caller promises that the slot holds a value, so its
-        // generation is odd.
-        unsafe { self.0.get_odd_unchecked() }
-    }
-
-    /// Returns a mutable reference to the value without checking that
-    /// there is one.
-    ///
-    /// # Safety
-    ///
-    /// The slot must hold a value.
-    #[inline]
-    pub(crate) unsafe fn get_odd_unchecked_mut(&mut self) -> &mut T {
-        // SAFETY: the caller promises that the slot holds a value, so its
-        // generation is odd.
-        unsafe { self.0.get_odd_unchecked_mut() }
-    }
-
-    /// Takes the generation and the value out of the slot, or returns
-    /// `None` if the slot is empty.
-    #[inline]
-    pub fn into_inner(self) -> Option<(Odd<K::Gen>, T)> {
-        match self.0.into_parity() {
-            Parity::Odd(generation, value) => Some((generation, value)),
-            Parity::Even(..) => None,
-        }
-    }
-
-    /// Puts `value` in the slot under `generation`, and returns the value
-    /// the slot held before, if it held one.
-    #[inline]
-    pub fn replace(&mut self, generation: Odd<K::Gen>, value: T) -> Option<T> {
-        match self.0.set_odd(generation, value) {
-            Parity::Odd(_, old) => Some(old),
-            Parity::Even(..) => None,
-        }
-    }
-
-    /// Takes the value out and leaves the slot empty, with generation zero.
-    /// Returns `None` if the slot was already empty.
-    #[inline]
-    pub fn take(&mut self) -> Option<T> {
-        match self.0.set_even(Even::ZERO, ()) {
-            Parity::Odd(_, value) => Some(value),
-            Parity::Even(..) => None,
-        }
-    }
-}
-
-impl<K: KeyConfig, T: Clone> Clone for SecondarySlot<K, T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<K: KeyConfig, T: fmt::Debug> fmt::Debug for SecondarySlot<K, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SecondarySlot")
-            .field("generation", &self.0.generation())
-            .field("value", &self.get().map(|(_, value)| value))
-            .finish()
-    }
-}
-
-impl<K: KeyConfig, T> sealed::Sealed for SecondarySlot<K, T> {}
-
-impl<K: KeyConfig, T> SecondarySlotItem for SecondarySlot<K, T> {
+impl<G: KeyPiece, T> SecondarySlotItem for Slot<G, T, ()> {
     type Value = T;
 }
