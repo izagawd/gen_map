@@ -14,8 +14,12 @@ use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
 use core::slice;
 
-/// The [`SecondarySlot`] a [`SecondaryMap<T, C>`](SecondaryMap) keeps each
-/// value in.
+/// A [`SecondaryMap`] keeps one [`SecondarySlot`] of this type for each index.
+/// While the slot holds a value, its generation is the generation of the
+/// value's key, which is odd, and it stores that value. While it holds no
+/// value, its generation is zero, which is even, and it stores nothing in place
+/// of a value. [`SecondarySlot::get`] returns the generation and the value
+/// while the slot holds one, and `None` while it holds none.
 pub type SecondaryMapSlot<T, C> = SecondarySlot<MapKeyConfig<C>, T>;
 
 /// The storage a config gives the map for its slots.

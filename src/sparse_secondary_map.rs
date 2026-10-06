@@ -1019,8 +1019,12 @@ impl<G: KeyPiece, T: fmt::Debug> fmt::Debug for SparseSlot<G, T> {
     }
 }
 
-/// A [`SparseSecondaryMap`] keeps each value in a [`SparseSlot`] of this type,
-/// whose generation type is the generation type of the map's keys.
+/// A [`SparseSecondaryMap`] keeps each of its values in a [`SparseSlot`] of
+/// this type. The map's `HashMap` holds each slot under the index of its
+/// value's key, and the slot stores the value together with the generation of
+/// that key. The map removes a slot when it removes the slot's value, so every
+/// slot holds a value. A key's generation is always odd, so the slot's
+/// generation is too.
 pub type SparseSecondaryMapSlot<T, C> = SparseSlot<MapGen<C>, T>;
 
 /// `SparseSecondaryMapRawParts` holds the fields of a [`SparseSecondaryMap`].

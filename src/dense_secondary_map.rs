@@ -30,10 +30,13 @@ type Values<T, C> = <C as DenseSecondaryMapConfig>::ValueStorage<T>;
 /// The storage a config gives the map for its keys.
 type Keys<C> = <C as DenseSecondaryMapConfig>::KeyStorage<Key<MapKeyConfig<C>>>;
 
-/// The [`Slot`] a [`DenseSecondaryMap<T, C>`](DenseSecondaryMap) keeps for
-/// each index. While the slot holds a value, its generation is the generation
-/// of the value's key, and its `T` is the position of the value in the value
-/// storage. While it holds no value, its generation is zero.
+/// A [`DenseSecondaryMap`] keeps one [`Slot`] of this type for each index.
+/// While the slot holds a value, its generation is the generation of the
+/// value's key, which is odd, and it stores the position of that value in the
+/// value storage. While it holds no value, its generation is zero, which is
+/// even, and it stores nothing in place of a position. [`Slot::as_parity`]
+/// checks the parity of the generation and returns either the position in
+/// [`Parity::Odd`] or `()` in [`Parity::Even`].
 pub type DenseSecondaryMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, ()>;
 
 /// Returns the generation and the stored position of `slot` if it holds a
