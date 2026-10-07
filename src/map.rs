@@ -252,9 +252,7 @@ fn panic_full<T, C: GenMapConfig>(full: FullError<StorageError<T, C>>, slots_len
 /// [`insert`](Self::insert) is called, so dropping the entry inserts
 /// nothing.
 pub struct VacantEntry<'a, T, C: GenMapConfig> {
-    slots: &'a mut Slots<T, C>,
-    next_free: &'a mut Idx<C>,
-    len: &'a mut Idx<C>,
+    map: &'a mut GenMap<T, C>,
     target: Target<C>,
 }
 
@@ -270,10 +268,9 @@ impl<'a, T, C: GenMapConfig> VacantEntry<'a, T, C> {
     /// [`key`](Self::key) returns.
     #[inline]
     pub fn insert(self, value: T) -> Key<MapKeyConfig<C>> {
-        // SAFETY: `target` came from `next_target` on the map these fields
-        // belong to, and this entry has held `&mut` on them since, so nothing
-        // has touched them.
-        unsafe { GenMap::<T, C>::fill(self.slots, self.next_free, self.len, self.target, value) }
+        // SAFETY: `target` came from `next_target`, and this entry has held
+        // `&mut` on the map since, so nothing has touched it.
+        unsafe { self.map.fill(self.target, value) }
     }
 }
 
@@ -957,12 +954,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     #[inline]
     pub fn vacant_entry(&mut self) -> Result<VacantEntry<'_, T, C>, FullError<StorageError<T, C>>> {
         let target = self.next_target()?;
-        Ok(VacantEntry {
-            slots: &mut self.slots,
-            next_free: &mut self.next_free,
-            len: &mut self.len,
-            target,
-        })
+        Ok(VacantEntry { map: self, target })
     }
 
     /// Works out where the next value goes without writing any slot. When a
@@ -1003,45 +995,38 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         })
     }
 
-    /// Writes `value` where `target` says, in the map whose fields are
-    /// `slots`, `next_free` and `len`, and returns its key.
+    /// Writes `value` where `target` says and returns its key.
     ///
     /// # Safety
     ///
-    /// `target` must have come from [`next_target`](Self::next_target) on that
-    /// map, with nothing having touched the map since.
+    /// `target` must have come from [`next_target`](Self::next_target) with
+    /// nothing having touched the map since.
     #[inline]
-    unsafe fn fill(
-        slots: &mut Slots<T, C>,
-        next_free: &mut Idx<C>,
-        len: &mut Idx<C>,
-        target: Target<C>,
-        value: T,
-    ) -> Key<MapKeyConfig<C>> {
+    unsafe fn fill(&mut self, target: Target<C>, value: T) -> Key<MapKeyConfig<C>> {
         let key = target.key();
         if target.from_free_list {
             // SAFETY: `target.idx` is the index of the slot that was first on
             // the free list when `next_target` looked, and nothing has changed
             // since, so that slot still exists.
             let slot = unsafe {
-                slots
+                self.slots
                     .as_mut_slice()
                     .get_unchecked_mut(position_of::<C>(target.idx))
             };
             // SAFETY: the slot came off the free list, so it holds no value
             // and its generation is even.
-            *next_free = unsafe { slot.replace_even_unchecked(target.generation, value) };
+            self.next_free = unsafe { slot.replace_even_unchecked(target.generation, value) };
         } else {
             let slot = Slot::new_odd(target.generation, value);
             // `next_target` made room for this slot, and `SliceStorage`
             // promises that `try_push` succeeds after that, so only a broken
             // storage refuses the push. The slot is dropped with its value in
             // that case.
-            if slots.try_push(slot).is_err() {
+            if self.slots.try_push(slot).is_err() {
                 panic!("SliceStorage::try_push failed although ensure_room returned Ok");
             }
         }
-        increment_len(len);
+        increment_len(&mut self.len);
         key
     }
 
@@ -1056,15 +1041,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             .get_odd(key.generation())?;
         // SAFETY: the slot's generation matches the key's, which is odd, so
         // the slot holds a value.
-        Some(unsafe {
-            Self::take(
-                &mut self.slots,
-                &mut self.next_free,
-                &mut self.len,
-                key.idx(),
-                position,
-            )
-        })
+        Some(unsafe { self.take(key.idx(), position) })
     }
 
     /// Removes and returns the value corresponding to `key` like
@@ -1116,31 +1093,24 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         Some(unsafe { slot.replace_odd_unchecked(Even::ZERO, no_slot::<C>()) })
     }
 
-    /// Moves the value out of the slot at `position`, in the map whose fields
-    /// are `slots`, `next_free` and `len`. The slot then goes on the free
-    /// list, unless its generation has run out and the config retires such
-    /// slots.
+    /// Moves the value out of the slot at `position`. The slot then goes on
+    /// the free list, unless its generation has run out and the config
+    /// retires such slots.
     ///
     /// # Safety
     ///
     /// The slot at `position` must be occupied, and `idx` must be `position`
     /// as an `Idx<C>`.
-    unsafe fn take(
-        slots: &mut Slots<T, C>,
-        next_free: &mut Idx<C>,
-        len: &mut Idx<C>,
-        idx: Idx<C>,
-        position: usize,
-    ) -> T {
+    unsafe fn take(&mut self, idx: Idx<C>, position: usize) -> T {
         // SAFETY: the caller promises a slot at `position` that holds a
         // value, so the position is in bounds and the generation is odd.
         let (slot, generation) = unsafe {
-            let slot = slots.as_mut_slice().get_unchecked_mut(position);
+            let slot = self.slots.as_mut_slice().get_unchecked_mut(position);
             let generation = Odd::new_unchecked(slot.generation());
             (slot, generation)
         };
-        decrement_len(len);
-        let (next, link) = freed_parts::<C>(next_free, idx, generation);
+        decrement_len(&mut self.len);
+        let (next, link) = freed_parts::<C>(&mut self.next_free, idx, generation);
         // SAFETY: the slot's generation is odd.
         unsafe { slot.replace_odd_unchecked(next, link) }
     }
@@ -1266,15 +1236,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             if holds_value {
                 // SAFETY: the slot was just found to hold a value, and
                 // `position` is its position.
-                drop(unsafe {
-                    Self::take(
-                        &mut self.slots,
-                        &mut self.next_free,
-                        &mut self.len,
-                        index_of::<C>(position),
-                        position,
-                    )
-                });
+                drop(unsafe { self.take(index_of::<C>(position), position) });
             }
         }
         debug_assert!(self.is_empty());
@@ -1320,15 +1282,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             if !keep {
                 // SAFETY: the slot still holds its value. `f` only had
                 // `&mut T` and could not have removed it.
-                drop(unsafe {
-                    Self::take(
-                        &mut self.slots,
-                        &mut self.next_free,
-                        &mut self.len,
-                        idx,
-                        position,
-                    )
-                });
+                drop(unsafe { self.take(idx, position) });
             }
         }
     }
@@ -1337,9 +1291,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     #[inline]
     pub fn drain(&mut self) -> Drain<'_, T, C> {
         Drain {
-            slots: &mut self.slots,
-            next_free: &mut self.next_free,
-            len: &mut self.len,
+            map: self,
             position: 0,
         }
     }
@@ -1819,9 +1771,7 @@ impl<'a, T, C: GenMapConfig> IntoIterator for &'a mut GenMap<T, C> {
 /// Draining iterator over `(key, value)` pairs. It is created using
 /// [`GenMap::drain`]. Dropping it removes the values it has not yielded yet.
 pub struct Drain<'a, T, C: GenMapConfig> {
-    slots: &'a mut Slots<T, C>,
-    next_free: &'a mut Idx<C>,
-    len: &'a mut Idx<C>,
+    map: &'a mut GenMap<T, C>,
     position: usize,
 }
 
@@ -1830,21 +1780,19 @@ impl<T, C: GenMapConfig> Iterator for Drain<'_, T, C> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        while self.position < self.slots.len() {
+        while self.position < self.map.slots.len() {
             let position = self.position;
             self.position += 1;
             // SAFETY: `position` is below the slot count, which `take` does
             // not change.
-            let slot = unsafe { self.slots.as_slice().get_unchecked(position) };
+            let slot = unsafe { self.map.slots.as_slice().get_unchecked(position) };
             if let ParityRef::Odd(&generation, _) = slot.as_parity() {
                 // SAFETY: the slot holds a value and `position` is its
                 // position.
                 unsafe {
                     let idx = index_of::<C>(position);
                     let key = slot_key::<C>(idx, generation);
-                    let value =
-                        GenMap::<T, C>::take(self.slots, self.next_free, self.len, idx, position);
-                    return Some((key, value));
+                    return Some((key, self.map.take(idx, position)));
                 }
             }
         }
@@ -1853,8 +1801,7 @@ impl<T, C: GenMapConfig> Iterator for Drain<'_, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // SAFETY: the same as in `GenMap::len`.
-        let len = unsafe { self.len.into_usize_unchecked() };
+        let len = self.map.len();
         (len, Some(len))
     }
 }

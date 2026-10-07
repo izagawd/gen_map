@@ -858,8 +858,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     #[inline]
     pub fn drain(&mut self) -> SecondaryDrain<'_, T, C> {
         SecondaryDrain {
-            slots: &mut self.slots,
-            len: &mut self.len,
+            map: self,
             position: 0,
         }
     }
@@ -1189,8 +1188,7 @@ impl<T, C: MapConfig> FusedIterator for SecondaryValuesMut<'_, T, C> {}
 /// Iterator that takes each value out, with its key, in index order. It is
 /// created using [`SecondaryMap::drain`].
 pub struct SecondaryDrain<'a, T, C: SecondaryMapConfig> {
-    slots: &'a mut Slots<T, C>,
-    len: &'a mut MapIdx<C>,
+    map: &'a mut SecondaryMap<T, C>,
     /// The position of the slot the iterator checks next.
     position: usize,
 }
@@ -1200,11 +1198,11 @@ impl<T, C: SecondaryMapConfig> Iterator for SecondaryDrain<'_, T, C> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(slot) = self.slots.as_mut_slice().get_mut(self.position) {
+        while let Some(slot) = self.map.slots.as_mut_slice().get_mut(self.position) {
             let position = self.position;
             self.position += 1;
             if let Some((generation, value)) = into_parts(core::mem::replace(slot, empty_slot())) {
-                decrement_len(self.len);
+                decrement_len(&mut self.map.len);
                 // SAFETY: the slot at `position` held this value under
                 // `generation`, so the two fit the key.
                 let key = unsafe { key_from_parts_unchecked::<C>(position, generation) };
@@ -1216,8 +1214,7 @@ impl<T, C: SecondaryMapConfig> Iterator for SecondaryDrain<'_, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // SAFETY: the same as in `SecondaryMap::len`.
-        let len = unsafe { self.len.into_usize_unchecked() };
+        let len = self.map.len();
         (len, Some(len))
     }
 }
