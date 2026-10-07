@@ -271,7 +271,10 @@ pub trait DenseGenMapConfig: MapConfig {
     ///     DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, PairVec, Split, SplitPair,
     /// };
     ///
-    /// /// Maps with this config keep their keys and values in a `PairVec`.
+    /// /// Maps with this config keep their keys and values in a `PairVec`. A
+    /// /// `PairVec` keeps the keys in one buffer and the values in another,
+    /// /// and the two buffers share one length and one capacity field, saving
+    /// /// some memory.
     /// struct Paired;
     ///
     /// impl MapConfig for Paired {
@@ -369,7 +372,10 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     ///     MapConfig, NewerWins, PairVec, SplitPair,
     /// };
     ///
-    /// /// Maps with this config keep their keys and values in a `PairVec`.
+    /// /// Maps with this config keep their keys and values in a `PairVec`. A
+    /// /// `PairVec` keeps the keys in one buffer and the values in another,
+    /// /// and the two buffers share one length and one capacity field, saving
+    /// /// some memory.
     /// struct Paired;
     ///
     /// impl MapConfig for Paired {
