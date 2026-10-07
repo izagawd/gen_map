@@ -8,13 +8,14 @@ use super::{key_from_parts, Cfg};
 use crate::{
     DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, ExistingWins,
     FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, Key, KeyPiece,
-    MapConfig, MapIdx, MapKeyConfig, NewerWins, Packed, SecondaryInsertError, SecondaryMap,
-    SecondaryMapConfig, SecondarySlotItem, Split,
+    MapConfig, MapIdx, MapKeyConfig, NewerWins, Packed, PairVec, SecondaryInsertError,
+    SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Split, SplitPair,
 };
 use core::marker::PhantomData;
 use std::vec::Vec;
 
-/// The keys of [`Cfg`], with every dense storage in a `Vec`.
+/// The keys of [`Cfg`], with the slots in a `Vec` and the keys and values in
+/// a `PairVec`.
 struct DenseCfg<Idx, Gen>(PhantomData<(Idx, Gen)>);
 
 impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for DenseCfg<Idx, Gen> {
@@ -23,15 +24,13 @@ impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for DenseCfg<Idx, Gen> {
 
 impl<Idx: KeyPiece, Gen: KeyPiece> DenseGenMapConfig for DenseCfg<Idx, Gen> {
     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
+    type PairStorage<K, V> = PairVec<K, V>;
 }
 
 impl<Idx: KeyPiece, Gen: KeyPiece> DenseSecondaryMapConfig for DenseCfg<Idx, Gen> {
     type ReplaceStrategy = NewerWins;
     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
+    type PairStorage<K, V> = PairVec<K, V>;
 }
 
 /// Packed keys with a 4 bit generation, in a map that wraps generations.
@@ -56,11 +55,11 @@ impl MapConfig for DenseWrap4 {
 impl DenseGenMapConfig for DenseWrap4 {
     const WRAP_ON_OVERFLOW: bool = true;
     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
+    type PairStorage<K, V> = PairVec<K, V>;
 }
 
-/// `u8` keys whose secondary maps keep the existing value.
+/// `u8` keys whose secondary maps keep the existing value. Its dense
+/// secondary map keeps the keys in one `Vec` and the values in another.
 struct Keep;
 
 impl MapConfig for Keep {
@@ -75,8 +74,7 @@ impl SecondaryMapConfig for Keep {
 impl DenseSecondaryMapConfig for Keep {
     type ReplaceStrategy = ExistingWins;
     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
+    type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
 }
 
 /// Packed keys with four index bits and four generation bits. The keys run
@@ -94,8 +92,7 @@ impl GenMapConfig for Tiny {
 
 impl DenseGenMapConfig for Tiny {
     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
+    type PairStorage<K, V> = PairVec<K, V>;
 }
 
 /// Four inline slots, values and keys, so the storages move to the heap as
@@ -122,16 +119,14 @@ impl SecondaryMapConfig for Spill {
 #[cfg(feature = "smallvec")]
 impl DenseGenMapConfig for Spill {
     type SlotStorage<S: GenSlotItem> = smallvec::SmallVec<S, 4>;
-    type ValueStorage<V> = smallvec::SmallVec<V, 4>;
-    type KeyStorage<K> = smallvec::SmallVec<K, 4>;
+    type PairStorage<K, V> = SplitPair<smallvec::SmallVec<K, 4>, smallvec::SmallVec<V, 4>>;
 }
 
 #[cfg(feature = "smallvec")]
 impl DenseSecondaryMapConfig for Spill {
     type ReplaceStrategy = NewerWins;
     type SlotStorage<S: GenSlotItem> = smallvec::SmallVec<S, 4>;
-    type ValueStorage<V> = smallvec::SmallVec<V, 4>;
-    type KeyStorage<K> = smallvec::SmallVec<K, 4>;
+    type PairStorage<K, V> = SplitPair<smallvec::SmallVec<K, 4>, smallvec::SmallVec<V, 4>>;
 }
 
 /// Twelve inline slots, values and keys, so inserts fail once the map is
@@ -158,16 +153,14 @@ impl SecondaryMapConfig for Inline {
 #[cfg(feature = "arrayvec")]
 impl DenseGenMapConfig for Inline {
     type SlotStorage<S: GenSlotItem> = arrayvec::ArrayVec<S, 12>;
-    type ValueStorage<V> = arrayvec::ArrayVec<V, 12>;
-    type KeyStorage<K> = arrayvec::ArrayVec<K, 12>;
+    type PairStorage<K, V> = SplitPair<arrayvec::ArrayVec<K, 12>, arrayvec::ArrayVec<V, 12>>;
 }
 
 #[cfg(feature = "arrayvec")]
 impl DenseSecondaryMapConfig for Inline {
     type ReplaceStrategy = NewerWins;
     type SlotStorage<S: GenSlotItem> = arrayvec::ArrayVec<S, 12>;
-    type ValueStorage<V> = arrayvec::ArrayVec<V, 12>;
-    type KeyStorage<K> = arrayvec::ArrayVec<K, 12>;
+    type PairStorage<K, V> = SplitPair<arrayvec::ArrayVec<K, 12>, arrayvec::ArrayVec<V, 12>>;
 }
 
 /// How many seeds to run and how many steps each one takes. Miri gets fewer

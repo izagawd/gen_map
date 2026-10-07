@@ -1,5 +1,8 @@
 use crate::key_layout::Split;
 use crate::key_piece::KeyPiece;
+use crate::pair_storage::PairStorage;
+#[cfg(feature = "alloc")]
+use crate::pair_vec::PairVec;
 use crate::parity::Odd;
 #[cfg(feature = "alloc")]
 use crate::replace_strategy::NewerWins;
@@ -228,7 +231,7 @@ pub trait SecondaryMapConfig: MapConfig {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, Split};
+/// use gen_map::{DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, PairVec, Split};
 ///
 /// /// Maps with this config hand out four byte keys.
 /// struct Small;
@@ -239,8 +242,7 @@ pub trait SecondaryMapConfig: MapConfig {
 ///
 /// impl DenseGenMapConfig for Small {
 ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
-///     type ValueStorage<V> = Vec<V>;
-///     type KeyStorage<K> = Vec<K>;
+///     type PairStorage<K, V> = PairVec<K, V>;
 /// }
 ///
 /// let mut map = DenseGenMap::<&str, Small>::new_with_config();
@@ -259,15 +261,9 @@ pub trait DenseGenMapConfig: MapConfig {
     /// is [`DenseMapSlot<C>`](crate::DenseMapSlot) for a `DenseGenMap<T, C>`.
     type SlotStorage<S: GenSlotItem>: SliceStorage<Item = S>;
 
-    /// The collection the map keeps its values in, one after another with no
-    /// gaps. `V` is the value type.
-    type ValueStorage<V>: SliceStorage<Item = V>;
-
-    /// The collection the map keeps the key of each value in, in the same
-    /// order as the values. `K` is the key type. The map reads these keys to
-    /// find the slot of the value it moves into the place of a removed one,
-    /// and to yield keys in value order.
-    type KeyStorage<K>: SliceStorage<Item = K>;
+    /// The collection the map keeps its keys and values in. The first
+    /// parameter is the key type, and the second is the value type.
+    type PairStorage<K, V>: PairStorage<First = K, Second = V>;
 }
 
 /// This trait is used to choose the [`ReplaceStrategy`] of a
@@ -282,7 +278,7 @@ pub trait DenseGenMapConfig: MapConfig {
 /// ```
 /// use gen_map::{
 ///     DefaultKeyConfig, DenseSecondaryMap, DenseSecondaryMapConfig, ExistingWins, GenMap,
-///     GenSlotItem, MapConfig,
+///     GenSlotItem, MapConfig, PairVec,
 /// };
 ///
 /// /// Maps with this config keep each value until it is removed.
@@ -295,8 +291,7 @@ pub trait DenseGenMapConfig: MapConfig {
 /// impl DenseSecondaryMapConfig for Keep {
 ///     type ReplaceStrategy = ExistingWins;
 ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
-///     type ValueStorage<V> = Vec<V>;
-///     type KeyStorage<K> = Vec<K>;
+///     type PairStorage<K, V> = PairVec<K, V>;
 /// }
 ///
 /// let mut people = GenMap::new();
@@ -323,15 +318,9 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     /// highest index that an insert has used.
     type SlotStorage<S: GenSlotItem>: SliceStorage<Item = S>;
 
-    /// The collection the map keeps its values in, one after another with no
-    /// gaps. `V` is the value type.
-    type ValueStorage<V>: SliceStorage<Item = V>;
-
-    /// The collection the map keeps the key of each value in, in the same
-    /// order as the values. `K` is the key type. The map reads these keys to
-    /// find the slot of the value it moves into the place of a removed one,
-    /// and to yield keys in value order.
-    type KeyStorage<K>: SliceStorage<Item = K>;
+    /// The collection the map keeps its keys and values in. It works the same
+    /// way as [`DenseGenMapConfig::PairStorage`].
+    type PairStorage<K, V>: PairStorage<First = K, Second = V>;
 }
 
 /// This trait is used to choose the [`ReplaceStrategy`] of a
@@ -396,11 +385,12 @@ pub type DefaultKeyConfig = Split<u32, u32>;
 /// [`SparseSecondaryMap<T>`](crate::SparseSecondaryMap), which leave out
 /// their config parameter `C`.
 ///
-/// Keys use the [`DefaultKeyConfig`], and slots, values and keys live in a
-/// `Vec` each, except in a `SparseSecondaryMap`, which keeps its values in a
-/// `HashMap`. A slot retires when its generation runs out. The secondary
-/// maps use [`NewerWins`](crate::NewerWins) to decide whether an insert
-/// replaces a value that was inserted under a different generation.
+/// Keys use the [`DefaultKeyConfig`], and slots live in a `Vec`. The dense
+/// maps keep their keys and values in a [`PairVec`](crate::PairVec), and a
+/// `SparseSecondaryMap` keeps its values in a `HashMap`. A slot retires when
+/// its generation runs out. The secondary maps use
+/// [`NewerWins`](crate::NewerWins) to decide whether an insert replaces a
+/// value that was inserted under a different generation.
 /// This config needs the `alloc` feature.
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
@@ -426,16 +416,14 @@ impl SecondaryMapConfig for DefaultMapConfig {
 #[cfg(feature = "alloc")]
 impl DenseGenMapConfig for DefaultMapConfig {
     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
+    type PairStorage<K, V> = PairVec<K, V>;
 }
 
 #[cfg(feature = "alloc")]
 impl DenseSecondaryMapConfig for DefaultMapConfig {
     type ReplaceStrategy = NewerWins;
     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
+    type PairStorage<K, V> = PairVec<K, V>;
 }
 
 #[cfg(feature = "std")]

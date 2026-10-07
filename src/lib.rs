@@ -173,6 +173,9 @@
 //! Removing a value from a dense map moves its last value into the place of
 //! the removed one. The map reads the moved value's key to point that value's
 //! slot at its new position, so a dense map also keeps the key of each value.
+//! It keeps the keys and values in a [`PairStorage`], which its config picks.
+//! The default config picks a [`PairVec`], which keeps the keys and the
+//! values in two buffers that share one length and one capacity.
 //!
 //! ```
 //! use gen_map::DenseGenMap;
@@ -234,6 +237,9 @@ mod key;
 mod key_layout;
 mod key_piece;
 mod map;
+mod pair_storage;
+#[cfg(feature = "alloc")]
+mod pair_vec;
 mod parity;
 mod replace_strategy;
 mod secondary_map;
@@ -271,6 +277,12 @@ pub use map::{
     Drain, GenMap, GenMapRawParts, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig,
     MapSlot, StorageError, VacantEntry, Values, ValuesMut,
 };
+pub use pair_storage::{
+    PairStorage, ReservePairStorage, SplitPair, SplitPairError, SplitPairIntoIter,
+};
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub use pair_vec::{PairVec, PairVecError, PairVecIntoIter};
 pub use parity::{Even, Odd};
 pub use replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
 pub use secondary_map::{

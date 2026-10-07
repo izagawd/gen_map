@@ -6,13 +6,14 @@
 use super::{key_from_parts, Bomb, DropTracker};
 use crate::{
     DenseError, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap, GenSlotItem, Key, MapConfig,
-    NewerWins, SecondaryInsertError, Split,
+    NewerWins, PairVec, SecondaryInsertError, Split,
 };
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
 
-/// `u8` keys, with every storage in a `Vec`.
+/// `u8` keys, with the slots in a `Vec` and the keys and values in a
+/// `PairVec`.
 struct Keyed;
 
 impl MapConfig for Keyed {
@@ -22,8 +23,7 @@ impl MapConfig for Keyed {
 impl DenseSecondaryMapConfig for Keyed {
     type ReplaceStrategy = NewerWins;
     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
+    type PairStorage<K, V> = PairVec<K, V>;
 }
 
 /// Hands out `n` keys from a `GenMap`.
@@ -192,10 +192,11 @@ fn reserve_panics_when_a_storage_cannot_make_room() {
 #[cfg(feature = "arrayvec")]
 mod capped {
     use super::*;
+    use crate::{SplitPair, SplitPairError};
     use arrayvec::ArrayVec;
 
-    /// A dense secondary config whose slot, value and key storages hold
-    /// `S`, `V` and `K` items.
+    /// A dense secondary config whose slot storage holds `S` slots, and whose
+    /// pair storage keeps up to `K` keys and `V` values in two `ArrayVec`s.
     struct Caps<const S: usize, const V: usize, const K: usize>;
 
     impl<const S: usize, const V: usize, const K: usize> MapConfig for Caps<S, V, K> {
@@ -205,8 +206,7 @@ mod capped {
     impl<const S: usize, const V: usize, const K: usize> DenseSecondaryMapConfig for Caps<S, V, K> {
         type ReplaceStrategy = NewerWins;
         type SlotStorage<T: GenSlotItem> = ArrayVec<T, S>;
-        type ValueStorage<T> = ArrayVec<T, V>;
-        type KeyStorage<T> = ArrayVec<T, K>;
+        type PairStorage<A, B> = SplitPair<ArrayVec<A, K>, ArrayVec<B, V>>;
     }
 
     /// Stores values under indices 0, 1, 2 and so on until an insert fails,
@@ -222,8 +222,8 @@ mod capped {
                     assert_eq!(map.len(), usize::from(i));
                     let storage = match error {
                         DenseError::Slots(_) => "slots",
-                        DenseError::Values(_) => "values",
-                        DenseError::Keys(_) => "keys",
+                        DenseError::Pairs(SplitPairError::First(_)) => "keys",
+                        DenseError::Pairs(SplitPairError::Second(_)) => "values",
                     };
                     return (map.len(), storage);
                 }
@@ -250,7 +250,10 @@ mod capped {
         let far = key_from_parts::<Split<u8, u8>>(6, 1);
         assert!(matches!(
             map.insert(far, 6),
-            Err(SecondaryInsertError::StorageFull(6, DenseError::Values(_)))
+            Err(SecondaryInsertError::StorageFull(
+                6,
+                DenseError::Pairs(SplitPairError::Second(_))
+            ))
         ));
         assert_eq!(map.slots_len(), 2);
     }

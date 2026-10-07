@@ -8,16 +8,15 @@ use core::fmt;
 /// [`SecondaryMap`](crate::SecondaryMap) keeps its slots in. A
 /// [`GenMapConfig`](crate::GenMapConfig) or a
 /// [`SecondaryMapConfig`](crate::SecondaryMapConfig) chooses one with its
-/// `Storage` type. A dense map also keeps its values and keys in storages
-/// like this.
+/// `Storage` type. A dense map also keeps its slots in a storage like this,
+/// and a [`SplitPair`](crate::SplitPair) keeps the keys and values of a dense
+/// map in two of them.
 ///
 /// A storage whose capacity can grow past what it was created with also
 /// implements the [`ReserveStorage`] marker. A storage that implements
-/// `IntoIterator` gives a map an owning `into_iter`, and a dense map needs both
-/// its key and value storages to implement it. The iterator that `into_iter`
-/// returns implements `DoubleEndedIterator` when every storage it reads from
-/// has an iterator that implements both `DoubleEndedIterator` and
-/// `ExactSizeIterator`.
+/// `IntoIterator` gives a map an owning `into_iter`. The iterator that
+/// `into_iter` returns implements `DoubleEndedIterator` when the storage's
+/// iterator implements both `DoubleEndedIterator` and `ExactSizeIterator`.
 ///
 /// # Safety
 ///
@@ -26,9 +25,10 @@ use core::fmt;
 /// whose slots it expects to find unchanged when it reuses them. A
 /// `SecondaryMap` builds each value's key from the position of its slot without
 /// checking that the position fits in the key, and it reads a slot it has just
-/// pushed without a bounds check. A dense map reads its values and keys
-/// without bounds checks at the positions its slots store. So a storage must
-/// behave like a `Vec` in the ways listed below.
+/// pushed without a bounds check. A dense map uses its slot storage the way a
+/// `GenMap` does, and a [`SplitPair`](crate::SplitPair) relies on its two
+/// storages to keep each key at the same position as its value. So a storage
+/// must behave like a `Vec` in the ways listed below.
 ///
 /// - [`as_slice`](Self::as_slice) and [`as_mut_slice`](Self::as_mut_slice)
 ///   must return exactly the items pushed with [`try_push`](Self::try_push)
@@ -127,8 +127,10 @@ pub unsafe trait SliceStorage {
 /// Marks a [`SliceStorage`] whose capacity can grow past what it was created
 /// with. [`ensure_room`](SliceStorage::ensure_room) grows such a storage when
 /// it needs more room. A map has `with_capacity_and_config`, `reserve` and
-/// `try_reserve` only when its slot storage implements this trait, and a dense
-/// map also needs it on its value storage.
+/// `try_reserve` only when its slot storage implements this trait. A dense map
+/// also needs [`ReservePairStorage`](crate::ReservePairStorage) on its pair
+/// storage, which a [`SplitPair`](crate::SplitPair) implements when both of
+/// its storages implement this trait.
 pub trait ReserveStorage: SliceStorage {}
 
 #[cfg(feature = "alloc")]

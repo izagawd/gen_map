@@ -6,7 +6,7 @@
 use super::{Bomb, DropTracker};
 use crate::{
     DenseError, DenseGenMap, DenseGenMapConfig, GenSlotItem, InsertError, InsertWithError, Key,
-    MapConfig, Packed, Split,
+    MapConfig, Packed, PairVec, Split,
 };
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -21,8 +21,7 @@ impl MapConfig for Small {
 
 impl DenseGenMapConfig for Small {
     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
+    type PairStorage<K, V> = PairVec<K, V>;
 }
 
 /// Packed keys with a 4 bit generation, so a slot retires once its eighth
@@ -35,8 +34,7 @@ impl MapConfig for Retiring {
 
 impl DenseGenMapConfig for Retiring {
     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
+    type PairStorage<K, V> = PairVec<K, V>;
 }
 
 fn values<T: Copy, C: DenseGenMapConfig>(map: &DenseGenMap<T, C>) -> Vec<T> {
@@ -395,29 +393,22 @@ fn default_is_empty_and_an_entry_shows_its_key() {
 
 #[test]
 fn a_dense_error_says_which_storage_is_full() {
-    let errors: [DenseError<&str, &str, &str>; 3] = [
-        DenseError::Slots("a"),
-        DenseError::Values("b"),
-        DenseError::Keys("c"),
-    ];
+    let errors: [DenseError<&str, &str>; 2] = [DenseError::Slots("a"), DenseError::Pairs("b")];
     let messages: Vec<_> = errors.iter().map(|error| format!("{error}")).collect();
     assert_eq!(
         messages,
-        [
-            "the slot storage is full: a",
-            "the value storage is full: b",
-            "the key storage is full: c",
-        ]
+        ["the slot storage is full: a", "the pair storage is full: b"]
     );
 }
 
 #[cfg(feature = "arrayvec")]
 mod capped {
     use super::*;
+    use crate::{SplitPair, SplitPairError};
     use arrayvec::ArrayVec;
 
-    /// A dense config whose slot, value and key storages hold `S`, `V` and
-    /// `K` items.
+    /// A dense config whose slot storage holds `S` slots, and whose pair
+    /// storage keeps up to `K` keys and `V` values in two `ArrayVec`s.
     struct Caps<const S: usize, const V: usize, const K: usize>;
 
     impl<const S: usize, const V: usize, const K: usize> MapConfig for Caps<S, V, K> {
@@ -426,8 +417,7 @@ mod capped {
 
     impl<const S: usize, const V: usize, const K: usize> DenseGenMapConfig for Caps<S, V, K> {
         type SlotStorage<T: GenSlotItem> = ArrayVec<T, S>;
-        type ValueStorage<T> = ArrayVec<T, V>;
-        type KeyStorage<T> = ArrayVec<T, K>;
+        type PairStorage<A, B> = SplitPair<ArrayVec<A, K>, ArrayVec<B, V>>;
     }
 
     /// Inserts until the map is full, and returns the map with the storage that
@@ -444,8 +434,8 @@ mod capped {
                     assert_eq!(value, i);
                     let storage = match error {
                         DenseError::Slots(_) => "slots",
-                        DenseError::Values(_) => "values",
-                        DenseError::Keys(_) => "keys",
+                        DenseError::Pairs(SplitPairError::First(_)) => "keys",
+                        DenseError::Pairs(SplitPairError::Second(_)) => "values",
                     };
                     return (map, storage);
                 }

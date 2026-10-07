@@ -1,7 +1,7 @@
 //! Maps whose values are zero-sized. The values take no room, but each slot
 //! still holds a generation, so the map works as usual.
 
-use crate::GenMap;
+use crate::{DenseGenMap, DenseSecondaryMap, GenMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::vec::Vec;
 
@@ -63,4 +63,51 @@ fn zero_sized_values_are_dropped_exactly_once() {
     drop(iter.next());
     drop(iter);
     assert_eq!(DROPS.load(Ordering::SeqCst), 10);
+}
+
+#[test]
+fn a_dense_map_of_unit_values_keeps_a_key_for_each_value() {
+    // The values take no room, so the second slice of the map's pairs needs
+    // no buffer, but the first slice still holds a key for each value.
+    let mut map = DenseGenMap::<()>::new();
+    let keys: Vec<_> = (0..10).map(|_| map.insert(())).collect();
+    assert!(map.capacity() >= 10);
+    assert_eq!(map.remove(keys[2]), Some(()));
+    assert!(map.get(keys[2]).is_none());
+    assert_eq!(map.detach(keys[4]), Some(()));
+    map.reattach(keys[4], ()).unwrap();
+    map.retain(|key, _| key != keys[7]);
+    assert_eq!(map.len(), 8);
+
+    let mut left: Vec<_> = map.keys().collect();
+    left.sort();
+    let mut expected: Vec<_> = keys
+        .iter()
+        .copied()
+        .filter(|key| *key != keys[2] && *key != keys[7])
+        .collect();
+    expected.sort();
+    assert_eq!(left, expected);
+
+    let copy = map.clone();
+    assert!(keys.iter().all(|key| copy.get(*key) == map.get(*key)));
+    assert_eq!(copy.into_iter().count(), 8);
+    assert_eq!(map.drain().count(), 8);
+    assert!(map.is_empty());
+}
+
+#[test]
+fn a_dense_secondary_map_of_unit_values_keeps_a_key_for_each_value() {
+    let mut primary = GenMap::<()>::new();
+    let keys: Vec<_> = (0..6).map(|_| primary.insert(())).collect();
+    let mut secondary = DenseSecondaryMap::<()>::new();
+    for key in &keys {
+        assert!(matches!(secondary.insert(*key, ()), Ok(None)));
+    }
+    assert_eq!(secondary.remove(keys[1]), Some(()));
+    assert_eq!(secondary.len(), 5);
+    assert!(keys
+        .iter()
+        .all(|key| secondary.contains_key(*key) == (*key != keys[1])));
+    assert_eq!(secondary.into_iter().count(), 5);
 }

@@ -22,6 +22,7 @@ mod key_piece;
 mod model;
 mod overflow;
 mod packed;
+mod pair_vec;
 mod panic_fuzz;
 mod parity;
 mod raw_parts;
@@ -37,6 +38,7 @@ mod slot;
 mod smallvec_storage;
 #[cfg(feature = "std")]
 mod sparse_secondary;
+mod split_pair;
 mod storage_contract;
 mod try_insert;
 mod unchecked;

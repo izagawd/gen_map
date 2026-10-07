@@ -6,7 +6,7 @@ use super::{key_from_parts, Bomb, DropTracker};
 use crate::{
     DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap,
     GenMapConfig, GenSlotItem, MapConfig, NewerWins, SecondaryMap, SecondaryMapConfig,
-    SecondarySlotItem, Split,
+    SecondarySlotItem, Split, SplitPair,
 };
 use smallvec::SmallVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -30,15 +30,13 @@ impl SecondaryMapConfig for Four {
 
 impl DenseGenMapConfig for Four {
     type SlotStorage<S: GenSlotItem> = SmallVec<S, 4>;
-    type ValueStorage<V> = SmallVec<V, 4>;
-    type KeyStorage<K> = SmallVec<K, 4>;
+    type PairStorage<K, V> = SplitPair<SmallVec<K, 4>, SmallVec<V, 4>>;
 }
 
 impl DenseSecondaryMapConfig for Four {
     type ReplaceStrategy = NewerWins;
     type SlotStorage<S: GenSlotItem> = SmallVec<S, 4>;
-    type ValueStorage<V> = SmallVec<V, 4>;
-    type KeyStorage<K> = SmallVec<K, 4>;
+    type PairStorage<K, V> = SplitPair<SmallVec<K, 4>, SmallVec<V, 4>>;
 }
 
 #[test]

@@ -310,24 +310,22 @@ impl fmt::Display for GetDisjointMutAtError {
 }
 
 /// Which storage of a dense map could not make room, together with that
-/// storage's error. `S` is the error of the slot storage, `V` is the error of
-/// the value storage, and `K` is the error of the key storage.
+/// storage's error. The first type parameter is the error of the slot
+/// storage, and the second is the error of the
+/// [`PairStorage`](crate::PairStorage) that holds the keys and values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DenseError<S, V, K> {
+pub enum DenseError<S, P> {
     /// The slot storage could not make room for another slot.
     Slots(S),
-    /// The value storage could not make room for another value.
-    Values(V),
-    /// The key storage could not make room for another key.
-    Keys(K),
+    /// The pair storage could not make room for another key and value.
+    Pairs(P),
 }
 
-impl<S: fmt::Display, V: fmt::Display, K: fmt::Display> fmt::Display for DenseError<S, V, K> {
+impl<S: fmt::Display, P: fmt::Display> fmt::Display for DenseError<S, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Slots(error) => write!(f, "the slot storage is full: {error}"),
-            Self::Values(error) => write!(f, "the value storage is full: {error}"),
-            Self::Keys(error) => write!(f, "the key storage is full: {error}"),
+            Self::Pairs(error) => write!(f, "the pair storage is full: {error}"),
         }
     }
 }
