@@ -103,31 +103,41 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
         !self.generation.is_odd()
     }
 
-    /// Returns the generation and a reference to the value.
+    /// Returns references to the generation and the value.
     #[inline]
-    pub fn as_parity(&self) -> Parity<G, &T, &U> {
+    pub fn as_parity(&self) -> ParityRef<'_, G, T, U> {
+        let generation: *const G = &self.generation;
         // SAFETY: the parity of the generation says which field is live. The
         // first branch only runs for an odd generation, so it reads `odd` and
-        // wraps the generation in `Odd`, and the second branch does the same
-        // with `even` and `Even` for an even generation.
+        // treats the generation as an `Odd`, and the second branch does the same
+        // with `even` and `Even` for an even generation. `Odd` and `Even` have
+        // the layout of the plain integer, as the comments on them explain, so
+        // a reference to the generation can be cast to a reference to either.
         unsafe {
             if self.is_odd() {
-                Parity::Odd(Odd::new_unchecked(self.generation), &self.value.odd)
+                ParityRef::Odd(&*generation.cast::<Odd<G>>(), &self.value.odd)
             } else {
-                Parity::Even(Even::new_unchecked(self.generation), &self.value.even)
+                ParityRef::Even(&*generation.cast::<Even<G>>(), &self.value.even)
             }
         }
     }
 
-    /// Returns the generation and a mutable reference to the value.
+    /// Returns mutable references to the generation and the value.
     #[inline]
-    pub fn as_parity_mut(&mut self) -> Parity<G, &mut T, &mut U> {
-        // SAFETY: the same as in `as_parity`.
+    pub fn as_parity_mut(&mut self) -> ParityMut<'_, G, T, U> {
+        let odd = self.is_odd();
+        let Self { generation, value } = self;
+        let generation: *mut G = generation;
+        // SAFETY: the same as in `as_parity`. Writing through a reference to an
+        // `Odd` stores another `Odd`, which is odd, and writing through a
+        // reference to an `Even` stores another `Even`, which is even. So the
+        // generation keeps its parity, and the field it says is live stays
+        // live, for as long as the references exist.
         unsafe {
-            if self.is_odd() {
-                Parity::Odd(Odd::new_unchecked(self.generation), &mut self.value.odd)
+            if odd {
+                ParityMut::Odd(&mut *generation.cast::<Odd<G>>(), &mut value.odd)
             } else {
-                Parity::Even(Even::new_unchecked(self.generation), &mut self.value.even)
+                ParityMut::Even(&mut *generation.cast::<Even<G>>(), &mut value.even)
             }
         }
     }
@@ -381,8 +391,8 @@ impl<G: KeyPiece, T: Clone, U: Clone> Clone for Slot<G, T, U> {
     #[inline]
     fn clone(&self) -> Self {
         match self.as_parity() {
-            Parity::Odd(generation, value) => Self::new_odd(generation, value.clone()),
-            Parity::Even(generation, value) => Self::new_even(generation, value.clone()),
+            ParityRef::Odd(&generation, value) => Self::new_odd(generation, value.clone()),
+            ParityRef::Even(&generation, value) => Self::new_even(generation, value.clone()),
         }
     }
 }
@@ -390,8 +400,8 @@ impl<G: KeyPiece, T: Clone, U: Clone> Clone for Slot<G, T, U> {
 impl<G: KeyPiece, T: fmt::Debug, U: fmt::Debug> fmt::Debug for Slot<G, T, U> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value: &dyn fmt::Debug = match self.as_parity() {
-            Parity::Odd(_, value) => value,
-            Parity::Even(_, value) => value,
+            ParityRef::Odd(_, value) => value,
+            ParityRef::Even(_, value) => value,
         };
         f.debug_struct("Slot")
             .field("generation", &self.generation)
@@ -447,4 +457,40 @@ pub trait SecondarySlotItem: sealed::Sealed {
 
 impl<G: KeyPiece, T> SecondarySlotItem for Slot<G, T, ()> {
     type Value = T;
+}
+
+/// A `ParityRef` holds shared references to the generation and the value of a
+/// [`Slot`], and [`Slot::as_parity`] returns one. Its variant says whether the
+/// generation is odd or even, the same way the variant of a [`Parity`] does.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum ParityRef<'a, G: KeyPiece, T, U> {
+    /// The generation is odd, as in [`Parity::Odd`].
+    Odd(&'a Odd<G>, &'a T),
+    /// The generation is even, as in [`Parity::Even`].
+    Even(&'a Even<G>, &'a U),
+}
+
+// Deriving `Clone` and `Copy` would require the value types to implement them,
+// but the references a `ParityRef` holds can always be copied.
+impl<G: KeyPiece, T, U> Clone for ParityRef<'_, G, T, U> {
+    #[inline]
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<G: KeyPiece, T, U> Copy for ParityRef<'_, G, T, U> {}
+
+/// A `ParityMut` holds mutable references to the generation and the value of a
+/// [`Slot`], and [`Slot::as_parity_mut`] returns one. Its variant says whether
+/// the generation is odd or even, the same way the variant of a [`Parity`]
+/// does. Code that writes through the reference to the generation can change
+/// the generation but not its parity, because an [`Odd`] is always odd and an
+/// [`Even`] is always even.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum ParityMut<'a, G: KeyPiece, T, U> {
+    /// The generation is odd, as in [`Parity::Odd`].
+    Odd(&'a mut Odd<G>, &'a mut T),
+    /// The generation is even, as in [`Parity::Even`].
+    Even(&'a mut Even<G>, &'a mut U),
 }

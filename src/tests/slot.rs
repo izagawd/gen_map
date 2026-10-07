@@ -1,5 +1,5 @@
 use super::DropTracker;
-use crate::{DefaultMapConfig, Even, GenMap, MapSlot, Odd, Parity, Slot};
+use crate::{DefaultMapConfig, Even, GenMap, MapSlot, Odd, Parity, ParityMut, ParityRef, Slot};
 use std::format;
 use std::string::String;
 
@@ -17,13 +17,13 @@ fn a_new_slot_has_the_generation_and_value_it_was_given() {
     assert_eq!(slot.generation(), 3);
     assert!(slot.is_odd());
     assert!(!slot.is_even());
-    assert_eq!(slot.as_parity(), Parity::Odd(odd(3), &"a"));
+    assert_eq!(slot.as_parity(), ParityRef::Odd(&odd(3), &"a"));
 
     let slot = Slot::<u32, &str, u8>::new(Parity::Even(even(4), 7));
     assert_eq!(slot.generation(), 4);
     assert!(slot.is_even());
     assert!(!slot.is_odd());
-    assert_eq!(slot.as_parity(), Parity::Even(even(4), &7));
+    assert_eq!(slot.as_parity(), ParityRef::Even(&even(4), &7));
 }
 
 #[test]
@@ -37,13 +37,13 @@ fn new_odd_and_new_even_match_new() {
 #[test]
 fn as_parity_mut_changes_the_value_in_place() {
     let mut slot = Slot::<u32, i32, i32>::new(Parity::Odd(odd(1), 10));
-    if let Parity::Odd(_, value) = slot.as_parity_mut() {
+    if let ParityMut::Odd(_, value) = slot.as_parity_mut() {
         *value += 5;
     }
     assert_eq!(slot.into_parity(), Parity::Odd(odd(1), 15));
 
     let mut slot = Slot::<u32, i32, i32>::new(Parity::Even(even(2), 20));
-    if let Parity::Even(_, value) = slot.as_parity_mut() {
+    if let ParityMut::Even(_, value) = slot.as_parity_mut() {
         *value += 5;
     }
     assert_eq!(slot.into_parity(), Parity::Even(even(2), 25));
@@ -105,18 +105,18 @@ fn replace_swaps_the_whole_state_and_returns_the_old_one() {
         slot.replace(Parity::Odd(odd(3), "b")),
         Parity::Even(even(2), Some(9))
     );
-    assert_eq!(slot.as_parity(), Parity::Odd(odd(3), &"b"));
+    assert_eq!(slot.as_parity(), ParityRef::Odd(&odd(3), &"b"));
 }
 
 #[test]
 fn set_odd_and_set_even_return_what_the_slot_held() {
     let mut slot = Slot::<u32, &str, Option<u32>>::new(Parity::Even(Even::ZERO, None));
     assert_eq!(slot.set_odd(odd(1), "a"), Parity::Even(Even::ZERO, None));
-    assert_eq!(slot.as_parity(), Parity::Odd(odd(1), &"a"));
+    assert_eq!(slot.as_parity(), ParityRef::Odd(&odd(1), &"a"));
     assert_eq!(slot.set_odd(odd(3), "b"), Parity::Odd(odd(1), "a"));
     assert_eq!(slot.set_even(even(4), Some(2)), Parity::Odd(odd(3), "b"));
     assert_eq!(slot.set_even(even(6), None), Parity::Even(even(4), Some(2)));
-    assert_eq!(slot.as_parity(), Parity::Even(even(6), &None));
+    assert_eq!(slot.as_parity(), ParityRef::Even(&even(6), &None));
 }
 
 #[test]
@@ -137,9 +137,9 @@ fn set_odd_and_set_even_drop_nothing_themselves() {
 fn replace_unchecked_swaps_sides_and_returns_the_old_value() {
     let mut slot = Slot::<u32, &str, Option<u32>>::new_even(Even::ZERO, Some(4));
     assert_eq!(unsafe { slot.replace_even_unchecked(odd(1), "a") }, Some(4));
-    assert_eq!(slot.as_parity(), Parity::Odd(odd(1), &"a"));
+    assert_eq!(slot.as_parity(), ParityRef::Odd(&odd(1), &"a"));
     assert_eq!(unsafe { slot.replace_odd_unchecked(even(2), None) }, "a");
-    assert_eq!(slot.as_parity(), Parity::Even(even(2), &None));
+    assert_eq!(slot.as_parity(), ParityRef::Even(&even(2), &None));
 }
 
 #[test]
@@ -273,4 +273,21 @@ fn a_map_key_finds_the_odd_side_of_a_slot_with_its_generation() {
     map.remove(key);
     let newer = map.insert("b");
     assert!(slot.get_odd(newer.generation()).is_none());
+}
+
+#[test]
+fn as_parity_mut_changes_the_generation_but_not_the_parity() {
+    let mut slot = Slot::<u32, &str, u8>::new(Parity::Odd(odd(1), "a"));
+    if let ParityMut::Odd(generation, value) = slot.as_parity_mut() {
+        *generation = odd(5);
+        *value = "b";
+    }
+    assert_eq!(slot.as_parity(), ParityRef::Odd(&odd(5), &"b"));
+
+    let mut slot = Slot::<u32, &str, u8>::new(Parity::Even(even(2), 7));
+    if let ParityMut::Even(generation, value) = slot.as_parity_mut() {
+        *generation = even(8);
+        *value = 9;
+    }
+    assert_eq!(slot.as_parity(), ParityRef::Even(&even(8), &9));
 }

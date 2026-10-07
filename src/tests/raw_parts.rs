@@ -6,8 +6,8 @@ use super::{key_from_parts, DropTracker};
 use crate::{
     DenseGenMap, DenseGenMapConfig, DenseGenMapRawParts, DenseSecondaryMap,
     DenseSecondaryMapConfig, DenseSecondaryMapRawParts, Even, GenMap, GenMapConfig, GenMapRawParts,
-    GenSlotItem, Key, MapConfig, NewerWins, Odd, Packed, Parity, SecondaryMap, SecondaryMapConfig,
-    SecondaryMapRawParts, SecondarySlotItem, Slot, Split,
+    GenSlotItem, Key, MapConfig, NewerWins, Odd, Packed, Parity, ParityMut, ParityRef,
+    SecondaryMap, SecondaryMapConfig, SecondaryMapRawParts, SecondarySlotItem, Slot, Split,
 };
 use std::vec;
 use std::vec::Vec;
@@ -78,8 +78,8 @@ fn even(generation: u8) -> Even<u8> {
 /// Returns a copy of the generation and the value of `slot`.
 fn parity<T: Copy, U: Copy>(slot: &Slot<u8, T, U>) -> Parity<u8, T, U> {
     match slot.as_parity() {
-        Parity::Odd(generation, value) => Parity::Odd(generation, *value),
-        Parity::Even(generation, value) => Parity::Even(generation, *value),
+        ParityRef::Odd(&generation, value) => Parity::Odd(generation, *value),
+        ParityRef::Even(&generation, value) => Parity::Even(generation, *value),
     }
 }
 
@@ -135,7 +135,7 @@ fn the_values_of_a_gen_map_can_change_between_the_two_calls() {
 
     let mut parts = map.into_raw_parts();
     for slot in &mut parts.slots {
-        if let Parity::Odd(_, value) = slot.as_parity_mut() {
+        if let ParityMut::Odd(_, value) = slot.as_parity_mut() {
             *value += 10;
         }
     }

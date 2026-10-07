@@ -12,7 +12,7 @@ use crate::key_piece::KeyPiece;
 use crate::map::{MapGen, MapIdx, MapKeyConfig};
 use crate::parity::{Even, Odd};
 use crate::replace_strategy::ReplaceStrategy;
-use crate::slot::{Parity, Slot};
+use crate::slot::{ParityRef, Slot};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::FusedIterator;
@@ -36,7 +36,7 @@ type Keys<C> = <C as DenseSecondaryMapConfig>::KeyStorage<Key<MapKeyConfig<C>>>;
 /// value storage. While it holds no value, its generation is zero, which is
 /// even, and it stores nothing in place of a position. [`Slot::as_parity`]
 /// checks the parity of the generation and returns either the position in
-/// [`Parity::Odd`] or `()` in [`Parity::Even`].
+/// [`ParityRef::Odd`] or `()` in [`ParityRef::Even`].
 pub type DenseSecondaryMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, ()>;
 
 /// Returns the generation and the stored position of `slot` if it holds a
@@ -46,8 +46,8 @@ fn occupied<C: DenseSecondaryMapConfig>(
     slot: &DenseSecondaryMapSlot<C>,
 ) -> Option<(Odd<MapGen<C>>, MapIdx<C>)> {
     match slot.as_parity() {
-        Parity::Odd(generation, &stored_position) => Some((generation, stored_position)),
-        Parity::Even(..) => None,
+        ParityRef::Odd(&generation, &stored_position) => Some((generation, stored_position)),
+        ParityRef::Even(..) => None,
     }
 }
 
@@ -814,9 +814,6 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// Returns the slot at `idx` in `slots`. If the storage has no slot there
     /// yet, it first grows to hold every slot up to and including `idx`, which
     /// can allocate, and the new slots start out empty.
-    ///
-    /// This function takes the slot storage rather than the whole map, so that
-    /// `insert` can still change the values and keys while it holds the slot.
     ///
     /// # Errors
     ///

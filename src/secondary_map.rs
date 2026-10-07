@@ -7,7 +7,7 @@ use crate::key_piece::KeyPiece;
 use crate::map::{decrement_len, increment_len, MapGen, MapIdx, MapKeyConfig};
 use crate::parity::{Even, Odd};
 use crate::replace_strategy::ReplaceStrategy;
-use crate::slot::{Parity, Slot};
+use crate::slot::{Parity, ParityMut, ParityRef, Slot};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
@@ -19,7 +19,7 @@ use core::slice;
 /// key, which is odd, and it stores that value. While it holds no value, its
 /// generation is zero, which is even, and it stores nothing in place of a
 /// value. [`Slot::as_parity`] checks the parity of the generation and returns
-/// either the value in [`Parity::Odd`] or `()` in [`Parity::Even`].
+/// either the value in [`ParityRef::Odd`] or `()` in [`ParityRef::Even`].
 pub type SecondaryMapSlot<T, C> = Slot<MapGen<C>, T, ()>;
 
 /// Returns the generation and a reference to the value of `slot` if it holds
@@ -27,8 +27,8 @@ pub type SecondaryMapSlot<T, C> = Slot<MapGen<C>, T, ()>;
 #[inline]
 fn occupied<G: KeyPiece, T>(slot: &Slot<G, T, ()>) -> Option<(Odd<G>, &T)> {
     match slot.as_parity() {
-        Parity::Odd(generation, value) => Some((generation, value)),
-        Parity::Even(..) => None,
+        ParityRef::Odd(&generation, value) => Some((generation, value)),
+        ParityRef::Even(..) => None,
     }
 }
 
@@ -37,8 +37,8 @@ fn occupied<G: KeyPiece, T>(slot: &Slot<G, T, ()>) -> Option<(Odd<G>, &T)> {
 #[inline]
 fn occupied_mut<G: KeyPiece, T>(slot: &mut Slot<G, T, ()>) -> Option<(Odd<G>, &mut T)> {
     match slot.as_parity_mut() {
-        Parity::Odd(generation, value) => Some((generation, value)),
-        Parity::Even(..) => None,
+        ParityMut::Odd(&mut generation, value) => Some((generation, value)),
+        ParityMut::Even(..) => None,
     }
 }
 
@@ -713,9 +713,6 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// Returns the slot at `idx`. If the storage has no slot there yet, it
     /// first grows to hold every slot up to and including `idx`, which can
     /// allocate, and the new slots start out empty.
-    ///
-    /// This function takes the storage rather than the whole map, so that
-    /// `insert` can still change the map's length while it holds the slot.
     ///
     /// # Errors
     ///

@@ -26,10 +26,9 @@ impl<K: KeyConfig> Key<K> {
     }
 
     /// Returns `true` if the key's generation is the largest one its key config
-    /// can hold. The slot's generation cannot go up past that one, so removing
-    /// the key's value either wraps the slot's generation back to zero or
-    /// retires the slot, depending on the `WRAP_ON_OVERFLOW` of the map's
-    /// config.
+    /// can hold. In that case, when the map removes the key's value, it wraps
+    /// the slot's generation back to zero or retires the slot, depending on the
+    /// `WRAP_ON_OVERFLOW` of its config.
     #[inline]
     pub fn is_max_generation(&self) -> bool {
         self.generation() == K::max_generation()

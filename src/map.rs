@@ -7,7 +7,7 @@ use crate::error::{
 use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use crate::parity::{Even, Odd};
-use crate::slot::{Parity, Slot};
+use crate::slot::{Parity, ParityMut, ParityRef, Slot};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
@@ -36,7 +36,7 @@ pub(crate) type Gen<C> = MapGen<C>;
 /// free or retired one. When the map retires a slot, it stores the largest
 /// value of the index type there, so the slot never looks detached.
 /// [`Slot::as_parity`] checks the parity of the generation and returns either
-/// the value in [`Parity::Odd`] or the index in [`Parity::Even`].
+/// the value in [`ParityRef::Odd`] or the index in [`ParityRef::Even`].
 pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 
 /// Returns the key of the value in the slot at `idx`, given the slot's current
@@ -509,8 +509,8 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     pub fn key_at(&self, idx: MapIdx<C>) -> Option<Key<MapKeyConfig<C>>> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
             // SAFETY: `idx` is the slot's position.
-            Parity::Odd(generation, _) => Some(unsafe { slot_key::<C>(idx, generation) }),
-            Parity::Even(..) => None,
+            ParityRef::Odd(&generation, _) => Some(unsafe { slot_key::<C>(idx, generation) }),
+            ParityRef::Even(..) => None,
         }
     }
 
@@ -543,11 +543,11 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     #[inline]
     pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &T)> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
-            Parity::Odd(generation, value) => {
+            ParityRef::Odd(&generation, value) => {
                 // SAFETY: `idx` is the slot's position.
                 Some((unsafe { slot_key::<C>(idx, generation) }, value))
             }
-            Parity::Even(..) => None,
+            ParityRef::Even(..) => None,
         }
     }
 
@@ -562,11 +562,11 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             .get_mut(idx.into_usize()?)?
             .as_parity_mut()
         {
-            Parity::Odd(generation, value) => {
+            ParityMut::Odd(&mut generation, value) => {
                 // SAFETY: `idx` is the slot's position.
                 Some((unsafe { slot_key::<C>(idx, generation) }, value))
             }
-            Parity::Even(..) => None,
+            ParityMut::Even(..) => None,
         }
     }
 
@@ -1252,7 +1252,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     pub fn reset(&mut self) {
         // The free list and `len` are reset before the storage drops the slots.
         // If a value's `drop` panics while the storage clears, the storage can
-        // already be empty, and a free list or `len` that still described the
+        // already be empty, and a free list that still described the
         // old slots would let the next insert read past the end of the storage.
         self.next_free = no_slot::<C>();
         self.len = Idx::<C>::ZERO;
@@ -1270,7 +1270,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             // SAFETY: `position` is below the slot count, which neither
             // `take` nor `f` (which never sees the map) changes.
             let slot = unsafe { self.slots.as_mut_slice().get_unchecked_mut(position) };
-            let Parity::Odd(generation, value) = slot.as_parity_mut() else {
+            let ParityMut::Odd(&mut generation, value) = slot.as_parity_mut() else {
                 continue;
             };
             // SAFETY: `position` is the slot's position.
@@ -1446,7 +1446,7 @@ impl<'a, T, C: MapConfig> Iterator for Iter<'a, T, C> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
-            if let Parity::Odd(generation, value) = slot.as_parity() {
+            if let ParityRef::Odd(&generation, value) = slot.as_parity() {
                 self.remaining -= 1;
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
@@ -1469,7 +1469,7 @@ impl<T, C: MapConfig> DoubleEndedIterator for Iter<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
-            if let Parity::Odd(generation, value) = slot.as_parity() {
+            if let ParityRef::Odd(&generation, value) = slot.as_parity() {
                 self.remaining -= 1;
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
@@ -1508,7 +1508,7 @@ impl<'a, T, C: MapConfig> Iterator for IterMut<'a, T, C> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
-            if let Parity::Odd(generation, value) = slot.as_parity_mut() {
+            if let ParityMut::Odd(&mut generation, value) = slot.as_parity_mut() {
                 self.remaining -= 1;
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
@@ -1531,7 +1531,7 @@ impl<T, C: MapConfig> DoubleEndedIterator for IterMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
-            if let Parity::Odd(generation, value) = slot.as_parity_mut() {
+            if let ParityMut::Odd(&mut generation, value) = slot.as_parity_mut() {
                 self.remaining -= 1;
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
@@ -1785,7 +1785,7 @@ impl<T, C: GenMapConfig> Iterator for Drain<'_, T, C> {
             // SAFETY: `position` is below the slot count, which `take` does
             // not change.
             let slot = unsafe { self.map.slots.as_slice().get_unchecked(position) };
-            if let Parity::Odd(generation, _) = slot.as_parity() {
+            if let ParityRef::Odd(&generation, _) = slot.as_parity() {
                 // SAFETY: the slot holds a value and `position` is its
                 // position.
                 unsafe {

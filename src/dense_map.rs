@@ -8,7 +8,7 @@ use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use crate::map::{MapGen, MapIdx, MapKeyConfig};
 use crate::parity::{Even, Odd};
-use crate::slot::{Parity, Slot};
+use crate::slot::{ParityRef, Slot};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::FusedIterator;
@@ -32,8 +32,8 @@ type Keys<C> = <C as DenseGenMapConfig>::KeyStorage<Key<MapKeyConfig<C>>>;
 /// [`DenseGenMap::reattach`] tells a detached slot apart from a free or retired
 /// one. When the map retires a slot, it stores the largest value of the index
 /// type there, so the slot never looks detached. [`Slot::as_parity`] checks the
-/// parity of the generation and returns either the position in [`Parity::Odd`]
-/// or the index in [`Parity::Even`].
+/// parity of the generation and returns either the position in
+/// [`ParityRef::Odd`] or the index in [`ParityRef::Even`].
 pub type DenseMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, MapIdx<C>>;
 
 /// The error a `DenseGenMap<T, C>` gives when one of its storages cannot make
@@ -529,8 +529,8 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     pub fn key_at(&self, idx: MapIdx<C>) -> Option<Key<MapKeyConfig<C>>> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
             // SAFETY: `idx` is the index of the slot just read.
-            Parity::Odd(generation, _) => Some(unsafe { slot_key::<C>(idx, generation) }),
-            Parity::Even(..) => None,
+            ParityRef::Odd(&generation, _) => Some(unsafe { slot_key::<C>(idx, generation) }),
+            ParityRef::Even(..) => None,
         }
     }
 
@@ -560,7 +560,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     #[inline]
     pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &T)> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
-            Parity::Odd(generation, &stored_position) => {
+            ParityRef::Odd(&generation, &stored_position) => {
                 // SAFETY: `idx` is the index of the slot just read, and the
                 // position the slot stores is below the number of values.
                 Some(unsafe {
@@ -572,7 +572,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
                     )
                 })
             }
-            Parity::Even(..) => None,
+            ParityRef::Even(..) => None,
         }
     }
 
@@ -583,8 +583,8 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     pub fn get_at_mut(&mut self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &mut T)> {
         let (generation, stored_position) =
             match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
-                Parity::Odd(generation, &stored_position) => (generation, stored_position),
-                Parity::Even(..) => return None,
+                ParityRef::Odd(&generation, &stored_position) => (generation, stored_position),
+                ParityRef::Even(..) => return None,
             };
         // SAFETY: the same as in `get_at`.
         Some(unsafe {
@@ -1380,7 +1380,7 @@ impl<T: fmt::Debug, C: DenseGenMapConfig> fmt::Debug for DenseGenMap<T, C> {
             .iter()
             .enumerate()
             .filter_map(|(slot_index, slot)| match slot.as_parity() {
-                Parity::Odd(generation, &stored_position) => {
+                ParityRef::Odd(&generation, &stored_position) => {
                     // SAFETY: the slot at `slot_index` holds a value under
                     // `generation`, so its position fits in the index type and
                     // the two fit the key, and the position the slot stores is
@@ -1392,7 +1392,7 @@ impl<T: fmt::Debug, C: DenseGenMapConfig> fmt::Debug for DenseGenMap<T, C> {
                         )
                     })
                 }
-                Parity::Even(..) => None,
+                ParityRef::Even(..) => None,
             });
         f.debug_map().entries(entries).finish()
     }
