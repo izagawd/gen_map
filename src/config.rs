@@ -263,6 +263,46 @@ pub trait DenseGenMapConfig: MapConfig {
 
     /// The collection the map keeps its keys and values in. The first
     /// parameter is the key type, and the second is the value type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{
+    ///     DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, PairVec, Split, SplitPair,
+    /// };
+    ///
+    /// /// Maps with this config keep their keys and values in a `PairVec`.
+    /// struct Paired;
+    ///
+    /// impl MapConfig for Paired {
+    ///     type KeyConfig = Split<u32, u32>;
+    /// }
+    ///
+    /// impl DenseGenMapConfig for Paired {
+    ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
+    ///     type PairStorage<K, V> = PairVec<K, V>;
+    /// }
+    ///
+    /// /// Maps with this config keep their keys in one `Vec` and their values in
+    /// /// another.
+    /// struct TwoVecs;
+    ///
+    /// impl MapConfig for TwoVecs {
+    ///     type KeyConfig = Split<u32, u32>;
+    /// }
+    ///
+    /// impl DenseGenMapConfig for TwoVecs {
+    ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
+    ///     type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
+    /// }
+    ///
+    /// let mut paired = DenseGenMap::<&str, Paired>::new_with_config();
+    /// let mut split = DenseGenMap::<&str, TwoVecs>::new_with_config();
+    /// let a = paired.insert("a");
+    /// let b = split.insert("b");
+    /// assert_eq!(paired[a], "a");
+    /// assert_eq!(split[b], "b");
+    /// ```
     type PairStorage<K, V>: PairStorage<First = K, Second = V>;
 }
 
@@ -318,8 +358,53 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     /// highest index that an insert has used.
     type SlotStorage<S: GenSlotItem>: SliceStorage<Item = S>;
 
-    /// The collection the map keeps its keys and values in. It works the same
-    /// way as [`DenseGenMapConfig::PairStorage`].
+    /// The collection the map keeps its keys and values in. The first
+    /// parameter is the key type, and the second is the value type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{
+    ///     DefaultKeyConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap, GenSlotItem,
+    ///     MapConfig, NewerWins, PairVec, SplitPair,
+    /// };
+    ///
+    /// /// Maps with this config keep their keys and values in a `PairVec`.
+    /// struct Paired;
+    ///
+    /// impl MapConfig for Paired {
+    ///     type KeyConfig = DefaultKeyConfig;
+    /// }
+    ///
+    /// impl DenseSecondaryMapConfig for Paired {
+    ///     type ReplaceStrategy = NewerWins;
+    ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
+    ///     type PairStorage<K, V> = PairVec<K, V>;
+    /// }
+    ///
+    /// /// Maps with this config keep their keys in one `Vec` and their values in
+    /// /// another.
+    /// struct TwoVecs;
+    ///
+    /// impl MapConfig for TwoVecs {
+    ///     type KeyConfig = DefaultKeyConfig;
+    /// }
+    ///
+    /// impl DenseSecondaryMapConfig for TwoVecs {
+    ///     type ReplaceStrategy = NewerWins;
+    ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
+    ///     type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
+    /// }
+    ///
+    /// let mut people = GenMap::new();
+    /// let alice = people.insert("Alice");
+    /// let mut ages = DenseSecondaryMap::<u32, Paired>::new_with_config();
+    /// let mut heights = DenseSecondaryMap::<u32, TwoVecs>::new_with_config();
+    /// ages.insert(alice, 30).unwrap();
+    /// heights.insert(alice, 165).unwrap();
+    /// assert_eq!(ages[alice], 30);
+    /// assert_eq!(heights[alice], 165);
+    /// ```
     type PairStorage<K, V>: PairStorage<First = K, Second = V>;
 }
 
