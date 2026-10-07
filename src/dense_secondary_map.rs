@@ -12,7 +12,7 @@ use crate::key_piece::KeyPiece;
 use crate::map::{MapGen, MapIdx, MapKeyConfig};
 use crate::parity::{Even, Odd};
 use crate::replace_strategy::ReplaceStrategy;
-use crate::slot::{Parity, Slot};
+use crate::slot::{ParityRef, Slot};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::FusedIterator;
@@ -30,10 +30,13 @@ type Values<T, C> = <C as DenseSecondaryMapConfig>::ValueStorage<T>;
 /// The storage a config gives the map for its keys.
 type Keys<C> = <C as DenseSecondaryMapConfig>::KeyStorage<Key<MapKeyConfig<C>>>;
 
-/// The [`Slot`] a [`DenseSecondaryMap<T, C>`](DenseSecondaryMap) keeps for
-/// each index. While the slot holds a value, its generation is the generation
-/// of the value's key, and its `T` is the position of the value in the value
-/// storage. While it holds no value, its generation is zero.
+/// A [`DenseSecondaryMap`] keeps one [`Slot`] of this type for each index.
+/// While the slot holds a value, its generation is the generation of the
+/// value's key, which is odd, and it stores the position of that value in the
+/// value storage. While it holds no value, its generation is zero, which is
+/// even, and it stores nothing in place of a position. [`Slot::as_parity`]
+/// checks the parity of the generation and returns either the position in
+/// [`ParityRef::Odd`] or `()` in [`ParityRef::Even`].
 pub type DenseSecondaryMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, ()>;
 
 /// Returns the generation and the stored position of `slot` if it holds a
@@ -43,8 +46,8 @@ fn occupied<C: DenseSecondaryMapConfig>(
     slot: &DenseSecondaryMapSlot<C>,
 ) -> Option<(Odd<MapGen<C>>, MapIdx<C>)> {
     match slot.as_parity() {
-        Parity::Odd(generation, &stored_position) => Some((generation, stored_position)),
-        Parity::Even(..) => None,
+        ParityRef::Odd(&generation, &stored_position) => Some((generation, stored_position)),
+        ParityRef::Even(..) => None,
     }
 }
 
@@ -111,7 +114,7 @@ type InsertResult<T, C> =
 /// The map also keeps the key of each value, at the same position as the
 /// value. Removing a value moves the last value into its place, and the map
 /// reads the moved value's key to point that value's slot at the new
-/// position. So the order of the values changes when one is removed.
+/// position.
 ///
 /// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`]. To use
 /// your own config, implement [`MapConfig`] and [`DenseSecondaryMapConfig`]
@@ -730,7 +733,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
             // `key` replaces the key stored for the value.
             // SAFETY: the slot at the key's index exists, since it was just
             // read.
-            unsafe { self.slot_unchecked_mut(key) }.set_odd(new_generation, stored_position);
+            unsafe { Self::slot_unchecked_mut(&mut self.slots, key) }
+                .set_odd(new_generation, stored_position);
             // SAFETY: the map keeps a key for each value, so the key storage
             // has an item at `value_position`, the position of a value.
             unsafe { *self.keys.as_mut_slice().get_unchecked_mut(value_position) = key };
@@ -812,9 +816,6 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// yet, it first grows to hold every slot up to and including `idx`, which
     /// can allocate, and the new slots start out empty.
     ///
-    /// This function takes the slot storage rather than the whole map, so that
-    /// `insert` can still change the values and keys while it holds the slot.
-    ///
     /// # Errors
     ///
     /// Returns the storage's error, and adds no slots, if the storage cannot
@@ -867,7 +868,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
             .copied()
     }
 
-    /// Returns the slot at the index of `key` without checking that it exists.
+    /// Returns the slot at the index of `key` in `slots`, the slot storage of
+    /// the map, without checking that it exists.
     ///
     /// # Safety
     ///
@@ -875,17 +877,17 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// value is stored under `key`.
     #[inline]
     unsafe fn slot_unchecked_mut(
-        &mut self,
+        slots: &mut Slots<C>,
         key: Key<MapKeyConfig<C>>,
     ) -> &mut DenseSecondaryMapSlot<C> {
         debug_assert!(key
             .idx()
             .into_usize()
-            .is_some_and(|position| position < self.slots.len()));
+            .is_some_and(|position| position < slots.len()));
         // SAFETY: the caller promises a slot at the key's index, so the index
         // fits in `usize` and is in bounds.
         unsafe {
-            self.slots
+            slots
                 .as_mut_slice()
                 .get_unchecked_mut(key.idx().into_usize_unchecked())
         }
@@ -921,7 +923,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
                 // slot exists and holds that value, and `position` is below the
                 // number of values.
                 unsafe {
-                    self.slot_unchecked_mut(key)
+                    Self::slot_unchecked_mut(&mut self.slots, key)
                         .replace_odd_unchecked(Even::ZERO, ());
                     drop(self.swap_remove(position));
                 }
@@ -964,7 +966,11 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// iterator removes the values it has not reached.
     #[inline]
     pub fn drain(&mut self) -> DenseSecondaryDrain<'_, T, C> {
-        DenseSecondaryDrain { map: self }
+        DenseSecondaryDrain {
+            slots: &mut self.slots,
+            values: &mut self.values,
+            keys: &mut self.keys,
+        }
     }
 
     /// Takes the value at `position` out of the value storage by moving the
@@ -994,7 +1000,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         // slot exists and holds that value.
         unsafe {
             *self.keys.as_mut_slice().get_unchecked_mut(position) = last_key;
-            *self.slot_unchecked_mut(last_key).get_odd_unchecked_mut() = to_stored::<C>(position);
+            *Self::slot_unchecked_mut(&mut self.slots, last_key).get_odd_unchecked_mut() =
+                to_stored::<C>(position);
             core::mem::replace(
                 self.values.as_mut_slice().get_unchecked_mut(position),
                 last_value,
@@ -1130,7 +1137,9 @@ impl<'a, T, C: DenseSecondaryMapConfig> IntoIterator for &'a mut DenseSecondaryM
 /// Iterator that takes each value out, with its key, from the last value to
 /// the first. It is created using [`DenseSecondaryMap::drain`].
 pub struct DenseSecondaryDrain<'a, T, C: DenseSecondaryMapConfig> {
-    map: &'a mut DenseSecondaryMap<T, C>,
+    slots: &'a mut Slots<C>,
+    values: &'a mut Values<T, C>,
+    keys: &'a mut Keys<C>,
 }
 
 impl<T, C: DenseSecondaryMapConfig> Iterator for DenseSecondaryDrain<'_, T, C> {
@@ -1138,16 +1147,15 @@ impl<T, C: DenseSecondaryMapConfig> Iterator for DenseSecondaryDrain<'_, T, C> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let key = SliceStorage::pop(&mut self.map.keys)?;
+        let key = SliceStorage::pop(self.keys)?;
         // SAFETY: the map keeps a key for each value, so a value was left as
         // well, and `SliceStorage` promises that `pop` takes out the last item.
-        let value = unsafe { self.map.values.pop().unwrap_unchecked() };
+        let value = unsafe { self.values.pop().unwrap_unchecked() };
         // SAFETY: `key` is the key of the value just taken out, so its slot
         // exists and still holds that value. The slot is emptied like the slot
         // of a removed value.
         unsafe {
-            self.map
-                .slot_unchecked_mut(key)
+            DenseSecondaryMap::<T, C>::slot_unchecked_mut(self.slots, key)
                 .replace_odd_unchecked(Even::ZERO, ())
         };
         Some((key, value))
@@ -1155,7 +1163,7 @@ impl<T, C: DenseSecondaryMapConfig> Iterator for DenseSecondaryDrain<'_, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.map.len();
+        let len = self.values.len();
         (len, Some(len))
     }
 }
@@ -1167,5 +1175,118 @@ impl<T, C: DenseSecondaryMapConfig> FusedIterator for DenseSecondaryDrain<'_, T,
 impl<T, C: DenseSecondaryMapConfig> Drop for DenseSecondaryDrain<'_, T, C> {
     fn drop(&mut self) {
         for _ in self.by_ref() {}
+    }
+}
+
+/// `DenseSecondaryMapRawParts` holds the fields of a [`DenseSecondaryMap`].
+/// [`into_raw_parts`](DenseSecondaryMap::into_raw_parts) takes a map apart into
+/// these fields, and [`from_raw_parts`](DenseSecondaryMap::from_raw_parts)
+/// builds a map from them.
+///
+/// The parts given to `from_raw_parts` must follow every rule below, and the
+/// parts that `into_raw_parts` returns always do.
+///
+/// The values are the data that the map stores under its keys, and `values`
+/// holds them. Editing or replacing an item in `values` never breaks a rule,
+/// and neither does changing the capacity of `slots`, `values` or `keys`.
+///
+/// # Rules
+///
+/// - No slot sits at a position above the largest index the map's keys can
+///   hold, or at the largest value of the index type.
+/// - A slot that holds a value has a generation no larger than the largest
+///   one the map's keys can hold, and a slot that holds no value has
+///   generation zero.
+/// - `values` and `keys` are the same length, and that length is the number
+///   of slots that hold a value.
+/// - Each slot that holds a value stores the position of its value in
+///   `values`, and no two of those slots store the same position.
+/// - The key at each position in `keys` is the key of the value at the same
+///   position in `values`. The key has the index of the slot that stores that
+///   position, and the generation of that slot.
+///
+/// # Examples
+///
+/// ```
+/// use gen_map::{DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap, Slot};
+///
+/// let mut people = GenMap::new();
+/// let alice = people.insert("Alice");
+/// let bob = people.insert("Bob");
+///
+/// // Only Bob has an age, so the slot at Alice's index holds no value.
+/// let parts = DenseSecondaryMapRawParts {
+///     slots: vec![Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), 0)],
+///     values: vec![25],
+///     keys: vec![bob],
+/// };
+/// // SAFETY: both slots sit at indices that a `GenMap` hands out, and the slot
+/// // without a value has generation zero. Bob's slot stores position zero,
+/// // where `values` holds his age and `keys` holds his key.
+/// let ages: DenseSecondaryMap<u32> = unsafe { DenseSecondaryMap::from_raw_parts(parts) };
+/// assert_eq!(ages.get(alice), None);
+/// assert_eq!(ages[bob], 25);
+/// ```
+pub struct DenseSecondaryMapRawParts<
+    T,
+    #[cfg(feature = "alloc")] C: DenseSecondaryMapConfig = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: DenseSecondaryMapConfig,
+> {
+    // These fields are in the same order as the fields of `DenseSecondaryMap`
+    // on purpose, so that the two structs can be read side by side.
+    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
+    // so the compiler catches a field that only one of them has, but nothing
+    // catches a change in order. Think twice before removing this comment,
+    // because it is the only thing that keeps the two orders the same.
+    /// The map keeps its slots in this storage, which the map's config picks.
+    /// A slot's index is its position in the storage, and a slot that holds a
+    /// value stores the position of that value in `values`.
+    pub slots: <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>,
+    /// The map keeps its values in this storage, one after another.
+    pub values: <C as DenseSecondaryMapConfig>::ValueStorage<T>,
+    /// The map keeps the key of each value in this storage, at the position
+    /// of the value.
+    pub keys: <C as DenseSecondaryMapConfig>::KeyStorage<Key<MapKeyConfig<C>>>,
+}
+
+impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
+    /// Takes the map apart into its fields.
+    /// [`from_raw_parts`](Self::from_raw_parts) builds a map from them again,
+    /// and [`DenseSecondaryMapRawParts`] lists the rules they follow.
+    #[inline]
+    pub fn into_raw_parts(self) -> DenseSecondaryMapRawParts<T, C> {
+        let Self {
+            slots,
+            values,
+            keys,
+        } = self;
+        DenseSecondaryMapRawParts {
+            slots,
+            values,
+            keys,
+        }
+    }
+
+    /// Builds a map from the fields that
+    /// [`into_raw_parts`](Self::into_raw_parts) takes a map apart into.
+    ///
+    /// # Safety
+    ///
+    /// `parts` must follow every rule listed on [`DenseSecondaryMapRawParts`].
+    /// The map's methods rely on those rules, and parts that break one can
+    /// make them cause undefined behavior.
+    #[inline]
+    #[must_use]
+    pub unsafe fn from_raw_parts(parts: DenseSecondaryMapRawParts<T, C>) -> Self {
+        let DenseSecondaryMapRawParts {
+            slots,
+            values,
+            keys,
+        } = parts;
+        Self {
+            slots,
+            values,
+            keys,
+        }
     }
 }

@@ -16,7 +16,7 @@ use std::hash::RandomState;
 /// A [`SparseSecondaryMap`] keeps each value in a `SparseSlot`, together with
 /// the generation of the key the value is stored under.
 #[derive(Clone)]
-struct SparseSlot<G: KeyPiece, T> {
+pub struct SparseSlot<G: KeyPiece, T> {
     generation: Odd<G>,
     value: T,
 }
@@ -36,9 +36,7 @@ type InsertResult<T> = Result<Option<T>, SecondaryInsertError<T, TryReserveError
 ///
 /// # Safety
 ///
-/// `idx` and `generation` must fit the key config together. The index and
-/// the generation of any key fit, and the map takes the index and the
-/// generation of each stored value from the key the value was inserted under.
+/// `idx` and `generation` must fit the key config together.
 #[inline]
 unsafe fn key_from_parts_unchecked<C: MapConfig>(
     idx: MapIdx<C>,
@@ -58,8 +56,9 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// map, and `S` is the hasher of the `HashMap`.
 ///
 /// It accepts the same keys as a [`SecondaryMap`](crate::SecondaryMap) with
-/// the same key config, and decides the same way whether an insert replaces a
-/// value. The difference is where the values live. A `SecondaryMap` keeps a
+/// the same key config, and the [`ReplaceStrategy`](crate::ReplaceStrategy)
+/// of its config decides whether an insert replaces a value.
+/// The difference is where the values live. A `SecondaryMap` keeps a
 /// slot at every index up to the highest index that an insert has used, even
 /// where no value is stored. A `SparseSecondaryMap` keeps each value in a
 /// `HashMap` under the index of its key, together with the key's generation,
@@ -90,10 +89,8 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// ```
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub struct SparseSecondaryMap<T, C: SparseSecondaryMapConfig = DefaultMapConfig, S = RandomState> {
-    /// The `HashMap` holds each value under the index of the key the value was
-    /// inserted under, together with that key's generation. Both parts of each
-    /// pair come from one key, so the map builds keys from them without
-    /// checks.
+    /// The `HashMap` holds each value under the index of its key, together with
+    /// that key's generation, so the map builds keys from them without checks.
     slots: Slots<T, C, S>,
 }
 
@@ -247,8 +244,9 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     #[inline]
     pub fn key_at(&self, idx: MapIdx<C>) -> Option<Key<MapKeyConfig<C>>> {
         let slot = self.slots.get(&idx)?;
-        // SAFETY: `idx` and the slot's generation come from the key the value
-        // was inserted under, so they fit the key config.
+        // SAFETY: `idx` and the slot's generation are the index and the
+        // generation of the key that the slot's value is stored under, so they
+        // fit the key config.
         Some(unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) })
     }
 
@@ -257,8 +255,9 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     #[inline]
     pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &T)> {
         let slot = self.slots.get(&idx)?;
-        // SAFETY: `idx` and the slot's generation come from the key the value
-        // was inserted under, so they fit the key config.
+        // SAFETY: `idx` and the slot's generation are the index and the
+        // generation of the key that the slot's value is stored under, so they
+        // fit the key config.
         let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
         Some((key, &slot.value))
     }
@@ -268,8 +267,9 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     #[inline]
     pub fn get_at_mut(&mut self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &mut T)> {
         let slot = self.slots.get_mut(&idx)?;
-        // SAFETY: `idx` and the slot's generation come from the key the value
-        // was inserted under, so they fit the key config.
+        // SAFETY: `idx` and the slot's generation are the index and the
+        // generation of the key that the slot's value is stored under, so they
+        // fit the key config.
         let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
         Some((key, &mut slot.value))
     }
@@ -316,8 +316,9 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
                     slots.get_unchecked_mut(i).take().unwrap_unchecked(),
                 )
             };
-            // SAFETY: `idx` and the slot's generation come from the key the
-            // value was inserted under, so they fit the key config.
+            // SAFETY: `idx` and the slot's generation are the index and the
+            // generation of the key that the slot's value is stored under, so
+            // they fit the key config.
             let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
             (key, &mut slot.value)
         }))
@@ -357,8 +358,9 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
                     slots.get_unchecked_mut(i).take().unwrap_unchecked(),
                 )
             };
-            // SAFETY: `idx` and the slot's generation come from the key the
-            // value was inserted under, so they fit the key config.
+            // SAFETY: `idx` and the slot's generation are the index and the
+            // generation of the key that the slot's value is stored under, so
+            // they fit the key config.
             let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
             (key, &mut slot.value)
         })
@@ -548,8 +550,9 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// It calls `f` once for each value, in arbitrary order.
     pub fn retain<F: FnMut(Key<MapKeyConfig<C>>, &mut T) -> bool>(&mut self, mut f: F) {
         self.slots.retain(|&idx, slot| {
-            // SAFETY: `idx` and the slot's generation come from the key the
-            // value was inserted under, so they fit the key config.
+            // SAFETY: `idx` and the slot's generation are the index and the
+            // generation of the key that the slot's value is stored under, so
+            // they fit the key config.
             let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
             f(key, &mut slot.value)
         });
@@ -764,8 +767,9 @@ impl<'a, T, C: MapConfig> Iterator for SparseSecondaryIter<'a, T, C> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let (&idx, slot) = self.slots.next()?;
-        // SAFETY: `idx` and the slot's generation come from the key the value
-        // was inserted under, so they fit the key config.
+        // SAFETY: `idx` and the slot's generation are the index and the
+        // generation of the key that the slot's value is stored under, so they
+        // fit the key config.
         let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
         Some((key, &slot.value))
     }
@@ -803,8 +807,9 @@ impl<'a, T, C: MapConfig> Iterator for SparseSecondaryIterMut<'a, T, C> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let (&idx, slot) = self.slots.next()?;
-        // SAFETY: `idx` and the slot's generation come from the key the value
-        // was inserted under, so they fit the key config.
+        // SAFETY: `idx` and the slot's generation are the index and the
+        // generation of the key that the slot's value is stored under, so they
+        // fit the key config.
         let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
         Some((key, &mut slot.value))
     }
@@ -920,8 +925,9 @@ impl<T, C: MapConfig> Iterator for SparseSecondaryDrain<'_, T, C> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let (idx, slot) = self.slots.next()?;
-        // SAFETY: `idx` and the slot's generation come from the key the value
-        // was inserted under, so they fit the key config.
+        // SAFETY: `idx` and the slot's generation are the index and the
+        // generation of the key that the slot's value is stored under, so they
+        // fit the key config.
         let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
         Some((key, slot.value))
     }
@@ -948,8 +954,9 @@ impl<T, C: MapConfig> Iterator for SparseSecondaryIntoIter<T, C> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let (idx, slot) = self.slots.next()?;
-        // SAFETY: `idx` and the slot's generation come from the key the value
-        // was inserted under, so they fit the key config.
+        // SAFETY: `idx` and the slot's generation are the index and the
+        // generation of the key that the slot's value is stored under, so they
+        // fit the key config.
         let key = unsafe { key_from_parts_unchecked::<C>(idx, slot.generation) };
         Some((key, slot.value))
     }
@@ -962,3 +969,147 @@ impl<T, C: MapConfig> Iterator for SparseSecondaryIntoIter<T, C> {
 
 impl<T, C: MapConfig> ExactSizeIterator for SparseSecondaryIntoIter<T, C> {}
 impl<T, C: MapConfig> FusedIterator for SparseSecondaryIntoIter<T, C> {}
+
+impl<G: KeyPiece, T> SparseSlot<G, T> {
+    /// Creates a slot that holds `value` under `generation`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{GenMap, SparseSlot};
+    ///
+    /// let mut map = GenMap::new();
+    /// let key = map.insert("a");
+    ///
+    /// let mut slot = SparseSlot::<u32, u64>::new(key.generation(), 10);
+    /// *slot.value_mut() += 1;
+    /// assert_eq!(slot.generation(), key.generation());
+    /// assert_eq!(slot.value(), &11);
+    /// assert_eq!(slot.into_inner(), (key.generation(), 11));
+    /// ```
+    #[inline]
+    pub fn new(generation: Odd<G>, value: T) -> Self {
+        Self { generation, value }
+    }
+
+    /// Returns the slot's generation.
+    #[inline]
+    pub fn generation(&self) -> Odd<G> {
+        self.generation
+    }
+
+    /// Returns a reference to the value.
+    #[inline]
+    pub fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// Returns a mutable reference to the value.
+    #[inline]
+    pub fn value_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+
+    /// Takes the generation and the value out of the slot.
+    #[inline]
+    pub fn into_inner(self) -> (Odd<G>, T) {
+        (self.generation, self.value)
+    }
+}
+
+impl<G: KeyPiece, T: fmt::Debug> fmt::Debug for SparseSlot<G, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SparseSlot")
+            .field("generation", &self.generation.get())
+            .field("value", &self.value)
+            .finish()
+    }
+}
+
+/// A [`SparseSecondaryMap`] keeps each of its values in a [`SparseSlot`] of
+/// this type. The map's `HashMap` holds each slot under the index of its
+/// value's key, and the slot stores the value together with the generation of
+/// that key. The map removes a slot when it removes the slot's value, so every
+/// slot holds a value. A key's generation is always odd, so the slot's
+/// generation is too.
+pub type SparseSecondaryMapSlot<T, C> = SparseSlot<MapGen<C>, T>;
+
+/// `SparseSecondaryMapRawParts` holds the fields of a [`SparseSecondaryMap`].
+/// [`into_raw_parts`](SparseSecondaryMap::into_raw_parts) takes a map apart
+/// into these fields, and
+/// [`from_raw_parts`](SparseSecondaryMap::from_raw_parts) builds a map from
+/// them.
+///
+/// The parts given to `from_raw_parts` must follow every rule below, and the
+/// parts that `into_raw_parts` returns always do.
+///
+/// The values are the data that the map stores under its keys, and each one
+/// sits in a slot. Editing or replacing a value in its slot never breaks a
+/// rule, and neither does changing the capacity of `slots`.
+///
+/// # Rules
+///
+/// - No index in `slots` is above the largest index the map's keys can hold,
+///   or is the largest value of the index type.
+/// - No slot has a generation above the largest one the map's keys can hold.
+///
+/// # Examples
+///
+/// ```
+/// use gen_map::{GenMap, SparseSecondaryMap, SparseSecondaryMapRawParts, SparseSlot};
+/// use std::collections::HashMap;
+///
+/// let mut people = GenMap::new();
+/// let alice = people.insert("Alice");
+///
+/// let mut slots = HashMap::new();
+/// slots.insert(alice.idx(), SparseSlot::new(alice.generation(), 30));
+/// // SAFETY: the index and the generation come from a key that a `GenMap`
+/// // handed out, so they fit the key config, and the index is not the
+/// // largest value of the index type.
+/// let ages: SparseSecondaryMap<u32> =
+///     unsafe { SparseSecondaryMap::from_raw_parts(SparseSecondaryMapRawParts { slots }) };
+/// assert_eq!(ages[alice], 30);
+/// ```
+pub struct SparseSecondaryMapRawParts<
+    T,
+    C: SparseSecondaryMapConfig = DefaultMapConfig,
+    S = RandomState,
+> {
+    // These fields are in the same order as the fields of `SparseSecondaryMap`
+    // on purpose, so that the two structs can be read side by side.
+    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
+    // so the compiler catches a field that only one of them has, but nothing
+    // catches a change in order. Think twice before removing this comment,
+    // because it is the only thing that keeps the two orders the same.
+    /// The map keeps its values in this `HashMap`. It holds each value in a
+    /// slot under the index of the value's key, and the slot holds the
+    /// generation of that key.
+    pub slots: HashMap<MapIdx<C>, SparseSecondaryMapSlot<T, C>, S>,
+}
+
+impl<T, C: SparseSecondaryMapConfig, S> SparseSecondaryMap<T, C, S> {
+    /// Takes the map apart into its fields.
+    /// [`from_raw_parts`](Self::from_raw_parts) builds a map from them again,
+    /// and [`SparseSecondaryMapRawParts`] lists the rules they follow.
+    #[inline]
+    pub fn into_raw_parts(self) -> SparseSecondaryMapRawParts<T, C, S> {
+        let Self { slots } = self;
+        SparseSecondaryMapRawParts { slots }
+    }
+
+    /// Builds a map from the fields that
+    /// [`into_raw_parts`](Self::into_raw_parts) takes a map apart into.
+    ///
+    /// # Safety
+    ///
+    /// `parts` must follow every rule listed on [`SparseSecondaryMapRawParts`].
+    /// The map's methods rely on those rules, and parts that break one can
+    /// make them cause undefined behavior.
+    #[inline]
+    #[must_use]
+    pub unsafe fn from_raw_parts(parts: SparseSecondaryMapRawParts<T, C, S>) -> Self {
+        let SparseSecondaryMapRawParts { slots } = parts;
+        Self { slots }
+    }
+}

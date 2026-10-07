@@ -1,5 +1,6 @@
-//! Runs random operations on all four maps with values whose drops and clones
-//! sometimes panic, and with `retain` closures that sometimes panic. After
+//! Runs random operations on a `GenMap`, a `DenseGenMap`, a `SecondaryMap`
+//! and a `DenseSecondaryMap` with values whose drops and clones sometimes
+//! panic, and with `retain` closures that sometimes panic. After
 //! every step, each map must still find every value under its key. At the end,
 //! every value must have been dropped exactly once.
 
@@ -58,8 +59,9 @@ impl Drop for Fragile {
     }
 }
 
-/// Implements all four config traits for a config with the given key config,
-/// overflow rule, and slot, value and key storages.
+/// Implements `MapConfig`, `GenMapConfig`, `SecondaryMapConfig`,
+/// `DenseGenMapConfig` and `DenseSecondaryMapConfig` for a config with the
+/// given key config, overflow rule, and slot, value and key storages.
 macro_rules! config {
     ($(#[$doc:meta])* $name:ident, $key:ty, $wrap:expr, $slots:ident, $values:ident, $keys:ident) => {
         $(#[$doc])*

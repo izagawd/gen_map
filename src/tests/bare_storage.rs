@@ -12,8 +12,9 @@ use std::vec::Vec;
 /// `ExactSizeIterator`.
 struct Bare<S, const ITER: bool>(Vec<S>);
 
-// SAFETY: every method forwards to the `Vec`, which behaves as the trait
-// describes.
+// SAFETY: every method except `ensure_room` forwards to the `Vec`, which
+// behaves as the trait describes. `ensure_room` can skip making room because
+// `try_push` always returns `Ok`.
 unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
     type Item = S;
     type Error = ();

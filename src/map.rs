@@ -7,7 +7,7 @@ use crate::error::{
 use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use crate::parity::{Even, Odd};
-use crate::slot::{Parity, Slot};
+use crate::slot::{Parity, ParityMut, ParityRef, Slot};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
@@ -26,13 +26,17 @@ pub type MapGen<C> = <MapKeyConfig<C> as KeyConfig>::Gen;
 pub(crate) type Idx<C> = MapIdx<C>;
 pub(crate) type Gen<C> = MapGen<C>;
 
-/// The [`Slot`] a [`GenMap<T, C>`](GenMap) keeps each value in. While a slot is
-/// on the free list, its `U` is the index of the next free slot, or the largest
-/// value of the index type if it is the last free slot. No slot ever has that
-/// index, so it can't be mistaken for the index of a real slot. A retired
-/// slot's `U` is also the largest value of the index type. A detached slot's
-/// `U` is its own index, which is how [`GenMap::reattach`] tells a detached
-/// slot apart from a free or retired one.
+/// A [`GenMap`] keeps each of its values in a [`Slot`] of this type. While the
+/// slot holds a value, its generation is odd. While it holds no value, its
+/// generation is even and it stores an index instead. A slot on the free list
+/// stores the index of the next free slot, or the largest value of the index
+/// type if it is the last free slot. No slot ever has that index, so it can't
+/// be mistaken for the index of a real slot. A detached slot stores its own
+/// index, which is how [`GenMap::reattach`] tells a detached slot apart from a
+/// free or retired one. When the map retires a slot, it stores the largest
+/// value of the index type there, so the slot never looks detached.
+/// [`Slot::as_parity`] checks the parity of the generation and returns either
+/// the value in [`ParityRef::Odd`] or the index in [`ParityRef::Even`].
 pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 
 /// Returns the key of the value in the slot at `idx`, given the slot's current
@@ -131,8 +135,8 @@ pub(crate) fn increment_len<I: KeyPiece>(len: &mut I) {
     *len = len.wrapping_add(I::ONE);
 }
 
-/// Takes one off a map's `len`. The map only calls this after taking out a
-/// value it held, so `len` is above zero beforehand.
+/// Takes one off a map's `len`. The map only calls this when it takes out a
+/// value it holds, so `len` is above zero beforehand.
 #[inline]
 pub(crate) fn decrement_len<I: KeyPiece>(len: &mut I) {
     debug_assert!(*len > I::ZERO, "a map only removes a value it holds");
@@ -200,14 +204,13 @@ fn freed_parts<C: GenMapConfig>(
 
 /// The error the storage of a `GenMap<T, C>` gives when it cannot make room
 /// for another slot. It is `TryReserveError` for a `Vec`, `CapacityError` for
-/// an `ArrayVec` and `CollectionAllocErr` for a `SmallVec`.
+/// an `ArrayVec` and `SmallVecError` for a `SmallVec`.
 pub type StorageError<T, C> = <<C as GenMapConfig>::Storage<MapSlot<T, C>> as SliceStorage>::Error;
 
 /// Where the next inserted value will go, worked out before anything is
 /// written.
 struct Target<C: MapConfig> {
     idx: Idx<C>,
-    position: usize,
     /// The generation the new key gets.
     generation: Odd<Gen<C>>,
     /// `true` if the slot came off the free list, and `false` if it has to be
@@ -219,8 +222,8 @@ impl<C: MapConfig> Target<C> {
     /// The key that a value gets when it is put at this target.
     #[inline]
     fn key(&self) -> Key<MapKeyConfig<C>> {
-        // SAFETY: a `Target` only ever comes from `next_target`, which checks
-        // that both parts fit the key config.
+        // SAFETY: a `Target` only ever comes from `next_target`, which picks an
+        // index and a generation that a key can hold.
         Key::from_repr(unsafe {
             <MapKeyConfig<C> as KeyConfig>::pack_unchecked(self.idx, self.generation)
         })
@@ -249,7 +252,9 @@ fn panic_full<T, C: GenMapConfig>(full: FullError<StorageError<T, C>>, slots_len
 /// [`insert`](Self::insert) is called, so dropping the entry inserts
 /// nothing.
 pub struct VacantEntry<'a, T, C: GenMapConfig> {
-    map: &'a mut GenMap<T, C>,
+    slots: &'a mut Slots<T, C>,
+    next_free: &'a mut Idx<C>,
+    len: &'a mut Idx<C>,
     target: Target<C>,
 }
 
@@ -265,9 +270,10 @@ impl<'a, T, C: GenMapConfig> VacantEntry<'a, T, C> {
     /// [`key`](Self::key) returns.
     #[inline]
     pub fn insert(self, value: T) -> Key<MapKeyConfig<C>> {
-        // SAFETY: `target` came from `next_target`, and this entry has held
-        // `&mut` on the map since, so nothing has touched it.
-        unsafe { self.map.fill(self.target, value) }
+        // SAFETY: `target` came from `next_target` on the map these fields
+        // belong to, and this entry has held `&mut` on them since, so nothing
+        // has touched them.
+        unsafe { GenMap::<T, C>::fill(self.slots, self.next_free, self.len, self.target, value) }
     }
 }
 
@@ -505,8 +511,8 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     pub fn key_at(&self, idx: MapIdx<C>) -> Option<Key<MapKeyConfig<C>>> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
             // SAFETY: `idx` is the slot's position.
-            Parity::Odd(generation, _) => Some(unsafe { slot_key::<C>(idx, generation) }),
-            Parity::Even(..) => None,
+            ParityRef::Odd(&generation, _) => Some(unsafe { slot_key::<C>(idx, generation) }),
+            ParityRef::Even(..) => None,
         }
     }
 
@@ -539,11 +545,11 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     #[inline]
     pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &T)> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
-            Parity::Odd(generation, value) => {
+            ParityRef::Odd(&generation, value) => {
                 // SAFETY: `idx` is the slot's position.
                 Some((unsafe { slot_key::<C>(idx, generation) }, value))
             }
-            Parity::Even(..) => None,
+            ParityRef::Even(..) => None,
         }
     }
 
@@ -558,11 +564,11 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             .get_mut(idx.into_usize()?)?
             .as_parity_mut()
         {
-            Parity::Odd(generation, value) => {
+            ParityMut::Odd(&mut generation, value) => {
                 // SAFETY: `idx` is the slot's position.
                 Some((unsafe { slot_key::<C>(idx, generation) }, value))
             }
-            Parity::Even(..) => None,
+            ParityMut::Even(..) => None,
         }
     }
 
@@ -891,8 +897,6 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     where
         F: FnOnce(Key<MapKeyConfig<C>>) -> T,
     {
-        // Nothing is written until `f` has returned, so a panicking `f`
-        // leaves the map untouched.
         let entry = match self.vacant_entry() {
             Ok(entry) => entry,
             Err(full) => panic_full::<T, C>(full, self.slots.len()),
@@ -953,7 +957,12 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     #[inline]
     pub fn vacant_entry(&mut self) -> Result<VacantEntry<'_, T, C>, FullError<StorageError<T, C>>> {
         let target = self.next_target()?;
-        Ok(VacantEntry { map: self, target })
+        Ok(VacantEntry {
+            slots: &mut self.slots,
+            next_free: &mut self.next_free,
+            len: &mut self.len,
+            target,
+        })
     }
 
     /// Works out where the next value goes without writing any slot. When a
@@ -964,65 +973,75 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// also full, the error is `IndexExhausted`.
     #[inline]
     fn next_target(&mut self) -> Result<Target<C>, FullError<StorageError<T, C>>> {
-        let (idx, position, generation, from_free_list) = if self.next_free != no_slot::<C>() {
+        let (idx, generation, from_free_list) = if self.next_free != no_slot::<C>() {
             let idx = self.next_free;
             // SAFETY: `idx` is on the free list, so it was the position of a
             // slot that still exists, and that slot holds no value, so its
             // generation is even.
-            let (position, generation) = unsafe {
-                let position = position_of::<C>(idx);
-                let slot = self.slots.as_slice().get_unchecked(position);
-                (position, Even::new_unchecked(slot.generation()))
+            let generation = unsafe {
+                let slot = self.slots.as_slice().get_unchecked(position_of::<C>(idx));
+                Even::new_unchecked(slot.generation())
             };
-            (idx, position, generation, true)
+            (idx, generation, true)
         } else {
-            let position = self.slots.len();
-            let idx = Idx::<C>::from_usize(position)
+            let idx = Idx::<C>::from_usize(self.slots.len())
                 .filter(|idx| *idx <= max_slot_idx::<C>())
                 .ok_or(FullError::IndexExhausted)?;
             self.slots.ensure_room(1).map_err(FullError::StorageFull)?;
-            (idx, position, Even::ZERO, false)
+            (idx, Even::ZERO, false)
         };
 
-        // The largest generation a key can hold is odd, so it is above every
-        // even one, and the generation after an even one still fits.
+        // A new slot has generation zero, and a free slot has a generation
+        // below the largest one a key can hold, so a key can hold the
+        // generation after either one.
         let generation = generation.next();
 
         Ok(Target {
             idx,
-            position,
             generation,
             from_free_list,
         })
     }
 
-    /// Writes `value` where `target` says and returns its key.
+    /// Writes `value` where `target` says, in the map whose fields are
+    /// `slots`, `next_free` and `len`, and returns its key.
     ///
     /// # Safety
     ///
-    /// `target` must have come from [`next_target`](Self::next_target) with
-    /// nothing having touched the map since.
+    /// `target` must have come from [`next_target`](Self::next_target) on that
+    /// map, with nothing having touched the map since.
     #[inline]
-    unsafe fn fill(&mut self, target: Target<C>, value: T) -> Key<MapKeyConfig<C>> {
+    unsafe fn fill(
+        slots: &mut Slots<T, C>,
+        next_free: &mut Idx<C>,
+        len: &mut Idx<C>,
+        target: Target<C>,
+        value: T,
+    ) -> Key<MapKeyConfig<C>> {
         let key = target.key();
         if target.from_free_list {
-            // SAFETY: `position` was in bounds when `next_target` looked, and
-            // nothing has changed since.
-            let slot = unsafe { self.slots.as_mut_slice().get_unchecked_mut(target.position) };
+            // SAFETY: `target.idx` is the index of the slot that was first on
+            // the free list when `next_target` looked, and nothing has changed
+            // since, so that slot still exists.
+            let slot = unsafe {
+                slots
+                    .as_mut_slice()
+                    .get_unchecked_mut(position_of::<C>(target.idx))
+            };
             // SAFETY: the slot came off the free list, so it holds no value
             // and its generation is even.
-            self.next_free = unsafe { slot.replace_even_unchecked(target.generation, value) };
+            *next_free = unsafe { slot.replace_even_unchecked(target.generation, value) };
         } else {
             let slot = Slot::new_odd(target.generation, value);
             // `next_target` made room for this slot, and `SliceStorage`
             // promises that `try_push` succeeds after that, so only a broken
             // storage refuses the push. The slot is dropped with its value in
             // that case.
-            if self.slots.try_push(slot).is_err() {
+            if slots.try_push(slot).is_err() {
                 panic!("SliceStorage::try_push failed although ensure_room returned Ok");
             }
         }
-        increment_len(&mut self.len);
+        increment_len(len);
         key
     }
 
@@ -1037,7 +1056,15 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             .get_odd(key.generation())?;
         // SAFETY: the slot's generation matches the key's, which is odd, so
         // the slot holds a value.
-        Some(unsafe { self.take(key.idx(), position) })
+        Some(unsafe {
+            Self::take(
+                &mut self.slots,
+                &mut self.next_free,
+                &mut self.len,
+                key.idx(),
+                position,
+            )
+        })
     }
 
     /// Removes and returns the value corresponding to `key` like
@@ -1089,24 +1116,31 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         Some(unsafe { slot.replace_odd_unchecked(Even::ZERO, no_slot::<C>()) })
     }
 
-    /// Moves the value out of the slot at `position`. The slot then goes on
-    /// the free list, unless its generation has run out and the config
-    /// retires such slots.
+    /// Moves the value out of the slot at `position`, in the map whose fields
+    /// are `slots`, `next_free` and `len`. The slot then goes on the free
+    /// list, unless its generation has run out and the config retires such
+    /// slots.
     ///
     /// # Safety
     ///
     /// The slot at `position` must be occupied, and `idx` must be `position`
     /// as an `Idx<C>`.
-    unsafe fn take(&mut self, idx: Idx<C>, position: usize) -> T {
+    unsafe fn take(
+        slots: &mut Slots<T, C>,
+        next_free: &mut Idx<C>,
+        len: &mut Idx<C>,
+        idx: Idx<C>,
+        position: usize,
+    ) -> T {
         // SAFETY: the caller promises a slot at `position` that holds a
         // value, so the position is in bounds and the generation is odd.
         let (slot, generation) = unsafe {
-            let slot = self.slots.as_mut_slice().get_unchecked_mut(position);
+            let slot = slots.as_mut_slice().get_unchecked_mut(position);
             let generation = Odd::new_unchecked(slot.generation());
             (slot, generation)
         };
-        decrement_len(&mut self.len);
-        let (next, link) = freed_parts::<C>(&mut self.next_free, idx, generation);
+        decrement_len(len);
+        let (next, link) = freed_parts::<C>(next_free, idx, generation);
         // SAFETY: the slot's generation is odd.
         unsafe { slot.replace_odd_unchecked(next, link) }
     }
@@ -1185,10 +1219,10 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     }
 
     /// Frees the slot of a key whose value [`detach`](Self::detach) took out,
-    /// without putting a value back. The slot goes on the free list as if the
-    /// value had been removed, so the key never matches again and
-    /// [`reattach`](Self::reattach) fails for it. Returns `false`, and leaves
-    /// the map as it was, if the key is not detached.
+    /// without putting a value back. The slot goes on the free list or retires,
+    /// just as it would if the value had been removed, so
+    /// [`reattach`](Self::reattach) fails for the key. Returns `false`, and
+    /// leaves the map as it was, if the key is not detached.
     ///
     /// # Examples
     ///
@@ -1232,7 +1266,15 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             if holds_value {
                 // SAFETY: the slot was just found to hold a value, and
                 // `position` is its position.
-                drop(unsafe { self.take(index_of::<C>(position), position) });
+                drop(unsafe {
+                    Self::take(
+                        &mut self.slots,
+                        &mut self.next_free,
+                        &mut self.len,
+                        index_of::<C>(position),
+                        position,
+                    )
+                });
             }
         }
         debug_assert!(self.is_empty());
@@ -1249,7 +1291,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     pub fn reset(&mut self) {
         // The free list and `len` are reset before the storage drops the slots.
         // If a value's `drop` panics while the storage clears, the storage can
-        // already be empty, and a free list or `len` that still described the
+        // already be empty, and a free list that still described the
         // old slots would let the next insert read past the end of the storage.
         self.next_free = no_slot::<C>();
         self.len = Idx::<C>::ZERO;
@@ -1267,7 +1309,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             // SAFETY: `position` is below the slot count, which neither
             // `take` nor `f` (which never sees the map) changes.
             let slot = unsafe { self.slots.as_mut_slice().get_unchecked_mut(position) };
-            let Parity::Odd(generation, value) = slot.as_parity_mut() else {
+            let ParityMut::Odd(&mut generation, value) = slot.as_parity_mut() else {
                 continue;
             };
             // SAFETY: `position` is the slot's position.
@@ -1278,7 +1320,15 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             if !keep {
                 // SAFETY: the slot still holds its value. `f` only had
                 // `&mut T` and could not have removed it.
-                drop(unsafe { self.take(idx, position) });
+                drop(unsafe {
+                    Self::take(
+                        &mut self.slots,
+                        &mut self.next_free,
+                        &mut self.len,
+                        idx,
+                        position,
+                    )
+                });
             }
         }
     }
@@ -1287,7 +1337,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     #[inline]
     pub fn drain(&mut self) -> Drain<'_, T, C> {
         Drain {
-            map: self,
+            slots: &mut self.slots,
+            next_free: &mut self.next_free,
+            len: &mut self.len,
             position: 0,
         }
     }
@@ -1443,7 +1495,7 @@ impl<'a, T, C: MapConfig> Iterator for Iter<'a, T, C> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
-            if let Parity::Odd(generation, value) = slot.as_parity() {
+            if let ParityRef::Odd(&generation, value) = slot.as_parity() {
                 self.remaining -= 1;
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
@@ -1466,7 +1518,7 @@ impl<T, C: MapConfig> DoubleEndedIterator for Iter<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
-            if let Parity::Odd(generation, value) = slot.as_parity() {
+            if let ParityRef::Odd(&generation, value) = slot.as_parity() {
                 self.remaining -= 1;
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
@@ -1505,7 +1557,7 @@ impl<'a, T, C: MapConfig> Iterator for IterMut<'a, T, C> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
-            if let Parity::Odd(generation, value) = slot.as_parity_mut() {
+            if let ParityMut::Odd(&mut generation, value) = slot.as_parity_mut() {
                 self.remaining -= 1;
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
@@ -1528,7 +1580,7 @@ impl<T, C: MapConfig> DoubleEndedIterator for IterMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
-            if let Parity::Odd(generation, value) = slot.as_parity_mut() {
+            if let ParityMut::Odd(&mut generation, value) = slot.as_parity_mut() {
                 self.remaining -= 1;
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
@@ -1767,7 +1819,9 @@ impl<'a, T, C: GenMapConfig> IntoIterator for &'a mut GenMap<T, C> {
 /// Draining iterator over `(key, value)` pairs. It is created using
 /// [`GenMap::drain`]. Dropping it removes the values it has not yielded yet.
 pub struct Drain<'a, T, C: GenMapConfig> {
-    map: &'a mut GenMap<T, C>,
+    slots: &'a mut Slots<T, C>,
+    next_free: &'a mut Idx<C>,
+    len: &'a mut Idx<C>,
     position: usize,
 }
 
@@ -1776,19 +1830,21 @@ impl<T, C: GenMapConfig> Iterator for Drain<'_, T, C> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        while self.position < self.map.slots.len() {
+        while self.position < self.slots.len() {
             let position = self.position;
             self.position += 1;
             // SAFETY: `position` is below the slot count, which `take` does
             // not change.
-            let slot = unsafe { self.map.slots.as_slice().get_unchecked(position) };
-            if let Parity::Odd(generation, _) = slot.as_parity() {
+            let slot = unsafe { self.slots.as_slice().get_unchecked(position) };
+            if let ParityRef::Odd(&generation, _) = slot.as_parity() {
                 // SAFETY: the slot holds a value and `position` is its
                 // position.
                 unsafe {
                     let idx = index_of::<C>(position);
                     let key = slot_key::<C>(idx, generation);
-                    return Some((key, self.map.take(idx, position)));
+                    let value =
+                        GenMap::<T, C>::take(self.slots, self.next_free, self.len, idx, position);
+                    return Some((key, value));
                 }
             }
         }
@@ -1797,7 +1853,8 @@ impl<T, C: GenMapConfig> Iterator for Drain<'_, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.map.len();
+        // SAFETY: the same as in `GenMap::len`.
+        let len = unsafe { self.len.into_usize_unchecked() };
         (len, Some(len))
     }
 }
@@ -1808,5 +1865,140 @@ impl<T, C: GenMapConfig> FusedIterator for Drain<'_, T, C> {}
 impl<T, C: GenMapConfig> Drop for Drain<'_, T, C> {
     fn drop(&mut self) {
         for _ in self.by_ref() {}
+    }
+}
+
+/// `GenMapRawParts` holds the fields of a [`GenMap`].
+/// [`into_raw_parts`](GenMap::into_raw_parts) takes a map apart into these
+/// fields, and [`from_raw_parts`](GenMap::from_raw_parts) builds a map from
+/// them.
+///
+/// The parts given to `from_raw_parts` must follow every rule below, and the
+/// parts that `into_raw_parts` returns always do.
+///
+/// The values are the data that the map stores under its keys, and each one
+/// sits in a slot. Editing or replacing a value in its slot never breaks a
+/// rule, and neither does changing the capacity of `slots`.
+///
+/// # Rules
+///
+/// - No slot sits at a position above the largest index the map's keys can
+///   hold, or at the largest value of the index type.
+/// - A slot that holds a value has a generation no larger than the largest
+///   one the map's keys can hold.
+/// - The free list starts at the slot whose index is in `next_free`. Each
+///   slot on the list stores the index of the next slot on the list, and the
+///   last one stores the largest value of the index type, which `next_free`
+///   also holds when the list is empty. Every slot on the list holds no value
+///   and has a generation below the largest one the map's keys can hold, and
+///   no slot is on the list twice.
+/// - `len` is the number of slots that hold a value.
+///
+/// [`MapSlot`] explains what a free, detached or retired slot stores in place
+/// of a value.
+///
+/// # Examples
+///
+/// ```
+/// use gen_map::{GenMap, GenMapRawParts, Odd, Slot};
+///
+/// // The only slot holds "a" under generation one, so no slot is free.
+/// let parts = GenMapRawParts {
+///     slots: vec![Slot::new_odd(Odd::new(1).unwrap(), "a")],
+///     next_free: u32::MAX,
+///     len: 1,
+/// };
+/// // SAFETY: the slot's position and generation fit the default key config,
+/// // the free list is empty, and `len` counts the one value.
+/// let map: GenMap<&str> = unsafe { GenMap::from_raw_parts(parts) };
+/// let key = map.key_at(0).unwrap();
+/// assert_eq!(map[key], "a");
+/// ```
+pub struct GenMapRawParts<
+    T,
+    #[cfg(feature = "alloc")] C: GenMapConfig = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: GenMapConfig,
+> {
+    // These fields are in the same order as the fields of `GenMap` on
+    // purpose, so that the two structs can be read side by side.
+    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
+    // so the compiler catches a field that only one of them has, but nothing
+    // catches a change in order. Think twice before removing this comment,
+    // because it is the only thing that keeps the two orders the same.
+    /// The map keeps its slots in this storage, which the map's config picks.
+    /// A slot's index is its position in the storage.
+    pub slots: <C as GenMapConfig>::Storage<MapSlot<T, C>>,
+    /// `next_free` holds the index of the first slot on the free list, or the
+    /// largest value of the index type if no slot is free.
+    pub next_free: MapIdx<C>,
+    /// `len` is the number of values in the map.
+    pub len: MapIdx<C>,
+}
+
+impl<T, C: GenMapConfig> GenMap<T, C> {
+    /// Takes the map apart into its fields.
+    /// [`from_raw_parts`](Self::from_raw_parts) builds a map from them again,
+    /// and [`GenMapRawParts`] lists the rules they follow.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::GenMap;
+    ///
+    /// let mut map = GenMap::new();
+    /// let a = map.insert(1);
+    /// let b = map.insert(2);
+    /// map.remove(a);
+    ///
+    /// let mut parts = map.into_raw_parts();
+    /// assert_eq!(parts.slots.len(), 2);
+    /// assert_eq!(parts.len, 1);
+    /// // The slot that held 1 is the only free slot.
+    /// assert_eq!(parts.next_free, a.idx());
+    ///
+    /// // Changing the value stored under `b` keeps the parts following the
+    /// // rules.
+    /// *parts.slots[1].get_odd_mut(b.generation()).unwrap() += 10;
+    /// // SAFETY: the parts came from `into_raw_parts`, and only the value
+    /// // stored under `b` changed.
+    /// let map = unsafe { GenMap::from_raw_parts(parts) };
+    /// assert_eq!(map[b], 12);
+    /// assert!(map.get(a).is_none());
+    /// ```
+    #[inline]
+    pub fn into_raw_parts(self) -> GenMapRawParts<T, C> {
+        let Self {
+            slots,
+            next_free,
+            len,
+        } = self;
+        GenMapRawParts {
+            slots,
+            next_free,
+            len,
+        }
+    }
+
+    /// Builds a map from the fields that
+    /// [`into_raw_parts`](Self::into_raw_parts) takes a map apart into.
+    ///
+    /// # Safety
+    ///
+    /// `parts` must follow every rule listed on [`GenMapRawParts`]. The map's
+    /// methods rely on those rules, and parts that break one can make them
+    /// cause undefined behavior.
+    #[inline]
+    #[must_use]
+    pub unsafe fn from_raw_parts(parts: GenMapRawParts<T, C>) -> Self {
+        let GenMapRawParts {
+            slots,
+            next_free,
+            len,
+        } = parts;
+        Self {
+            slots,
+            next_free,
+            len,
+        }
     }
 }

@@ -8,7 +8,7 @@ use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use crate::map::{MapGen, MapIdx, MapKeyConfig};
 use crate::parity::{Even, Odd};
-use crate::slot::{Parity, Slot};
+use crate::slot::{ParityRef, Slot};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::FusedIterator;
@@ -23,13 +23,17 @@ type Values<T, C> = <C as DenseGenMapConfig>::ValueStorage<T>;
 /// The storage a config gives the map for its keys.
 type Keys<C> = <C as DenseGenMapConfig>::KeyStorage<Key<MapKeyConfig<C>>>;
 
-/// The [`Slot`] a [`DenseGenMap<T, C>`](DenseGenMap) keeps for each index.
-/// While the slot holds a value, its `T` is the position of that value in the
-/// value storage. Otherwise its `U` holds what the `U` of a
-/// [`MapSlot`](crate::MapSlot) holds. A free slot stores the index of the next
-/// free slot there, or the largest value of the index type if it is the last
-/// free slot. A detached slot stores its own index, and a retired slot stores
-/// the largest value of the index type.
+/// A [`DenseGenMap`] keeps one [`Slot`] of this type for each index. While the
+/// slot holds a value, its generation is odd and it stores the position of that
+/// value in the value storage. While it holds no value, its generation is even
+/// and it stores an index instead. A free slot stores the index of the next
+/// free slot, or the largest value of the index type if it is the last free
+/// slot. A detached slot stores its own index, which is how
+/// [`DenseGenMap::reattach`] tells a detached slot apart from a free or retired
+/// one. When the map retires a slot, it stores the largest value of the index
+/// type there, so the slot never looks detached. [`Slot::as_parity`] checks the
+/// parity of the generation and returns either the position in
+/// [`ParityRef::Odd`] or the index in [`ParityRef::Even`].
 pub type DenseMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, MapIdx<C>>;
 
 /// The error a `DenseGenMap<T, C>` gives when one of its storages cannot make
@@ -167,8 +171,6 @@ fn freed_parts<C: DenseGenMapConfig>(
 struct Target<C: MapConfig> {
     /// The index of the slot.
     idx: MapIdx<C>,
-    /// The position of the slot in the slot storage.
-    slot_index: usize,
     /// The generation the new key gets.
     generation: Odd<MapGen<C>>,
     /// `true` if the slot came off the free list, and `false` if it has to be
@@ -180,8 +182,8 @@ impl<C: MapConfig> Target<C> {
     /// The key that a value gets when it is put at this target.
     #[inline]
     fn key(&self) -> Key<MapKeyConfig<C>> {
-        // SAFETY: a `Target` only ever comes from `next_target`, which checks
-        // that both parts fit the key config.
+        // SAFETY: a `Target` only ever comes from `next_target`, which picks an
+        // index and a generation that a key can hold.
         Key::from_repr(unsafe {
             <MapKeyConfig<C> as KeyConfig>::pack_unchecked(self.idx, self.generation)
         })
@@ -238,7 +240,10 @@ fn panic_full<E: fmt::Debug>(full: FullError<E>, slots_len: usize) -> ! {
 /// [`DenseGenMap::vacant_entry`]. No slot is written until
 /// [`insert`](Self::insert) is called, so dropping the entry inserts nothing.
 pub struct DenseVacantEntry<'a, T, C: DenseGenMapConfig> {
-    map: &'a mut DenseGenMap<T, C>,
+    slots: &'a mut Slots<C>,
+    next_free: &'a mut MapIdx<C>,
+    values: &'a mut Values<T, C>,
+    keys: &'a mut Keys<C>,
     target: Target<C>,
 }
 
@@ -254,10 +259,20 @@ impl<T, C: DenseGenMapConfig> DenseVacantEntry<'_, T, C> {
     /// [`key`](Self::key) returns.
     #[inline]
     pub fn insert(self, value: T) -> Key<MapKeyConfig<C>> {
-        // SAFETY: `target` came from `next_target`, and this entry has held
-        // `&mut` on the map since, so nothing has touched it. `vacant_entry`
-        // also made room for one more value and key.
-        unsafe { self.map.fill(self.target, value) }
+        // SAFETY: `target` came from `next_target` on the map these fields
+        // belong to, and this entry has held `&mut` on them since, so nothing
+        // has touched them. `vacant_entry` also made room for one more value
+        // and key.
+        unsafe {
+            DenseGenMap::<T, C>::fill(
+                self.slots,
+                self.next_free,
+                self.values,
+                self.keys,
+                self.target,
+                value,
+            )
+        }
     }
 }
 
@@ -282,7 +297,7 @@ impl<T, C: DenseGenMapConfig> fmt::Debug for DenseVacantEntry<'_, T, C> {
 /// The map also keeps the key of each value, at the same position as the
 /// value. Removing a value moves the last value into its place, and the map
 /// reads the moved value's key to point that value's slot at the new
-/// position. So the order of the values changes when one is removed.
+/// position.
 ///
 /// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`]. To use
 /// your own config, implement [`MapConfig`] and [`DenseGenMapConfig`] for it.
@@ -525,8 +540,8 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     pub fn key_at(&self, idx: MapIdx<C>) -> Option<Key<MapKeyConfig<C>>> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
             // SAFETY: `idx` is the index of the slot just read.
-            Parity::Odd(generation, _) => Some(unsafe { slot_key::<C>(idx, generation) }),
-            Parity::Even(..) => None,
+            ParityRef::Odd(&generation, _) => Some(unsafe { slot_key::<C>(idx, generation) }),
+            ParityRef::Even(..) => None,
         }
     }
 
@@ -556,7 +571,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     #[inline]
     pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &T)> {
         match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
-            Parity::Odd(generation, &stored_position) => {
+            ParityRef::Odd(&generation, &stored_position) => {
                 // SAFETY: `idx` is the index of the slot just read, and the
                 // position the slot stores is below the number of values.
                 Some(unsafe {
@@ -568,7 +583,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
                     )
                 })
             }
-            Parity::Even(..) => None,
+            ParityRef::Even(..) => None,
         }
     }
 
@@ -579,8 +594,8 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     pub fn get_at_mut(&mut self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &mut T)> {
         let (generation, stored_position) =
             match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
-                Parity::Odd(generation, &stored_position) => (generation, stored_position),
-                Parity::Even(..) => return None,
+                ParityRef::Odd(&generation, &stored_position) => (generation, stored_position),
+                ParityRef::Even(..) => return None,
             };
         // SAFETY: the same as in `get_at`.
         Some(unsafe {
@@ -880,8 +895,6 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     where
         F: FnOnce(Key<MapKeyConfig<C>>) -> T,
     {
-        // Nothing is written until `f` has returned, so a panicking `f` leaves
-        // the map untouched.
         let slots_len = self.slots_len();
         let entry = match self.vacant_entry() {
             Ok(entry) => entry,
@@ -938,7 +951,13 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         self.keys
             .ensure_room(1)
             .map_err(|error| FullError::StorageFull(DenseError::Keys(error)))?;
-        Ok(DenseVacantEntry { map: self, target })
+        Ok(DenseVacantEntry {
+            slots: &mut self.slots,
+            next_free: &mut self.next_free,
+            values: &mut self.values,
+            keys: &mut self.keys,
+            target,
+        })
     }
 
     /// Puts a value back under a key whose value [`detach`](Self::detach)
@@ -1008,7 +1027,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             if holds_value {
                 // SAFETY: the slot was just found to hold a value, and
                 // `slot_index` is its position.
-                unsafe { self.free_slot_at(slot_index) };
+                unsafe { Self::free_slot_at(&mut self.slots, &mut self.next_free, slot_index) };
             }
         }
         // The slots and keys hold no `T`, so nothing could panic before the
@@ -1053,24 +1072,29 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             .copied()
     }
 
-    /// Frees the slot at `slot_index` the way removing its value does, and
-    /// returns the position the slot stored. The slot goes on the free list,
-    /// unless its generation has run out and the config retires such slots.
+    /// Frees the slot at `slot_index`, in the map whose fields are `slots` and
+    /// `next_free`, the way removing its value does, and returns the position
+    /// the slot stored. The slot goes on the free list, unless its generation
+    /// has run out and the config retires such slots.
     ///
     /// # Safety
     ///
     /// The slot at `slot_index` must hold a value.
     #[inline]
-    unsafe fn free_slot_at(&mut self, slot_index: usize) -> MapIdx<C> {
+    unsafe fn free_slot_at(
+        slots: &mut Slots<C>,
+        next_free: &mut MapIdx<C>,
+        slot_index: usize,
+    ) -> MapIdx<C> {
         // SAFETY: the caller promises a slot at `slot_index` that holds a
         // value, so the position is in bounds, the slot's generation is odd,
         // and the position fits in the index type.
         let (slot, generation, idx) = unsafe {
-            let slot = self.slots.as_mut_slice().get_unchecked_mut(slot_index);
+            let slot = slots.as_mut_slice().get_unchecked_mut(slot_index);
             let generation = Odd::new_unchecked(slot.generation());
             (slot, generation, idx_of_slot::<C>(slot_index))
         };
-        let (next, link) = freed_parts::<C>(&mut self.next_free, idx, generation);
+        let (next, link) = freed_parts::<C>(next_free, idx, generation);
         // SAFETY: the slot's generation is odd.
         unsafe { slot.replace_odd_unchecked(next, link) }
     }
@@ -1083,76 +1107,82 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// also full, the error is `IndexExhausted`.
     #[inline]
     fn next_target(&mut self) -> Result<Target<C>, FullError<<Slots<C> as SliceStorage>::Error>> {
-        let (idx, slot_index, generation, from_free_list) = if self.next_free != no_slot::<C>() {
+        let (idx, generation, from_free_list) = if self.next_free != no_slot::<C>() {
             let idx = self.next_free;
             // SAFETY: `idx` is on the free list, so it is the index of a slot
             // that still exists, and that slot holds no value, so its
             // generation is even.
-            let (slot_index, generation) = unsafe {
-                let slot_index = slot_index_of::<C>(idx);
-                let slot = self.slots.as_slice().get_unchecked(slot_index);
-                (slot_index, Even::new_unchecked(slot.generation()))
+            let generation = unsafe {
+                let slot = self.slots.as_slice().get_unchecked(slot_index_of::<C>(idx));
+                Even::new_unchecked(slot.generation())
             };
-            (idx, slot_index, generation, true)
+            (idx, generation, true)
         } else {
-            let slot_index = self.slots.len();
-            let idx = MapIdx::<C>::from_usize(slot_index)
+            let idx = MapIdx::<C>::from_usize(self.slots.len())
                 .filter(|idx| *idx <= max_slot_idx::<C>())
                 .ok_or(FullError::IndexExhausted)?;
             self.slots.ensure_room(1).map_err(FullError::StorageFull)?;
-            (idx, slot_index, Even::ZERO, false)
+            (idx, Even::ZERO, false)
         };
-        // The largest generation a key can hold is odd, so it is above every
-        // even one, and the generation after an even one still fits.
+        // A new slot has generation zero, and a free slot has a generation
+        // below the largest one a key can hold, so a key can hold the
+        // generation after either one.
         let generation = generation.next();
         Ok(Target {
             idx,
-            slot_index,
             generation,
             from_free_list,
         })
     }
 
     /// Writes `value` at the end of the values, its key at the end of the keys,
-    /// and the value's position into the slot `target` picks. Returns the key.
+    /// and the value's position into the slot `target` picks, in the map whose
+    /// fields are `slots`, `next_free`, `values` and `keys`. Returns the key.
     ///
     /// # Safety
     ///
-    /// `target` must have come from [`next_target`](Self::next_target) with
-    /// nothing having touched the map since, and the value and key storages
-    /// must have room for one more item each.
+    /// `target` must have come from [`next_target`](Self::next_target) on that
+    /// map, with nothing having touched the map since, and the value and key
+    /// storages must have room for one more item each.
     #[inline]
-    unsafe fn fill(&mut self, target: Target<C>, value: T) -> Key<MapKeyConfig<C>> {
+    unsafe fn fill(
+        slots: &mut Slots<C>,
+        next_free: &mut MapIdx<C>,
+        values: &mut Values<T, C>,
+        keys: &mut Keys<C>,
+        target: Target<C>,
+        value: T,
+    ) -> Key<MapKeyConfig<C>> {
         let key = target.key();
-        // SAFETY: `self.values.len()` is the number of values.
-        let stored_position = unsafe { to_stored::<C>(self.values.len()) };
+        // SAFETY: `values.len()` is the number of values.
+        let stored_position = unsafe { to_stored::<C>(values.len()) };
         // The caller made room for one more key and value, and `SliceStorage`
         // promises that the pushes succeed after that, so only a broken storage
         // refuses them.
-        if self.keys.try_push(key).is_err() {
+        if keys.try_push(key).is_err() {
             panic!("SliceStorage::try_push failed although ensure_room returned Ok");
         }
-        if self.values.try_push(value).is_err() {
+        if values.try_push(value).is_err() {
             panic!("SliceStorage::try_push failed although ensure_room returned Ok");
         }
         if target.from_free_list {
-            // SAFETY: `slot_index` was in bounds when `next_target` looked, and
-            // nothing has changed since.
+            // SAFETY: `target.idx` is the index of the slot that was first on
+            // the free list when `next_target` looked, and nothing has changed
+            // since, so that slot still exists.
             let slot = unsafe {
-                self.slots
+                slots
                     .as_mut_slice()
-                    .get_unchecked_mut(target.slot_index)
+                    .get_unchecked_mut(slot_index_of::<C>(target.idx))
             };
             // SAFETY: the slot came off the free list, so it holds no value and
             // its generation is even.
-            self.next_free =
-                unsafe { slot.replace_even_unchecked(target.generation, stored_position) };
+            *next_free = unsafe { slot.replace_even_unchecked(target.generation, stored_position) };
         } else {
             // `next_target` made room for this slot, and `SliceStorage`
             // promises that `try_push` succeeds after that, so only a broken
             // storage refuses the push.
             let slot = Slot::new_odd(target.generation, stored_position);
-            if self.slots.try_push(slot).is_err() {
+            if slots.try_push(slot).is_err() {
                 panic!("SliceStorage::try_push failed although ensure_room returned Ok");
             }
         }
@@ -1170,7 +1200,8 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             .get_odd(key.generation())?;
         // SAFETY: the slot at `slot_index` holds a value, since its generation
         // matches the key's.
-        let stored_position = unsafe { self.free_slot_at(slot_index) };
+        let stored_position =
+            unsafe { Self::free_slot_at(&mut self.slots, &mut self.next_free, slot_index) };
         // SAFETY: `stored_position` is the position the key's slot stored,
         // which is below the number of values.
         Some(unsafe { self.swap_remove(to_position::<C>(stored_position)) })
@@ -1250,7 +1281,11 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             // is the position of a slot that holds that value, and `position`
             // is below the number of values.
             unsafe {
-                self.free_slot_at(slot_index_of::<C>(key.idx()));
+                Self::free_slot_at(
+                    &mut self.slots,
+                    &mut self.next_free,
+                    slot_index_of::<C>(key.idx()),
+                );
                 drop(self.swap_remove(position));
             }
             // The last value moved to `position`, so `position` is checked
@@ -1263,7 +1298,12 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// values it has not yielded yet.
     #[inline]
     pub fn drain(&mut self) -> DenseDrain<'_, T, C> {
-        DenseDrain { map: self }
+        DenseDrain {
+            slots: &mut self.slots,
+            next_free: &mut self.next_free,
+            values: &mut self.values,
+            keys: &mut self.keys,
+        }
     }
 
     /// Iterates over every value together with its key, in the order the
@@ -1377,7 +1417,7 @@ impl<T: fmt::Debug, C: DenseGenMapConfig> fmt::Debug for DenseGenMap<T, C> {
             .iter()
             .enumerate()
             .filter_map(|(slot_index, slot)| match slot.as_parity() {
-                Parity::Odd(generation, &stored_position) => {
+                ParityRef::Odd(&generation, &stored_position) => {
                     // SAFETY: the slot at `slot_index` holds a value under
                     // `generation`, so its position fits in the index type and
                     // the two fit the key, and the position the slot stores is
@@ -1389,7 +1429,7 @@ impl<T: fmt::Debug, C: DenseGenMapConfig> fmt::Debug for DenseGenMap<T, C> {
                         )
                     })
                 }
-                Parity::Even(..) => None,
+                ParityRef::Even(..) => None,
             });
         f.debug_map().entries(entries).finish()
     }
@@ -1473,7 +1513,10 @@ impl<'a, T, C: DenseGenMapConfig> IntoIterator for &'a mut DenseGenMap<T, C> {
 /// first. It is created using [`DenseGenMap::drain`]. Dropping it removes the
 /// values it has not yielded yet.
 pub struct DenseDrain<'a, T, C: DenseGenMapConfig> {
-    map: &'a mut DenseGenMap<T, C>,
+    slots: &'a mut Slots<C>,
+    next_free: &'a mut MapIdx<C>,
+    values: &'a mut Values<T, C>,
+    keys: &'a mut Keys<C>,
 }
 
 impl<T, C: DenseGenMapConfig> Iterator for DenseDrain<'_, T, C> {
@@ -1481,20 +1524,26 @@ impl<T, C: DenseGenMapConfig> Iterator for DenseDrain<'_, T, C> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let key = SliceStorage::pop(&mut self.map.keys)?;
+        let key = SliceStorage::pop(self.keys)?;
         // SAFETY: the map keeps a key for each value, so a value was left as
         // well, and `SliceStorage` promises that `pop` takes out the last item.
-        let value = unsafe { self.map.values.pop().unwrap_unchecked() };
+        let value = unsafe { self.values.pop().unwrap_unchecked() };
         // SAFETY: `key` is the key of the value just taken out, so its index is
         // the position of a slot that still holds that value. The slot is
         // freed like the slot of a removed value.
-        unsafe { self.map.free_slot_at(slot_index_of::<C>(key.idx())) };
+        unsafe {
+            DenseGenMap::<T, C>::free_slot_at(
+                self.slots,
+                self.next_free,
+                slot_index_of::<C>(key.idx()),
+            )
+        };
         Some((key, value))
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.map.len();
+        let len = self.values.len();
         (len, Some(len))
     }
 }
@@ -1743,3 +1792,131 @@ where
 
 impl<K: IntoIterator, V: IntoIterator> ExactSizeIterator for DenseIntoIter<K, V> {}
 impl<K: IntoIterator, V: IntoIterator> FusedIterator for DenseIntoIter<K, V> {}
+
+/// `DenseGenMapRawParts` holds the fields of a [`DenseGenMap`].
+/// [`into_raw_parts`](DenseGenMap::into_raw_parts) takes a map apart into
+/// these fields, and [`from_raw_parts`](DenseGenMap::from_raw_parts) builds a
+/// map from them.
+///
+/// The parts given to `from_raw_parts` must follow every rule below, and the
+/// parts that `into_raw_parts` returns always do.
+///
+/// The values are the data that the map stores under its keys, and `values`
+/// holds them. Editing or replacing an item in `values` never breaks a rule,
+/// and neither does changing the capacity of `slots`, `values` or `keys`.
+///
+/// # Rules
+///
+/// - No slot sits at a position above the largest index the map's keys can
+///   hold, or at the largest value of the index type.
+/// - A slot that holds a value has a generation no larger than the largest
+///   one the map's keys can hold.
+/// - The free list starts at the slot whose index is in `next_free`. Each
+///   slot on the list stores the index of the next slot on the list, and the
+///   last one stores the largest value of the index type, which `next_free`
+///   also holds when the list is empty. Every slot on the list holds no value
+///   and has a generation below the largest one the map's keys can hold, and
+///   no slot is on the list twice.
+/// - `values` and `keys` are the same length, and that length is the number
+///   of slots that hold a value.
+/// - Each slot that holds a value stores the position of its value in
+///   `values`, and no two of those slots store the same position.
+/// - The key at each position in `keys` is the key of the value at the same
+///   position in `values`. The key has the index of the slot that stores that
+///   position, and the generation of that slot.
+///
+/// [`DenseMapSlot`] explains what a free, detached or retired slot stores in
+/// place of a position.
+///
+/// # Examples
+///
+/// ```
+/// use gen_map::DenseGenMap;
+///
+/// let mut map = DenseGenMap::new();
+/// let a = map.insert("a");
+/// let b = map.insert("b");
+///
+/// // The two values swap places, and so do their keys and the positions
+/// // that their slots store.
+/// let mut parts = map.into_raw_parts();
+/// parts.values.swap(0, 1);
+/// parts.keys.swap(0, 1);
+/// *parts.slots[0].get_odd_mut(a.generation()).unwrap() = 1;
+/// *parts.slots[1].get_odd_mut(b.generation()).unwrap() = 0;
+/// // SAFETY: each slot that holds a value stores the new position of its
+/// // value, and each key moved together with its value.
+/// let map = unsafe { DenseGenMap::from_raw_parts(parts) };
+/// assert_eq!(map.values().copied().collect::<Vec<_>>(), ["b", "a"]);
+/// assert_eq!((map[a], map[b]), ("a", "b"));
+/// ```
+pub struct DenseGenMapRawParts<
+    T,
+    #[cfg(feature = "alloc")] C: DenseGenMapConfig = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: DenseGenMapConfig,
+> {
+    // These fields are in the same order as the fields of `DenseGenMap` on
+    // purpose, so that the two structs can be read side by side.
+    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
+    // so the compiler catches a field that only one of them has, but nothing
+    // catches a change in order. Think twice before removing this comment,
+    // because it is the only thing that keeps the two orders the same.
+    /// The map keeps its slots in this storage, which the map's config picks.
+    /// A slot's index is its position in the storage, and a slot that holds a
+    /// value stores the position of that value in `values`.
+    pub slots: <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>,
+    /// `next_free` holds the index of the first slot on the free list, or the
+    /// largest value of the index type if no slot is free.
+    pub next_free: MapIdx<C>,
+    /// The map keeps its values in this storage, one after another.
+    pub values: <C as DenseGenMapConfig>::ValueStorage<T>,
+    /// The map keeps the key of each value in this storage, at the position
+    /// of the value.
+    pub keys: <C as DenseGenMapConfig>::KeyStorage<Key<MapKeyConfig<C>>>,
+}
+
+impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
+    /// Takes the map apart into its fields.
+    /// [`from_raw_parts`](Self::from_raw_parts) builds a map from them again,
+    /// and [`DenseGenMapRawParts`] lists the rules they follow.
+    #[inline]
+    pub fn into_raw_parts(self) -> DenseGenMapRawParts<T, C> {
+        let Self {
+            slots,
+            next_free,
+            values,
+            keys,
+        } = self;
+        DenseGenMapRawParts {
+            slots,
+            next_free,
+            values,
+            keys,
+        }
+    }
+
+    /// Builds a map from the fields that
+    /// [`into_raw_parts`](Self::into_raw_parts) takes a map apart into.
+    ///
+    /// # Safety
+    ///
+    /// `parts` must follow every rule listed on [`DenseGenMapRawParts`]. The
+    /// map's methods rely on those rules, and parts that break one can make
+    /// them cause undefined behavior.
+    #[inline]
+    #[must_use]
+    pub unsafe fn from_raw_parts(parts: DenseGenMapRawParts<T, C>) -> Self {
+        let DenseGenMapRawParts {
+            slots,
+            next_free,
+            values,
+            keys,
+        } = parts;
+        Self {
+            slots,
+            next_free,
+            values,
+            keys,
+        }
+    }
+}

@@ -1,7 +1,8 @@
 //! Runs long random sequences of operations on a map and checks it against
-//! a simple model after every step. The model only tracks which keys are
-//! valid and what they hold, so it knows nothing about slots or the free
-//! list. Each config gets its own test so they run in parallel.
+//! a simple model after every step. The model tracks which keys are valid,
+//! what they hold and how many slots were retired with `retire`. It knows
+//! nothing else about slots, and nothing about the free list. Each config
+//! gets its own test so they run in parallel.
 
 use crate::map::{Gen, Idx};
 use crate::{
@@ -176,8 +177,9 @@ struct Model<C: GenMapConfig> {
     /// wraps can hand one out again, and that key then moves back to
     /// `live`.
     dead: Vec<Key<MapKeyConfig<C>>>,
-    /// The value the next insert uses. Every value is different, so a value
-    /// that shows up under the wrong key is caught.
+    /// `next_value` is the last value that `fresh_value` handed out. Every
+    /// value is different, so a value that shows up under the wrong key is
+    /// caught.
     next_value: u32,
     /// How many slots were retired with `retire`. With a config that wraps,
     /// these slots cannot be told apart from free slots by their generation,

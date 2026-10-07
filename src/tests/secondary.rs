@@ -4,8 +4,7 @@ use super::{key_from_parts, Bomb, Cfg, DropItem, DropTracker};
 use crate::{
     DefaultKeyConfig, ExistingWins, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
     GetDisjointMutError, Key, MapConfig, MapKeyConfig, NewerWins, Odd, Packed, ReplaceStrategy,
-    SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlot, SecondarySlotItem,
-    Split,
+    SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Split,
 };
 use core::marker::PhantomData;
 use std::collections::HashMap;
@@ -470,31 +469,6 @@ fn the_strategies_compare_generations_as_documented() {
     }
 }
 
-#[test]
-fn a_secondary_slot_holds_a_value_only_while_its_generation_is_odd() {
-    let mut slot = SecondarySlot::<Split<u8, u8>, u32>::new(odd(3), 7);
-    assert_eq!(
-        format!("{slot:?}"),
-        "SecondarySlot { generation: 3, value: Some(7) }"
-    );
-    *slot.get_mut().unwrap().1 += 1;
-    assert_eq!(slot.get_odd(odd(3)), Some(&8));
-    assert_eq!(slot.get_odd(odd(5)), None);
-    *slot.get_odd_mut(odd(3)).unwrap() -= 1;
-    assert_eq!(slot.get_odd_mut(odd(5)), None);
-    *slot.get_odd_mut(odd(3)).unwrap() += 1;
-    assert_eq!(slot.replace(odd(5), 9), Some(8));
-    assert_eq!(slot.clone().into_inner(), Some((odd(5), 9)));
-    assert_eq!(slot.take(), Some(9));
-    assert_eq!(slot.take(), None);
-    assert_eq!(
-        format!("{slot:?}"),
-        "SecondarySlot { generation: 0, value: None }"
-    );
-    assert_eq!(slot.into_inner(), None);
-    assert!(SecondarySlot::<Split<u8, u8>, u32>::empty().get().is_none());
-}
-
 /// A small random number generator, so the test below is the same on every
 /// run.
 struct Rng(u64);
@@ -608,9 +582,12 @@ where
 }
 
 /// Runs the same random inserts, removes and retains on a map with config
-/// `C` and on the model above, and checks that the two agree after every
-/// step. When the storage holds at most `capacity` slots, an insert at that
-/// index or past it must fail with `StorageFull` and leave the map as it was.
+/// `C` and on the model above. After every step, it checks that the map and
+/// the model gave the same result and hold the same number of values. Every
+/// hundred steps and after the last step, it also checks that they hold the
+/// same keys and values. When the storage holds at most `capacity` slots, an
+/// insert at that index or past it must fail with `StorageFull` and leave the
+/// map as it was.
 fn run_model<C>(seed: u64, steps: u32, capacity: Option<usize>, coverage: &mut Coverage)
 where
     C: SecondaryMapConfig + MapConfig<KeyConfig = DefaultKeyConfig>,
@@ -1063,7 +1040,7 @@ fn get_disjoint_mut_hands_out_every_value() {
 #[test]
 fn get_disjoint_mut_rejects_missing_stale_and_repeated_keys() {
     let (mut map, all) = map_with_a_gap();
-    // The first key has an empty slot, and the second has no slot at all.
+    // `all[1]` has an empty slot, and `all[3]` has no slot at all.
     assert_eq!(
         map.get_disjoint_mut([all[0], all[1]]),
         Err(GetDisjointMutError::InvalidKey)
