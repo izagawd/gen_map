@@ -109,10 +109,11 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
         let generation: *const G = &self.generation;
         // SAFETY: the parity of the generation says which field is live. The
         // first branch only runs for an odd generation, so it reads `odd` and
-        // treats the generation as an `Odd`, and the second branch does the same
-        // with `even` and `Even` for an even generation. `Odd` and `Even` have
-        // the layout of the plain integer, as the comments on them explain, so
-        // a reference to the generation can be cast to a reference to either.
+        // treats the generation as an `Odd`, and the second branch does the
+        // same with `even` and `Even` for an even generation. `Odd` and `Even`
+        // have the layout of the plain integer, as the comments on them
+        // explain, so a reference to the generation can be cast to a reference
+        // to either.
         unsafe {
             if self.is_odd() {
                 ParityRef::Odd(&*generation.cast::<Odd<G>>(), &self.value.odd)

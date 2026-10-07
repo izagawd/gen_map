@@ -733,7 +733,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
             // `key` replaces the key stored for the value.
             // SAFETY: the slot at the key's index exists, since it was just
             // read.
-            unsafe { self.slot_unchecked_mut(key) }.set_odd(new_generation, stored_position);
+            unsafe { Self::slot_unchecked_mut(&mut self.slots, key) }
+                .set_odd(new_generation, stored_position);
             // SAFETY: the map keeps a key for each value, so the key storage
             // has an item at `value_position`, the position of a value.
             unsafe { *self.keys.as_mut_slice().get_unchecked_mut(value_position) = key };
@@ -867,7 +868,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
             .copied()
     }
 
-    /// Returns the slot at the index of `key` without checking that it exists.
+    /// Returns the slot at the index of `key` in `slots`, the slot storage of
+    /// the map, without checking that it exists.
     ///
     /// # Safety
     ///
@@ -875,17 +877,17 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// value is stored under `key`.
     #[inline]
     unsafe fn slot_unchecked_mut(
-        &mut self,
+        slots: &mut Slots<C>,
         key: Key<MapKeyConfig<C>>,
     ) -> &mut DenseSecondaryMapSlot<C> {
         debug_assert!(key
             .idx()
             .into_usize()
-            .is_some_and(|position| position < self.slots.len()));
+            .is_some_and(|position| position < slots.len()));
         // SAFETY: the caller promises a slot at the key's index, so the index
         // fits in `usize` and is in bounds.
         unsafe {
-            self.slots
+            slots
                 .as_mut_slice()
                 .get_unchecked_mut(key.idx().into_usize_unchecked())
         }
@@ -921,7 +923,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
                 // slot exists and holds that value, and `position` is below the
                 // number of values.
                 unsafe {
-                    self.slot_unchecked_mut(key)
+                    Self::slot_unchecked_mut(&mut self.slots, key)
                         .replace_odd_unchecked(Even::ZERO, ());
                     drop(self.swap_remove(position));
                 }
@@ -964,7 +966,11 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// iterator removes the values it has not reached.
     #[inline]
     pub fn drain(&mut self) -> DenseSecondaryDrain<'_, T, C> {
-        DenseSecondaryDrain { map: self }
+        DenseSecondaryDrain {
+            slots: &mut self.slots,
+            values: &mut self.values,
+            keys: &mut self.keys,
+        }
     }
 
     /// Takes the value at `position` out of the value storage by moving the
@@ -994,7 +1000,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         // slot exists and holds that value.
         unsafe {
             *self.keys.as_mut_slice().get_unchecked_mut(position) = last_key;
-            *self.slot_unchecked_mut(last_key).get_odd_unchecked_mut() = to_stored::<C>(position);
+            *Self::slot_unchecked_mut(&mut self.slots, last_key).get_odd_unchecked_mut() =
+                to_stored::<C>(position);
             core::mem::replace(
                 self.values.as_mut_slice().get_unchecked_mut(position),
                 last_value,
@@ -1130,7 +1137,9 @@ impl<'a, T, C: DenseSecondaryMapConfig> IntoIterator for &'a mut DenseSecondaryM
 /// Iterator that takes each value out, with its key, from the last value to
 /// the first. It is created using [`DenseSecondaryMap::drain`].
 pub struct DenseSecondaryDrain<'a, T, C: DenseSecondaryMapConfig> {
-    map: &'a mut DenseSecondaryMap<T, C>,
+    slots: &'a mut Slots<C>,
+    values: &'a mut Values<T, C>,
+    keys: &'a mut Keys<C>,
 }
 
 impl<T, C: DenseSecondaryMapConfig> Iterator for DenseSecondaryDrain<'_, T, C> {
@@ -1138,16 +1147,15 @@ impl<T, C: DenseSecondaryMapConfig> Iterator for DenseSecondaryDrain<'_, T, C> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let key = SliceStorage::pop(&mut self.map.keys)?;
+        let key = SliceStorage::pop(self.keys)?;
         // SAFETY: the map keeps a key for each value, so a value was left as
         // well, and `SliceStorage` promises that `pop` takes out the last item.
-        let value = unsafe { self.map.values.pop().unwrap_unchecked() };
+        let value = unsafe { self.values.pop().unwrap_unchecked() };
         // SAFETY: `key` is the key of the value just taken out, so its slot
         // exists and still holds that value. The slot is emptied like the slot
         // of a removed value.
         unsafe {
-            self.map
-                .slot_unchecked_mut(key)
+            DenseSecondaryMap::<T, C>::slot_unchecked_mut(self.slots, key)
                 .replace_odd_unchecked(Even::ZERO, ())
         };
         Some((key, value))
@@ -1155,7 +1163,7 @@ impl<T, C: DenseSecondaryMapConfig> Iterator for DenseSecondaryDrain<'_, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.map.len();
+        let len = self.values.len();
         (len, Some(len))
     }
 }
