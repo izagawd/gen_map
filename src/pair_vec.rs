@@ -260,6 +260,22 @@ impl<A, B> PairVec<A, B> {
         unsafe { self.push_unchecked(first, second) };
     }
 
+    /// Appends `first` to the first slice and `second` to the second slice, as
+    /// one pair.
+    ///
+    /// # Errors
+    ///
+    /// Hands both items back if the `PairVec` cannot make room for them.
+    #[inline]
+    pub fn try_push(&mut self, first: A, second: B) -> Result<(), (A, B)> {
+        if self.make_room(1).is_err() {
+            return Err((first, second));
+        }
+        // SAFETY: `make_room` just made room for one more pair.
+        unsafe { self.push_unchecked(first, second) };
+        Ok(())
+    }
+
     /// Makes room for at least `additional` more pairs. When the buffers are
     /// too small, it moves the pairs into new buffers with at least twice the
     /// old capacity, so a long run of pushes allocates only a few times.
@@ -421,12 +437,7 @@ unsafe impl<A, B> PairStorage for PairVec<A, B> {
 
     #[inline]
     fn try_push(&mut self, first: A, second: B) -> Result<(), (A, B)> {
-        if self.make_room(1).is_err() {
-            return Err((first, second));
-        }
-        // SAFETY: `make_room` just made room for one more pair.
-        unsafe { self.push_unchecked(first, second) };
-        Ok(())
+        PairVec::try_push(self, first, second)
     }
 
     #[inline]

@@ -64,6 +64,20 @@ fn growing_moves_every_pair_into_the_new_buffers() {
 }
 
 #[test]
+fn try_push_appends_a_pair_like_push() {
+    let mut pairs = PairVec::new();
+    for i in 0..10u8 {
+        assert_eq!(pairs.try_push(i, char::from(b'a' + i)), Ok(()));
+    }
+    assert!(pairs.first_slice().iter().copied().eq(0..10));
+    assert!(pairs
+        .second_slice()
+        .iter()
+        .copied()
+        .eq("abcdefghij".chars()));
+}
+
+#[test]
 fn ensure_room_makes_room_for_that_many_pushes() {
     let mut pairs = PairVec::<u8, String>::new();
     pairs.push(0, String::new());
