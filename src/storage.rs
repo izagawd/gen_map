@@ -48,7 +48,8 @@ use core::fmt;
 /// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n`
 ///   items, the next `n` calls of `try_push` must succeed, as long as no
 ///   other `&mut self` method of this trait runs in between.
-/// - `clear` must drop every item and leave the storage empty.
+/// - `clear` must drop every item and leave the storage empty. It must leave
+///   the storage empty even when dropping an item panics.
 /// - [`empty`](Self::empty) and [`with_capacity`](Self::with_capacity) must
 ///   return a storage with no items.
 /// - If the storage implements `IntoIterator<Item = Self::Item>`,
@@ -68,9 +69,9 @@ pub unsafe trait SliceStorage {
     /// Creates a storage with no items.
     fn empty() -> Self;
 
-    /// Creates a storage with no items and, if it can grow, room for
-    /// `capacity` of them. A storage with a fixed capacity ignores the
-    /// argument.
+    /// Creates a storage with no items and room for at least `capacity` of
+    /// them. A storage whose type limits how many items it can hold, such as an
+    /// `ArrayVec`, can ignore the argument.
     fn with_capacity(capacity: usize) -> Self;
 
     /// How many items the storage can hold before it has to grow, or in
@@ -239,7 +240,9 @@ impl<S> ReserveStorage for Vec<S> {}
 #[cfg_attr(docsrs, doc(cfg(feature = "arrayvec")))]
 // SAFETY: an `ArrayVec` keeps its items in order and in place, like a
 // `Vec`. Its `try_push` only fails when it is full, and `ensure_room`
-// returns `Ok` only when it has room for all `additional` items.
+// returns `Ok` only when it has room for all `additional` items. Its `clear`
+// sets the length to zero before it drops the items, so the storage is empty
+// even when a drop panics.
 unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
     type Item = S;
     type Error = arrayvec::CapacityError;

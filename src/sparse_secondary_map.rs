@@ -538,12 +538,13 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// if there is none.
     #[inline]
     pub fn remove(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
-        match self.slots.entry(key.idx()) {
-            hash_map::Entry::Occupied(entry) if entry.get().generation == key.generation() => {
-                Some(entry.remove().value)
-            }
-            _ => None,
+        let idx = key.idx();
+        // The map looks the index up first, so that removing a key without a
+        // value makes no room.
+        if self.slots.get(&idx)?.generation != key.generation() {
+            return None;
         }
+        self.slots.remove(&idx).map(|slot| slot.value)
     }
 
     /// Keeps only the values `f` returns `true` for, and removes the rest.

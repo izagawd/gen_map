@@ -139,3 +139,39 @@ fn a_small_vec_keeps_the_storage_contract() {
     check_growth::<smallvec::SmallVec<u32, 4>>();
     check_pop::<smallvec::SmallVec<u32, 2>>();
 }
+
+/// An item whose drop panics if it was made with `true`.
+struct Bomb(bool);
+
+impl Drop for Bomb {
+    fn drop(&mut self) {
+        if self.0 {
+            panic!("the drop of this item panics");
+        }
+    }
+}
+
+/// Pushes `count` items, the second of which panics when it is dropped, and
+/// checks that `clear` leaves the storage empty although that drop panics.
+/// `count` must fit the storage and be at least two.
+fn check_clear_with_a_panicking_drop<St: SliceStorage<Item = Bomb>>(count: usize) {
+    let mut storage = St::empty();
+    for i in 0..count {
+        assert!(storage.try_push(Bomb(i == 1)).is_ok());
+    }
+    let cleared = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| storage.clear()));
+    assert!(cleared.is_err());
+    assert!(storage.is_empty());
+}
+
+#[test]
+fn clear_leaves_each_built_in_storage_empty_when_a_drop_panics() {
+    check_clear_with_a_panicking_drop::<Vec<Bomb>>(3);
+    #[cfg(feature = "arrayvec")]
+    check_clear_with_a_panicking_drop::<arrayvec::ArrayVec<Bomb, 4>>(3);
+    // Three items fit inline, and six move the storage to the heap.
+    #[cfg(feature = "smallvec")]
+    check_clear_with_a_panicking_drop::<smallvec::SmallVec<Bomb, 4>>(3);
+    #[cfg(feature = "smallvec")]
+    check_clear_with_a_panicking_drop::<smallvec::SmallVec<Bomb, 4>>(6);
+}
