@@ -504,3 +504,21 @@ mod capped {
         assert!(map.release(a));
     }
 }
+
+#[test]
+fn a_panicking_drop_in_reset_leaves_an_empty_map() {
+    let tracker = DropTracker::new();
+    let mut map = DenseGenMap::new();
+    let a = map.insert(Bomb::new(&tracker, false));
+    map.insert(Bomb::new(&tracker, true));
+    map.insert(Bomb::new(&tracker, false));
+    assert!(catch_unwind(AssertUnwindSafe(|| map.reset())).is_err());
+    assert!(map.is_empty());
+    assert_eq!(map.slots_len(), 0);
+    assert!(map.get(a).is_none());
+    let b = map.insert(Bomb::new(&tracker, false));
+    assert!(map.get(b).is_some());
+    assert_eq!(map.slots_len(), 1);
+    drop(map);
+    tracker.assert_all_dropped_exactly_once(4);
+}

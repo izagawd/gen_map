@@ -3,12 +3,13 @@
 //! what that check cannot, such as the order of the values, drops, panics and
 //! storage errors.
 
-use super::{key_from_parts, DropTracker};
+use super::{key_from_parts, Bomb, DropTracker};
 use crate::{
     DenseError, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap, GenSlotItem, Key, MapConfig,
     NewerWins, SecondaryInsertError, Split,
 };
 use std::format;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
 
 /// `u8` keys, with every storage in a `Vec`.
@@ -253,4 +254,22 @@ mod capped {
         ));
         assert_eq!(map.slots_len(), 2);
     }
+}
+
+#[test]
+fn a_panicking_drop_in_clear_leaves_an_empty_map() {
+    let tracker = DropTracker::new();
+    let mut keys = GenMap::new();
+    let all: Vec<Key> = (0..4).map(|_| keys.insert(())).collect();
+    let mut map = DenseSecondaryMap::new();
+    for (i, &key) in all[..3].iter().enumerate() {
+        map.insert(key, Bomb::new(&tracker, i == 1)).unwrap();
+    }
+    assert!(catch_unwind(AssertUnwindSafe(|| map.clear())).is_err());
+    assert!(map.is_empty());
+    assert!(all[..3].iter().all(|&key| map.get(key).is_none()));
+    map.insert(all[3], Bomb::new(&tracker, false)).unwrap();
+    assert!(map.get(all[3]).is_some());
+    drop(map);
+    tracker.assert_all_dropped_exactly_once(4);
 }
