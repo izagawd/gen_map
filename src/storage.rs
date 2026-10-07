@@ -69,9 +69,9 @@ pub unsafe trait SliceStorage {
     /// Creates a storage with no items.
     fn empty() -> Self;
 
-    /// Creates a storage with no items and, if it can grow, room for
-    /// `capacity` of them. A storage with a fixed capacity ignores the
-    /// argument.
+    /// Creates a storage with no items and room for at least `capacity` of
+    /// them. A storage whose type limits how many items it can hold, such as an
+    /// `ArrayVec`, can ignore the argument.
     fn with_capacity(capacity: usize) -> Self;
 
     /// How many items the storage can hold before it has to grow, or in
