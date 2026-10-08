@@ -40,11 +40,10 @@ use core::iter::FusedIterator;
 ///   the same position in the second slice. The other slice methods, as
 ///   well as [`len`](Self::len) and [`is_empty`](Self::is_empty), must agree
 ///   with them, as the provided methods do.
-/// - Apart from `pop` and `clear`, and dropping the storage itself, no method
-///   may remove, drop, replace or change an item. That includes the methods
-///   of any other trait. An item only changes through the slices that the
-///   `_mut` methods return. Growing may move the items in memory, but must
-///   keep them as they are.
+/// - Apart from `pop` and `clear`, and dropping the storage itself, no method/function
+///   implemented in this trait may remove, drop, replace or change an item.
+///   An item only mutates through the slice methods.
+///   Growing may move the items in memory, but must keep them in the same order and indices.
 /// - `try_push` must either append both items and return `Ok`, or hand both
 ///   items back in `Err` and leave the storage as it was.
 /// - `pop` must take out the last pair and return it, or return `None` and

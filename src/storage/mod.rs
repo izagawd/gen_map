@@ -45,11 +45,10 @@ use core::fmt;
 ///   [`pop`](Self::pop) since, in the order they were pushed, and no others.
 ///   [`len`](Self::len) and [`is_empty`](Self::is_empty) must agree with them,
 ///   as the provided methods do.
-/// - Apart from `pop` and `clear`, and dropping the storage itself, no method
-///   may remove, drop, replace or change an item. That includes the methods of
-///   any other trait. An item only changes through the slice `as_mut_slice`
-///   returns. Growing may move the items in memory, but must keep them as they
-///   are.
+/// - Apart from `pop` and `clear`, and dropping the storage itself, no method/function
+///   implemented in this trait may remove, drop, replace or change an item.
+///   An item only mutates through the slice methods. Growing
+///   may move the items in memory, but must keep them in the same order and indices.
 /// - `try_push` must either append the item at the end and return `Ok`, or
 ///   hand the item back in `Err` and leave the storage as it was.
 /// - `pop` must take out the last item of the slice and return it, or return
