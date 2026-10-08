@@ -10,42 +10,44 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::{self, NonNull};
 use core::slice;
 
-/// A [`SliceStorage`] that keeps its items in a buffer on the heap, like a
-/// `Vec`, but stores its length and capacity as its length type, the second
-/// type parameter. The length type can be `u8`, `u16`, `u32`, `u64`, `u128`
-/// or `usize`, which is the default. A `LenVec` never holds more items than
-/// its length type can count, and with a `u32` length type it takes 16 bytes
-/// on a 64-bit target, where a `Vec` takes 24.
+/// A `SingleVec` keeps its items in one buffer on the heap, where a
+/// [`PairVec`](crate::PairVec) keeps them in two. It is a [`SliceStorage`]
+/// that works like a `Vec`, but it stores its length and capacity as its
+/// length type, the second type parameter. The length type can be `u8`,
+/// `u16`, `u32`, `u64`, `u128` or `usize`, which is the default. A
+/// `SingleVec` never holds more items than its length type can count, and
+/// with a `u32` length type it takes 16 bytes on a 64-bit target, where a
+/// `Vec` takes 24.
 ///
 /// [`DefaultMapConfig`](crate::DefaultMapConfig) keeps the slots of every map
-/// in a `LenVec` whose length type is the index type of the map's keys. A
-/// `LenVec` needs the `alloc` feature.
+/// in a `SingleVec` whose length type is the index type of the map's keys. A
+/// `SingleVec` needs the `alloc` feature.
 ///
-/// A `LenVec` derefs to a slice of its items. When its items take no space,
+/// A `SingleVec` derefs to a slice of its items. When its items take no space,
 /// it never allocates, and its capacity is the most items its length type can
 /// count.
 ///
-/// A `LenVec` drops its items in its own `Drop` implementation, so the
+/// A `SingleVec` drops its items in its own `Drop` implementation, so the
 /// compiler requires everything its items borrow to outlive it.
 ///
 /// # Examples
 ///
 /// ```
-/// use gen_map::LenVec;
+/// use gen_map::SingleVec;
 ///
-/// let mut items = LenVec::<&str, u32>::new();
+/// let mut items = SingleVec::<&str, u32>::new();
 /// items.push("a");
 /// items.push("b");
 /// assert_eq!(items[..], ["a", "b"]);
 /// assert_eq!(items.len(), 2);
 /// ```
-pub struct LenVec<T, L: KeyPiece = usize> {
+pub struct SingleVec<T, L: KeyPiece = usize> {
     buffer: Buffer<T, L>,
-    /// A `LenVec` owns the items in its buffer.
+    /// A `SingleVec` owns the items in its buffer.
     _items: PhantomData<T>,
 }
 
-/// The buffer of a [`LenVec`] or a [`LenVecIntoIter`], together with its
+/// The buffer of a [`SingleVec`] or a [`SingleVecIntoIter`], together with its
 /// capacity and how many of its items are initialized. Dropping a `Buffer`
 /// frees the memory without dropping any item in it.
 struct Buffer<T, L: KeyPiece> {
@@ -107,8 +109,8 @@ impl<T, L: KeyPiece> Drop for Buffer<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> LenVec<T, L> {
-    /// Creates a `LenVec` with no items. It allocates nothing until an item
+impl<T, L: KeyPiece> SingleVec<T, L> {
+    /// Creates a `SingleVec` with no items. It allocates nothing until an item
     /// is pushed.
     #[inline]
     #[must_use]
@@ -119,7 +121,7 @@ impl<T, L: KeyPiece> LenVec<T, L> {
         }
     }
 
-    /// Creates a `LenVec` with no items and room for at least `capacity` of
+    /// Creates a `SingleVec` with no items and room for at least `capacity` of
     /// them.
     ///
     /// # Panics
@@ -144,7 +146,7 @@ impl<T, L: KeyPiece> LenVec<T, L> {
     ///
     /// # Panics
     ///
-    /// Panics if the `LenVec` would hold more items than its length type can
+    /// Panics if the `SingleVec` would hold more items than its length type can
     /// count, or need a buffer that takes more than `isize::MAX` bytes. If an
     /// allocation fails, `push` calls `handle_alloc_error`, which aborts the
     /// program by default.
@@ -161,7 +163,7 @@ impl<T, L: KeyPiece> LenVec<T, L> {
     ///
     /// # Errors
     ///
-    /// Hands `item` back if the `LenVec` cannot make room for it.
+    /// Hands `item` back if the `SingleVec` cannot make room for it.
     #[inline]
     pub fn try_push(&mut self, item: T) -> Result<(), T> {
         if self.make_room(1).is_err() {
@@ -219,14 +221,14 @@ impl<T, L: KeyPiece> LenVec<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> Default for LenVec<T, L> {
+impl<T, L: KeyPiece> Default for SingleVec<T, L> {
     #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T, L: KeyPiece> Drop for LenVec<T, L> {
+impl<T, L: KeyPiece> Drop for SingleVec<T, L> {
     fn drop(&mut self) {
         let items = ptr::slice_from_raw_parts_mut(self.buffer.pointer.as_ptr(), self.buffer.len());
         // SAFETY: the first `len` items of the buffer are initialized, and
@@ -236,7 +238,7 @@ impl<T, L: KeyPiece> Drop for LenVec<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> Deref for LenVec<T, L> {
+impl<T, L: KeyPiece> Deref for SingleVec<T, L> {
     type Target = [T];
 
     #[inline]
@@ -246,7 +248,7 @@ impl<T, L: KeyPiece> Deref for LenVec<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> DerefMut for LenVec<T, L> {
+impl<T, L: KeyPiece> DerefMut for SingleVec<T, L> {
     #[inline]
     fn deref_mut(&mut self) -> &mut [T] {
         // SAFETY: the first `len` items of the buffer are initialized, and
@@ -262,7 +264,7 @@ impl<T, L: KeyPiece> DerefMut for LenVec<T, L> {
 // copies the items into the new buffer without changing them. Once
 // `ensure_room` returns `Ok` for `n` items, the capacity is at least the
 // length plus `n`, so the next `n` pushes fit without growing.
-unsafe impl<T, L: KeyPiece> SliceStorage for LenVec<T, L> {
+unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     type Item = T;
     type Error = ReserveError;
 
@@ -273,7 +275,7 @@ unsafe impl<T, L: KeyPiece> SliceStorage for LenVec<T, L> {
 
     #[inline]
     fn with_capacity(capacity: usize) -> Self {
-        LenVec::with_capacity(capacity)
+        SingleVec::with_capacity(capacity)
     }
 
     #[inline]
@@ -298,7 +300,7 @@ unsafe impl<T, L: KeyPiece> SliceStorage for LenVec<T, L> {
 
     #[inline]
     fn try_push(&mut self, item: T) -> Result<(), T> {
-        LenVec::try_push(self, item)
+        SingleVec::try_push(self, item)
     }
 
     #[inline]
@@ -333,17 +335,17 @@ unsafe impl<T, L: KeyPiece> SliceStorage for LenVec<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> ReserveStorage for LenVec<T, L> {}
+impl<T, L: KeyPiece> ReserveStorage for SingleVec<T, L> {}
 
-// SAFETY: a `LenVec` owns its items the way a `Vec` does, so it can move to
+// SAFETY: a `SingleVec` owns its items the way a `Vec` does, so it can move to
 // another thread when its items can.
-unsafe impl<T: Send, L: KeyPiece> Send for LenVec<T, L> {}
+unsafe impl<T: Send, L: KeyPiece> Send for SingleVec<T, L> {}
 
-// SAFETY: a shared `LenVec` only hands out shared references to its items, so
-// it can be shared between threads when its items can.
-unsafe impl<T: Sync, L: KeyPiece> Sync for LenVec<T, L> {}
+// SAFETY: a shared `SingleVec` only hands out shared references to its items,
+// so it can be shared between threads when its items can.
+unsafe impl<T: Sync, L: KeyPiece> Sync for SingleVec<T, L> {}
 
-impl<T: Clone, L: KeyPiece> Clone for LenVec<T, L> {
+impl<T: Clone, L: KeyPiece> Clone for SingleVec<T, L> {
     fn clone(&self) -> Self {
         let mut clone = Self::with_capacity(self.buffer.len());
         for item in self.iter() {
@@ -353,14 +355,14 @@ impl<T: Clone, L: KeyPiece> Clone for LenVec<T, L> {
     }
 }
 
-impl<T: fmt::Debug, L: KeyPiece> fmt::Debug for LenVec<T, L> {
+impl<T: fmt::Debug, L: KeyPiece> fmt::Debug for SingleVec<T, L> {
     /// Lists the items in the order they were pushed.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
 }
 
-impl<T, L: KeyPiece> FromIterator<T> for LenVec<T, L> {
+impl<T, L: KeyPiece> FromIterator<T> for SingleVec<T, L> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let mut items = Self::with_capacity(iter.size_hint().0);
@@ -371,17 +373,17 @@ impl<T, L: KeyPiece> FromIterator<T> for LenVec<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> IntoIterator for LenVec<T, L> {
+impl<T, L: KeyPiece> IntoIterator for SingleVec<T, L> {
     type Item = T;
-    type IntoIter = LenVecIntoIter<T, L>;
+    type IntoIter = SingleVecIntoIter<T, L>;
 
     #[inline]
-    fn into_iter(self) -> LenVecIntoIter<T, L> {
+    fn into_iter(self) -> SingleVecIntoIter<T, L> {
         let items = ManuallyDrop::new(self);
         // SAFETY: `items` is never dropped, so the buffer moves into the
         // iterator and is only freed once, by the iterator.
         let buffer = unsafe { ptr::read(&items.buffer) };
-        LenVecIntoIter {
+        SingleVecIntoIter {
             buffer,
             start: 0,
             _items: PhantomData,
@@ -389,12 +391,12 @@ impl<T, L: KeyPiece> IntoIterator for LenVec<T, L> {
     }
 }
 
-/// Owning iterator over the items of a [`LenVec`], in the order they were
-/// pushed. It is created by consuming a `LenVec` with `into_iter`. Dropping
+/// Owning iterator over the items of a [`SingleVec`], in the order they were
+/// pushed. It is created by consuming a `SingleVec` with `into_iter`. Dropping
 /// it drops the items it has not yielded yet.
-pub struct LenVecIntoIter<T, L: KeyPiece = usize> {
-    /// The buffer of the `LenVec`. Its length is one past the position of the
-    /// item that `next_back` yields.
+pub struct SingleVecIntoIter<T, L: KeyPiece = usize> {
+    /// The buffer of the `SingleVec`. Its length is one past the position of
+    /// the item that `next_back` yields.
     buffer: Buffer<T, L>,
     /// The position of the item that `next` yields. The items from `start` up
     /// to the length of the buffer are initialized and not yielded yet.
@@ -403,7 +405,7 @@ pub struct LenVecIntoIter<T, L: KeyPiece = usize> {
     _items: PhantomData<T>,
 }
 
-impl<T, L: KeyPiece> Iterator for LenVecIntoIter<T, L> {
+impl<T, L: KeyPiece> Iterator for SingleVecIntoIter<T, L> {
     type Item = T;
 
     #[inline]
@@ -425,7 +427,7 @@ impl<T, L: KeyPiece> Iterator for LenVecIntoIter<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> DoubleEndedIterator for LenVecIntoIter<T, L> {
+impl<T, L: KeyPiece> DoubleEndedIterator for SingleVecIntoIter<T, L> {
     #[inline]
     fn next_back(&mut self) -> Option<T> {
         if self.start == self.buffer.len() {
@@ -438,10 +440,10 @@ impl<T, L: KeyPiece> DoubleEndedIterator for LenVecIntoIter<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> ExactSizeIterator for LenVecIntoIter<T, L> {}
-impl<T, L: KeyPiece> FusedIterator for LenVecIntoIter<T, L> {}
+impl<T, L: KeyPiece> ExactSizeIterator for SingleVecIntoIter<T, L> {}
+impl<T, L: KeyPiece> FusedIterator for SingleVecIntoIter<T, L> {}
 
-impl<T, L: KeyPiece> Drop for LenVecIntoIter<T, L> {
+impl<T, L: KeyPiece> Drop for SingleVecIntoIter<T, L> {
     fn drop(&mut self) {
         let remaining = self.buffer.len() - self.start;
         // SAFETY: `start` is never more than the length, which is never more
@@ -457,8 +459,8 @@ impl<T, L: KeyPiece> Drop for LenVecIntoIter<T, L> {
 }
 
 // SAFETY: the iterator owns the items it has not yielded yet, the way a
-// `LenVec` owns its items.
-unsafe impl<T: Send, L: KeyPiece> Send for LenVecIntoIter<T, L> {}
+// `SingleVec` owns its items.
+unsafe impl<T: Send, L: KeyPiece> Send for SingleVecIntoIter<T, L> {}
 
 // SAFETY: a shared iterator hands out no references to its items.
-unsafe impl<T: Sync, L: KeyPiece> Sync for LenVecIntoIter<T, L> {}
+unsafe impl<T: Sync, L: KeyPiece> Sync for SingleVecIntoIter<T, L> {}

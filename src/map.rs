@@ -204,8 +204,8 @@ fn freed_parts<C: GenMapConfig>(
 
 /// The error the storage of a `GenMap<T, C>` gives when it cannot make room
 /// for another slot. It is [`ReserveError`](crate::ReserveError) for a
-/// [`LenVec`](crate::LenVec), `TryReserveError` for a `Vec`, `CapacityError`
-/// for an `ArrayVec` and `SmallVecError` for a `SmallVec`.
+/// [`SingleVec`](crate::SingleVec), `TryReserveError` for a `Vec`,
+/// `CapacityError` for an `ArrayVec` and `SmallVecError` for a `SmallVec`.
 pub type StorageError<T, C> = <<C as GenMapConfig>::Storage<MapSlot<T, C>> as SliceStorage>::Error;
 
 /// Where the next inserted value will go, worked out before anything is

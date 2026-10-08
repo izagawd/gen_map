@@ -126,12 +126,12 @@
 //!   map retires a slot with no generations left or starts its generation over
 //!   at zero.
 //! - [`Storage`](GenMapConfig::Storage) is the collection the map keeps its
-//!   slots in. It can be a [`LenVec`], a `Vec`, an `ArrayVec`, a `SmallVec`
+//!   slots in. It can be a [`SingleVec`], a `Vec`, an `ArrayVec`, a `SmallVec`
 //!   or any other type that implements [`SliceStorage`].
 //!
 //! When its `C` parameter is left out, as in `GenMap<T>`, a map uses
-//! [`DefaultMapConfig`]. Maps with that config hand out keys with a `u32`
-//! index and a `u32` generation, keep their slots in a [`LenVec`] with a `u32`
+//! [`DefaultMapConfig`]. Maps with that config hand out keys with a `u32` index
+//! and a `u32` generation, keep their slots in a [`SingleVec`] with a `u32`
 //! length and retire a slot that has no generations left. [`GenMap::new`] only
 //! exists for the default config, so use [`GenMap::new_with_config`] for any
 //! other.
@@ -193,7 +193,7 @@
 //!
 //! - `std` is on by default, and it turns `alloc` on too. It adds
 //!   [`SparseSecondaryMap`], which keeps its values in std's `HashMap`.
-//! - `alloc` adds the [`LenVec`], `Vec` and [`PairVec`] storages and
+//! - `alloc` adds the [`SingleVec`], `Vec` and [`PairVec`] storages and
 //!   [`DefaultMapConfig`]. Without it, every map needs a config of its own.
 //! - `arrayvec` lets a config use `arrayvec::ArrayVec` as a storage. An
 //!   `ArrayVec` has a fixed capacity and never allocates.
@@ -239,8 +239,6 @@ mod error;
 mod key;
 mod key_layout;
 mod key_piece;
-#[cfg(feature = "alloc")]
-mod len_vec;
 mod map;
 mod pair_storage;
 #[cfg(feature = "alloc")]
@@ -248,6 +246,8 @@ mod pair_vec;
 mod parity;
 mod replace_strategy;
 mod secondary_map;
+#[cfg(feature = "alloc")]
+mod single_vec;
 mod slot;
 #[cfg(feature = "std")]
 mod sparse_secondary_map;
@@ -281,9 +281,6 @@ pub use error::{
 pub use key::Key;
 pub use key_layout::{Packed, Split};
 pub use key_piece::KeyPiece;
-#[cfg(feature = "alloc")]
-#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-pub use len_vec::{LenVec, LenVecIntoIter};
 pub use map::{
     Drain, GenMap, GenMapRawParts, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig,
     MapSlot, StorageError, VacantEntry, Values, ValuesMut,
@@ -301,6 +298,9 @@ pub use secondary_map::{
     SecondaryMap, SecondaryMapRawParts, SecondaryMapSlot, SecondaryStorageError, SecondaryValues,
     SecondaryValuesMut,
 };
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub use single_vec::{SingleVec, SingleVecIntoIter};
 pub use slot::{GenSlotItem, Parity, ParityMut, ParityRef, SecondarySlotItem, Slot};
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]

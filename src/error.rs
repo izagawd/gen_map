@@ -15,7 +15,7 @@ pub enum FullError<S> {
 
     /// A storage could not make room for the value. For a `GenMap`, that is
     /// the slot storage, and none of the slots are free. The field says why,
-    /// which for a [`LenVec`](crate::LenVec) is a
+    /// which for a [`SingleVec`](crate::SingleVec) is a
     /// [`ReserveError`](crate::ReserveError).
     StorageFull(S),
 }
@@ -334,8 +334,8 @@ impl<S: fmt::Display, P: fmt::Display> fmt::Display for DenseError<S, P> {
     }
 }
 
-/// Why a [`LenVec`](crate::LenVec) or a [`PairVec`](crate::PairVec) could not
-/// make room for more items. This error needs the `alloc` feature.
+/// Why a [`SingleVec`](crate::SingleVec) or a [`PairVec`](crate::PairVec) could
+/// not make room for more items. This error needs the `alloc` feature.
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

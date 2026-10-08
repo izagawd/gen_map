@@ -19,7 +19,6 @@ mod iter;
 mod key;
 mod key_at;
 mod key_piece;
-mod len_vec;
 mod model;
 mod overflow;
 mod packed;
@@ -31,6 +30,7 @@ mod reset;
 mod retain;
 mod retire;
 mod secondary;
+mod single_vec;
 // The `size` tests expect the sizes that types have on 64-bit targets.
 #[cfg(target_pointer_width = "64")]
 mod size;

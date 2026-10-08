@@ -1,9 +1,9 @@
-//! Tests for `LenVec` on its own. The maps keep their slots in it under the
+//! Tests for `SingleVec` on its own. The maps keep their slots in it under the
 //! default config, so the map tests cover it as well.
 
 use super::model::Rng;
 use super::{Bomb, DropTracker};
-use crate::{LenVec, LenVecIntoIter, ReserveError, SliceStorage};
+use crate::{ReserveError, SingleVec, SingleVecIntoIter, SliceStorage};
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::{String, ToString};
@@ -11,7 +11,7 @@ use std::vec::Vec;
 
 #[test]
 fn pushes_and_pops_work_like_a_vec() {
-    let mut items = LenVec::<_>::new();
+    let mut items = SingleVec::<_>::new();
     assert!(items.is_empty());
     for i in 0..10u32 {
         items.push(i.to_string());
@@ -25,7 +25,7 @@ fn pushes_and_pops_work_like_a_vec() {
 
 #[test]
 fn the_slice_it_derefs_to_changes_the_items_in_place() {
-    let mut items: LenVec<u32, u16> = (0..4).collect();
+    let mut items: SingleVec<u32, u16> = (0..4).collect();
     items.swap(0, 3);
     items[1] = 100;
     assert_eq!(items[..], [3, 100, 2, 0]);
@@ -34,7 +34,7 @@ fn the_slice_it_derefs_to_changes_the_items_in_place() {
 
 #[test]
 fn growing_moves_every_item_into_the_new_buffer() {
-    let mut items = LenVec::<_, u32>::with_capacity(3);
+    let mut items = SingleVec::<_, u32>::with_capacity(3);
     let capacity = items.capacity();
     assert!(capacity >= 3);
     // Pushing as many items as there is room for needs no new buffer.
@@ -52,7 +52,7 @@ fn growing_moves_every_item_into_the_new_buffer() {
 
 #[test]
 fn ensure_room_makes_room_for_that_many_pushes() {
-    let mut items = LenVec::<String, u16>::new();
+    let mut items = SingleVec::<String, u16>::new();
     items.push(String::new());
     items.ensure_room(20).unwrap();
     let capacity = items.capacity();
@@ -65,7 +65,7 @@ fn ensure_room_makes_room_for_that_many_pushes() {
 
 #[test]
 fn room_that_no_buffer_can_have_is_an_error() {
-    let mut items = LenVec::<u64>::new();
+    let mut items = SingleVec::<u64>::new();
     items.push(1);
     assert_eq!(
         items.ensure_room(usize::MAX),
@@ -82,7 +82,7 @@ fn room_that_no_buffer_can_have_is_an_error() {
 
 #[test]
 fn the_length_type_caps_how_many_items_fit() {
-    let mut items = LenVec::<u32, u8>::new();
+    let mut items = SingleVec::<u32, u8>::new();
     for i in 0..255 {
         items.push(i);
     }
@@ -97,14 +97,14 @@ fn the_length_type_caps_how_many_items_fit() {
 
 #[test]
 fn a_capacity_the_length_type_cannot_count_panics() {
-    assert_eq!(LenVec::<u8, u8>::with_capacity(255).capacity(), 255);
-    assert!(catch_unwind(|| LenVec::<u8, u8>::with_capacity(256)).is_err());
-    assert!(catch_unwind(|| LenVec::<(), u8>::with_capacity(256)).is_err());
+    assert_eq!(SingleVec::<u8, u8>::with_capacity(255).capacity(), 255);
+    assert!(catch_unwind(|| SingleVec::<u8, u8>::with_capacity(256)).is_err());
+    assert!(catch_unwind(|| SingleVec::<(), u8>::with_capacity(256)).is_err());
 }
 
 #[test]
 fn items_that_take_no_space_need_no_buffer() {
-    let mut units = LenVec::<()>::new();
+    let mut units = SingleVec::<()>::new();
     assert_eq!(units.capacity(), usize::MAX);
     for _ in 0..1000 {
         units.push(());
@@ -119,7 +119,7 @@ fn items_that_take_no_space_need_no_buffer() {
     assert_eq!(units.into_iter().count(), 999);
 
     // The length type still caps how many of them fit.
-    let mut units = LenVec::<(), u8>::new();
+    let mut units = SingleVec::<(), u8>::new();
     assert_eq!(units.capacity(), 255);
     for _ in 0..255 {
         units.push(());
@@ -130,7 +130,7 @@ fn items_that_take_no_space_need_no_buffer() {
 #[test]
 fn every_item_is_dropped_exactly_once() {
     let tracker = DropTracker::new();
-    let mut items = LenVec::<_, u16>::new();
+    let mut items = SingleVec::<_, u16>::new();
     for _ in 0..10 {
         items.push(tracker.make_item());
     }
@@ -148,7 +148,7 @@ fn every_item_is_dropped_exactly_once() {
 #[test]
 fn clear_drops_every_item_and_empties_the_vec_when_a_drop_panics() {
     let tracker = DropTracker::new();
-    let mut items = LenVec::<_, u8>::new();
+    let mut items = SingleVec::<_, u8>::new();
     for i in 0..6 {
         items.push(Bomb::new(&tracker, i == 2));
     }
@@ -163,7 +163,7 @@ fn clear_drops_every_item_and_empties_the_vec_when_a_drop_panics() {
 #[test]
 fn dropping_the_vec_drops_every_item_when_a_drop_panics() {
     let tracker = DropTracker::new();
-    let mut items = LenVec::<_>::new();
+    let mut items = SingleVec::<_>::new();
     for i in 0..5 {
         items.push(Bomb::new(&tracker, i == 1));
     }
@@ -174,7 +174,7 @@ fn dropping_the_vec_drops_every_item_when_a_drop_panics() {
 #[test]
 fn into_iter_yields_from_both_ends_and_drops_the_items_it_did_not_yield() {
     let tracker = DropTracker::new();
-    let items: LenVec<_, u32> = (0..6).map(|_| tracker.make_item()).collect();
+    let items: SingleVec<_, u32> = (0..6).map(|_| tracker.make_item()).collect();
     let mut iter = items.into_iter();
     assert_eq!(iter.len(), 6);
     assert!(iter.next().is_some());
@@ -187,7 +187,7 @@ fn into_iter_yields_from_both_ends_and_drops_the_items_it_did_not_yield() {
 #[test]
 fn into_iter_drops_the_rest_when_a_drop_panics() {
     let tracker = DropTracker::new();
-    let items: LenVec<_> = (0..4).map(|i| Bomb::new(&tracker, i == 2)).collect();
+    let items: SingleVec<_> = (0..4).map(|i| Bomb::new(&tracker, i == 2)).collect();
     let mut iter = items.into_iter();
     drop(iter.next());
     assert!(catch_unwind(AssertUnwindSafe(|| drop(iter))).is_err());
@@ -196,26 +196,26 @@ fn into_iter_drops_the_rest_when_a_drop_panics() {
 
 #[test]
 fn clone_and_debug_show_the_same_items() {
-    let items: LenVec<&str, u8> = ["a", "b"].into_iter().collect();
+    let items: SingleVec<&str, u8> = ["a", "b"].into_iter().collect();
     let copy = items.clone();
     assert_eq!(copy[..], items[..]);
     assert_eq!(format!("{items:?}"), r#"["a", "b"]"#);
-    assert!(LenVec::<u8>::default().is_empty());
+    assert!(SingleVec::<u8>::default().is_empty());
 }
 
 #[test]
-fn a_len_vec_and_its_iterator_can_move_between_threads() {
+fn a_single_vec_and_its_iterator_can_move_between_threads() {
     fn assert_send_and_sync<T: Send + Sync>() {}
-    assert_send_and_sync::<LenVec<String, u32>>();
-    assert_send_and_sync::<LenVecIntoIter<String, u32>>();
+    assert_send_and_sync::<SingleVec<String, u32>>();
+    assert_send_and_sync::<SingleVecIntoIter<String, u32>>();
 }
 
 #[test]
-fn a_len_vec_agrees_with_a_vec() {
+fn a_single_vec_agrees_with_a_vec() {
     let (seeds, steps) = if cfg!(miri) { (2, 200) } else { (16, 2000) };
     for seed in 0..seeds {
         let mut rng = Rng(seed);
-        let mut items = LenVec::<String, u16>::new();
+        let mut items = SingleVec::<String, u16>::new();
         let mut expected = Vec::new();
         for _ in 0..steps {
             match rng.below(10) {

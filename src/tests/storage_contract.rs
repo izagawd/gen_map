@@ -2,7 +2,7 @@
 //! without a map, so the methods a map seldom calls are covered too.
 
 use super::{DropItem, DropTracker};
-use crate::{LenVec, ReserveStorage, SliceStorage};
+use crate::{ReserveStorage, SingleVec, SliceStorage};
 use std::vec::Vec;
 
 /// The ids of the items in `storage`, in order.
@@ -85,12 +85,12 @@ fn a_vec_keeps_the_storage_contract() {
 }
 
 #[test]
-fn a_len_vec_keeps_the_storage_contract() {
-    check_storage::<LenVec<DropItem>>(6);
-    check_storage::<LenVec<DropItem, u8>>(6);
-    check_growth::<LenVec<u32>>();
-    check_growth::<LenVec<u32, u16>>();
-    check_pop::<LenVec<u32, u8>>();
+fn a_single_vec_keeps_the_storage_contract() {
+    check_storage::<SingleVec<DropItem>>(6);
+    check_storage::<SingleVec<DropItem, u8>>(6);
+    check_growth::<SingleVec<u32>>();
+    check_growth::<SingleVec<u32, u16>>();
+    check_pop::<SingleVec<u32, u8>>();
 }
 
 #[cfg(feature = "arrayvec")]
@@ -176,7 +176,7 @@ fn check_clear_with_a_panicking_drop<St: SliceStorage<Item = Bomb>>(count: usize
 #[test]
 fn clear_leaves_each_built_in_storage_empty_when_a_drop_panics() {
     check_clear_with_a_panicking_drop::<Vec<Bomb>>(3);
-    check_clear_with_a_panicking_drop::<LenVec<Bomb, u8>>(3);
+    check_clear_with_a_panicking_drop::<SingleVec<Bomb, u8>>(3);
     #[cfg(feature = "arrayvec")]
     check_clear_with_a_panicking_drop::<arrayvec::ArrayVec<Bomb, 4>>(3);
     // Three items fit inline, and six move the storage to the heap.

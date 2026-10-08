@@ -13,8 +13,8 @@ use core::slice;
 /// Both buffers always have room for the same number of items, so a
 /// `PairVec` stores one length and one capacity for both buffers. It stores
 /// them as its length type, the third type parameter, which works the same
-/// way as the length type of a [`LenVec`](crate::LenVec). The length type is
-/// `usize` when it is left out.
+/// way as the length type of a [`SingleVec`](crate::SingleVec). The length
+/// type is `usize` when it is left out.
 ///
 /// [`DefaultMapConfig`](crate::DefaultMapConfig) keeps the keys and values of
 /// the dense maps in a `PairVec` whose length type is the index type of the

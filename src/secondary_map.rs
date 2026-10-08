@@ -86,8 +86,8 @@ type Strategy<C> = <C as SecondaryMapConfig>::ReplaceStrategy;
 
 /// The error the storage of a `SecondaryMap<T, C>` gives when it cannot make
 /// room for a slot. It is [`ReserveError`](crate::ReserveError) for a
-/// [`LenVec`](crate::LenVec), `TryReserveError` for a `Vec`, `CapacityError`
-/// for an `ArrayVec` and `SmallVecError` for a `SmallVec`.
+/// [`SingleVec`](crate::SingleVec), `TryReserveError` for a `Vec`,
+/// `CapacityError` for an `ArrayVec` and `SmallVecError` for a `SmallVec`.
 pub type SecondaryStorageError<T, C> = <Slots<T, C> as SliceStorage>::Error;
 
 /// What [`SecondaryMap::insert`] returns.
