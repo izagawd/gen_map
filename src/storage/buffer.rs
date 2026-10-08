@@ -58,22 +58,23 @@ pub(crate) fn allocate<T>(capacity: usize) -> Result<NonNull<T>, ReserveError> {
     NonNull::new(pointer.cast::<T>()).ok_or(ReserveError::AllocError(layout))
 }
 
-/// Frees a buffer that [`allocate`] returned for `capacity` items. A buffer
-/// that holds no memory is left as it is.
+/// Frees a buffer that the global allocator allocated for `capacity` items,
+/// as [`allocate`] does. A buffer that holds no memory is left as it is.
 ///
 /// # Safety
 ///
-/// `pointer` must have come from `allocate` for `capacity` items, or the
-/// buffer must be for `capacity` items that take no space. Nothing may use
-/// the buffer afterwards.
+/// Unless `capacity` items take no space, the global allocator must have
+/// allocated `pointer` with the layout that `Layout::array` gives for
+/// `capacity` items. Nothing may use the buffer afterwards.
 pub(crate) unsafe fn deallocate<T>(pointer: NonNull<T>, capacity: usize) {
-    // SAFETY: `allocate` made this layout for `capacity` items, or `capacity`
-    // items take no space, so making the layout again succeeds.
+    // SAFETY: the caller promises that the buffer was allocated with this
+    // layout, or that `capacity` items take no space, so making the layout
+    // again succeeds.
     let layout = unsafe { Layout::array::<T>(capacity).unwrap_unchecked() };
     if layout.size() != 0 {
-        // SAFETY: the layout takes space, so `allocate` allocated `pointer`
-        // with this layout, and the caller promises that nothing uses the
-        // buffer afterwards.
+        // SAFETY: the layout takes space, so the caller promises that the
+        // global allocator allocated `pointer` with it and that nothing uses
+        // the buffer afterwards.
         unsafe { dealloc(pointer.as_ptr().cast(), layout) };
     }
 }

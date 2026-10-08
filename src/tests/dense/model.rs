@@ -109,8 +109,8 @@ impl DenseSecondaryMapConfig for Spill {
     type PairStorage<K, V> = SplitPair<smallvec::SmallVec<K, 4>, smallvec::SmallVec<V, 4>>;
 }
 
-/// Twelve inline slots, values and keys, so inserts fail once the map is
-/// full.
+/// Twelve inline slots, keys and values, so an insert fails once it needs a
+/// thirteenth of any of them.
 #[cfg(feature = "arrayvec")]
 struct Inline;
 
@@ -604,9 +604,9 @@ where
                     if let Some(key) = pick(&known, &mut rng) {
                         if let Some(old) = sparse.get_mut(key) {
                             *old = value;
-                            // SAFETY: the sparse map has a value for `key`, and
-                            // `check_secondary` confirmed after the last step that
-                            // both maps hold the same keys.
+                            // SAFETY: the sparse map has a value for `key`,
+                            // and `check_secondary` confirmed after the last
+                            // step that both maps hold the same keys.
                             *unsafe { dense.get_unchecked_mut(key) } = value;
                         }
                     }

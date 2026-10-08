@@ -363,8 +363,8 @@ where
 }
 
 /// Checks that every map finds each of its values under that value's key. A
-/// dense map must also keep each key next to its value, and exactly one of its
-/// slots must hold each value.
+/// dense map must also keep each key at the same position as its value, and
+/// exactly one of its slots must hold each value.
 fn check<C>(
     sparse: &GenMap<Fragile, C>,
     dense: &DenseGenMap<Fragile, C>,

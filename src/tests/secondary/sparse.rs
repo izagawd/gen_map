@@ -1,8 +1,7 @@
-//! Tests for `SparseSecondaryMap`. The model test at the end runs the same
-//! random operations on a `SecondaryMap` and checks after every step that
-//! both maps give the same results and hold the same keys and values. The
-//! other tests cover what that check cannot, such as hashers, drops and
-//! memory.
+//! Tests for `SparseSecondaryMap`. The model tests run the same random
+//! operations on a `SecondaryMap` and check after every step that both maps
+//! give the same results and hold the same keys and values. The other tests
+//! cover what that check cannot, such as hashers, drops and memory.
 
 use crate::tests::model::Rng;
 use crate::tests::{key_from_parts, Cfg, DropTracker};

@@ -9,16 +9,17 @@ use core::mem::{self, size_of, ManuallyDrop};
 use core::ptr::{self, NonNull};
 use core::slice;
 
-/// A [`PairStorage`] that keeps its two slices in two buffers on the heap.
+/// A `PairVec` is a [`PairStorage`] that keeps its two slices in two buffers
+/// on the heap.
 /// Both buffers always have room for the same number of items, so a
 /// `PairVec` stores one length and one capacity for both buffers. It stores
 /// them as its length type, the third type parameter, which works the same
 /// way as the length type of a [`SingleVec`](crate::SingleVec). The length
 /// type is `usize` when it is left out.
 ///
-/// [`DefaultMapConfig`](crate::DefaultMapConfig) keeps the keys and values of
-/// the dense maps in a `PairVec` whose length type is the index type of the
-/// keys. A `PairVec` needs the `alloc` feature.
+/// With [`DefaultMapConfig`](crate::DefaultMapConfig), the dense maps keep
+/// their keys and values in a `PairVec` whose length type is the index type
+/// of the keys. A `PairVec` needs the `alloc` feature.
 ///
 /// A slice whose items take no space needs no buffer. When the items of
 /// both slices take no space, a `PairVec` never allocates, and its capacity
@@ -157,9 +158,10 @@ impl<A, B, L: KeyPiece> Buffers<A, B, L> {
 impl<A, B, L: KeyPiece> Drop for Buffers<A, B, L> {
     fn drop(&mut self) {
         let capacity = self.capacity();
-        // SAFETY: each buffer either came from `allocate` for `capacity`
-        // items, or is for `capacity` items that take no space. Nothing uses
-        // the buffers after this.
+        // SAFETY: unless `capacity` items of its slice take no space, each
+        // buffer was allocated with the layout `deallocate` expects, by
+        // `allocate` or as the rules of `PairVecRawParts` require. Nothing
+        // uses the buffers after this.
         unsafe {
             deallocate(self.first, capacity);
             deallocate(self.second, capacity);
@@ -236,7 +238,7 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
 
     /// Makes room for at least `additional` more pairs. When the buffers are
     /// too small, it moves the pairs into new buffers with at least twice the
-    /// old capacity.
+    /// old capacity, unless the length type cannot count that many pairs.
     fn make_room(&mut self, additional: usize) -> Result<(), ReserveError> {
         let len = self.buffers.len();
         let required = len
@@ -315,7 +317,9 @@ impl<A, B, L: KeyPiece> Drop for PairVec<A, B, L> {
 // buffers without changing them. Once `ensure_room` returns `Ok` for `n`
 // pairs, the capacity is at least the length plus `n`, so the next `n`
 // pushes fit without growing. The two buffers are separate allocations or
-// hold no memory, so the two mutable slices never overlap.
+// hold no memory, so the two mutable slices never overlap. Only
+// `with_capacity` panics on its own, and `clear` only panics when dropping an
+// item does.
 unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     type First = A;
     type Second = B;
@@ -605,8 +609,8 @@ unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVecIntoIter<A, B, L> {}
 ///   with the layout that `Layout::array` gives for `capacity` of those items.
 ///   Otherwise `first` only has to be aligned for those items, as a dangling
 ///   pointer is. The same goes for `second` and the items of the second slice.
-/// - When the items of both slices take space, `first` and `second` point at
-///   two different buffers.
+/// - When the items of both slices take space and `capacity` is above zero,
+///   `first` and `second` point at two different buffers.
 /// - `len` is not more than `capacity` or the largest `usize`.
 /// - The first `len` items of both buffers are initialized.
 /// - Nothing else uses, drops or frees the buffers or their items.
@@ -640,13 +644,15 @@ pub struct PairVecRawParts<A, B, L: KeyPiece = usize> {
     // so the compiler catches a field that only one of them has, but nothing
     // catches a change in order. Think twice before removing this comment,
     // because it is the only thing that keeps the two orders the same.
-    /// The buffer of the first slice, which has room for `capacity` items.
+    /// `first` points at the buffer of the first slice, which has room for
+    /// `capacity` items.
     pub first: NonNull<A>,
-    /// The buffer of the second slice, which has room for `capacity` items.
+    /// `second` points at the buffer of the second slice, which has room for
+    /// `capacity` items.
     pub second: NonNull<B>,
-    /// How many items each buffer has room for.
+    /// `capacity` is how many items each buffer has room for.
     pub capacity: L,
-    /// The number of pairs. The first `len` items of each buffer are
+    /// `len` is the number of pairs. The first `len` items of each buffer are
     /// initialized.
     pub len: L,
 }
@@ -695,7 +701,9 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
     }
 
     /// Builds a vec from the fields that
-    /// [`into_raw_parts`](Self::into_raw_parts) takes a vec apart into.
+    /// [`into_raw_parts`](Self::into_raw_parts) takes a vec apart into. When
+    /// the items of both slices take no space, the vec's capacity is the
+    /// largest value of the length type, whatever `capacity` the parts hold.
     ///
     /// # Safety
     ///
@@ -715,7 +723,11 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
             buffers: Buffers {
                 first,
                 second,
-                capacity,
+                capacity: if takes_no_space::<A, B>() {
+                    L::MAX
+                } else {
+                    capacity
+                },
                 len,
             },
             _items: PhantomData,

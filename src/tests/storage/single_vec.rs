@@ -289,8 +289,12 @@ fn raw_parts_of_items_that_take_no_space_keep_their_count() {
     for _ in 0..3 {
         units.push(());
     }
-    let parts = units.into_raw_parts();
+    let mut parts = units.into_raw_parts();
     assert_eq!((parts.capacity, parts.len), (255, 3));
+    // Items that take no space need no buffer, so any capacity of at least
+    // `len` follows the rules, and the vec's capacity is still the largest
+    // `u8`.
+    parts.capacity = 3;
     let units = unsafe { SingleVec::from_raw_parts(parts) };
-    assert_eq!(units.len(), 3);
+    assert_eq!((units.capacity(), units.len()), (255, 3));
 }

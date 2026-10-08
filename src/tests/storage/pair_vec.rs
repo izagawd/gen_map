@@ -340,6 +340,22 @@ fn raw_parts_give_back_the_same_vec() {
 }
 
 #[test]
+fn raw_parts_of_pairs_that_take_no_space_keep_their_count() {
+    let mut pairs = PairVec::<(), (), u8>::new();
+    for _ in 0..3 {
+        pairs.push((), ());
+    }
+    let mut parts = pairs.into_raw_parts();
+    assert_eq!((parts.capacity, parts.len), (255, 3));
+    // Items that take no space need no buffers, so any capacity of at least
+    // `len` follows the rules, and the vec's capacity is still the largest
+    // `u8`.
+    parts.capacity = 3;
+    let pairs = unsafe { PairVec::from_raw_parts(parts) };
+    assert_eq!((pairs.capacity(), pairs.len()), (255, 3));
+}
+
+#[test]
 fn a_vec_can_take_over_the_buffers_of_two_std_vecs() {
     let tracker = DropTracker::new();
     let mut firsts = ManuallyDrop::new(Vec::with_capacity(4));

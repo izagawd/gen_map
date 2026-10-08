@@ -19,9 +19,9 @@ use core::slice;
 /// with a `u32` length type it takes 16 bytes on a 64-bit target, where a
 /// `Vec` takes 24.
 ///
-/// [`DefaultMapConfig`](crate::DefaultMapConfig) keeps the slots of every map
-/// in a `SingleVec` whose length type is the index type of the map's keys. A
-/// `SingleVec` needs the `alloc` feature.
+/// With [`DefaultMapConfig`](crate::DefaultMapConfig), every map except a
+/// `SparseSecondaryMap` keeps its slots in a `SingleVec` whose length type is
+/// the index type of the map's keys. A `SingleVec` needs the `alloc` feature.
 ///
 /// A `SingleVec` derefs to a slice of its items. When its items take no space,
 /// it never allocates, and its capacity is the most items its length type can
@@ -102,9 +102,10 @@ impl<T, L: KeyPiece> Buffer<T, L> {
 
 impl<T, L: KeyPiece> Drop for Buffer<T, L> {
     fn drop(&mut self) {
-        // SAFETY: the buffer either came from `allocate` for `capacity`
-        // items, or is for `capacity` items that take no space. Nothing uses
-        // it after this.
+        // SAFETY: unless `capacity` items take no space, the buffer was
+        // allocated with the layout `deallocate` expects, by `allocate` or as
+        // the rules of `SingleVecRawParts` require. Nothing uses it after
+        // this.
         unsafe { deallocate(self.pointer, self.capacity()) };
     }
 }
@@ -176,7 +177,7 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
 
     /// Makes room for at least `additional` more items. When the buffer is
     /// too small, it moves the items into a new buffer with at least twice
-    /// the old capacity.
+    /// the old capacity, unless the length type cannot count that many items.
     fn make_room(&mut self, additional: usize) -> Result<(), ReserveError> {
         let len = self.buffer.len();
         let required = len
@@ -263,7 +264,9 @@ impl<T, L: KeyPiece> DerefMut for SingleVec<T, L> {
 // `clear` lower the length before they move or drop an item, and growing
 // copies the items into the new buffer without changing them. Once
 // `ensure_room` returns `Ok` for `n` items, the capacity is at least the
-// length plus `n`, so the next `n` pushes fit without growing.
+// length plus `n`, so the next `n` pushes fit without growing. Only
+// `with_capacity` panics on its own, and `clear` only panics when dropping an
+// item does.
 unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     type Item = T;
     type Error = ReserveError;
@@ -510,11 +513,11 @@ pub struct SingleVecRawParts<T, L: KeyPiece = usize> {
     // nothing catches a change in order. Think twice before removing this
     // comment, because it is the only thing that keeps the two orders the
     // same.
-    /// The buffer, which has room for `capacity` items.
+    /// `pointer` points at the buffer, which has room for `capacity` items.
     pub pointer: NonNull<T>,
-    /// How many items the buffer has room for.
+    /// `capacity` is how many items the buffer has room for.
     pub capacity: L,
-    /// The number of items. The first `len` items of the buffer are
+    /// `len` is the number of items. The first `len` items of the buffer are
     /// initialized.
     pub len: L,
 }
@@ -562,7 +565,9 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
     }
 
     /// Builds a vec from the fields that
-    /// [`into_raw_parts`](Self::into_raw_parts) takes a vec apart into.
+    /// [`into_raw_parts`](Self::into_raw_parts) takes a vec apart into. When
+    /// the items take no space, the vec's capacity is the largest value of the
+    /// length type, whatever `capacity` the parts hold.
     ///
     /// # Safety
     ///
@@ -580,7 +585,11 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
         Self {
             buffer: Buffer {
                 pointer,
-                capacity,
+                capacity: if size_of::<T>() == 0 {
+                    L::MAX
+                } else {
+                    capacity
+                },
                 len,
             },
             _items: PhantomData,

@@ -26,8 +26,8 @@ impl SecondaryMapConfig for Keep {
     type Storage<S: SecondarySlotItem> = Vec<S>;
 }
 
-/// Keys with a 4 bit generation, which goes from 0 to 15. The `GenMap` that
-/// hands them out wraps the generation.
+/// Keys with a 4 bit generation, so the largest generation is 15. The
+/// `GenMap` that hands them out wraps the generation.
 struct Wrap4;
 
 impl MapConfig for Wrap4 {
@@ -145,8 +145,8 @@ fn a_newer_key_replaces_an_older_value() {
 
 #[test]
 fn an_empty_slot_takes_any_key() {
-    // An empty slot has no generation to compare with, so even an older
-    // key's insert goes in.
+    // An empty slot holds no value for the strategy to keep, so even an
+    // older key's insert goes in.
     let (old, new) = reused_keys();
     let mut map = SecondaryMap::<u32>::new();
     map.insert(new, 1).unwrap();
@@ -182,7 +182,7 @@ fn iterators() {
     let mut keys = GenMap::new();
     let all: Vec<Key> = (0..5).map(|_| keys.insert(())).collect();
     let mut map = SecondaryMap::<u32>::new();
-    // Skipping the second key leaves an empty slot in a `Vec`.
+    // Skipping the second key leaves the slot at index 1 empty.
     for (i, &key) in all.iter().enumerate() {
         if i != 1 {
             map.insert(key, i as u32).unwrap();

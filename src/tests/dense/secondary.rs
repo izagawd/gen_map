@@ -89,7 +89,7 @@ fn retain_and_drain_see_every_value_once() {
 
     let drained: Vec<_> = map.drain().collect();
     // Each rejected value made room for the last one, which leaves the
-    // values in the order 5, 1, 3.
+    // values in the order 5, 1, 3. The drain yields them from the last one.
     assert_eq!(drained, [(k[3], 3), (k[1], 1), (k[5], 5)]);
     assert!(map.is_empty());
     assert_eq!(map.slots_len(), 6);

@@ -6,8 +6,8 @@ use alloc::alloc::handle_alloc_error;
 use core::alloc::Layout;
 use core::fmt;
 
-/// Why a [`GenMap`](crate::GenMap) or a [`DenseGenMap`](crate::DenseGenMap)
-/// has no room for another value.
+/// This error says why a [`GenMap`](crate::GenMap) or a
+/// [`DenseGenMap`](crate::DenseGenMap) has no room for another value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FullError<S> {
     /// The map has a slot at every index it can use and none of them are
@@ -45,7 +45,7 @@ impl<S: fmt::Display> fmt::Display for FullError<S> {
     }
 }
 
-/// Why [`GenMap::try_insert`](crate::GenMap::try_insert) or
+/// This error says why [`GenMap::try_insert`](crate::GenMap::try_insert) or
 /// [`DenseGenMap::try_insert`](crate::DenseGenMap::try_insert) could not
 /// insert. Each variant hands the value back so that the caller can keep it.
 /// `S` is the map's [`StorageError`](crate::StorageError), or the
@@ -173,7 +173,8 @@ impl<T, S: fmt::Display> fmt::Display for SecondaryInsertError<T, S> {
     }
 }
 
-/// Why [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key) or
+/// This error says why
+/// [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key) or
 /// [`DenseGenMap::try_insert_with_key`](crate::DenseGenMap::try_insert_with_key)
 /// could not insert. The map can be full before the closure runs, or the
 /// closure can refuse to make a value, and the variant says which of the two
@@ -362,9 +363,9 @@ pub(crate) fn check_disjoint_idxs<I: PartialEq>(
     Ok(())
 }
 
-/// Which storage of a dense map could not make room, together with that
-/// storage's error. The first type parameter is the error of the slot
-/// storage, and the second is the error of the
+/// This error says which storage of a dense map could not make room, and it
+/// holds that storage's error. The first type parameter is the error of the
+/// slot storage, and the second is the error of the
 /// [`PairStorage`](crate::PairStorage) that holds the keys and values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DenseError<S, P> {
@@ -383,8 +384,9 @@ impl<S: fmt::Display, P: fmt::Display> fmt::Display for DenseError<S, P> {
     }
 }
 
-/// Why a [`SingleVec`](crate::SingleVec) or a [`PairVec`](crate::PairVec) could
-/// not make room for more items. This error needs the `alloc` feature.
+/// This error says why a [`SingleVec`](crate::SingleVec) or a
+/// [`PairVec`](crate::PairVec) could not make room for more items. It needs
+/// the `alloc` feature.
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

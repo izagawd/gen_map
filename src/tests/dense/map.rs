@@ -94,6 +94,21 @@ fn detach_reattach_and_release_move_values_like_remove_and_insert() {
 }
 
 #[test]
+fn a_refused_reattach_does_not_grow_the_map() {
+    let mut map = DenseGenMap::<i32>::with_capacity(4);
+    let keys: Vec<_> = (0..4).map(|i| map.insert(i)).collect();
+    map.detach(keys[0]).unwrap();
+    // The detached slot stays reserved, so this insert adds a fifth slot, and
+    // the pair storage is full again.
+    map.insert(4);
+    assert_eq!(map.capacity(), 4);
+    // `keys[1]` still has its value, so the map refuses to reattach under it
+    // before it makes room for another value.
+    assert_eq!(map.reattach(keys[1], 5), Err(5));
+    assert_eq!(map.capacity(), 4);
+}
+
+#[test]
 fn clear_keeps_the_slots_and_leaves_a_detached_slot_detached() {
     let mut map = DenseGenMap::new();
     let a = map.insert(1);

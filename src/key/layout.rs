@@ -88,10 +88,10 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// The largest index is `(1 << (R::BITS - GEN_BITS)) - 1` and the largest
 /// generation is `(1 << GEN_BITS) - 1`. When the index bits fill the whole
 /// index type, as in `Packed<u32, 16>`, the largest index is also the largest
-/// value of that type. No map ever gives a slot that index, so such a map can hold
-/// one slot fewer than the index bits could address. When a value is removed
-/// from a slot that has the largest generation, the slot retires or its
-/// generation wraps back to zero, as the `WRAP_ON_OVERFLOW` of the map's
+/// value of that type. No map ever gives a slot that index, so such a map can
+/// hold one slot fewer than the index bits could address. When a value is
+/// removed from a slot that has the largest generation, the slot retires or
+/// its generation wraps back to zero, as the `WRAP_ON_OVERFLOW` of the map's
 /// config decides.
 ///
 /// # Examples

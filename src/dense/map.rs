@@ -801,14 +801,14 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// the pair storage cannot make room for it.
     #[inline]
     pub fn reattach(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> Result<(), T> {
+        let Some(slot) = detached_slot::<_, C>(self.slots.as_mut_slice(), key) else {
+            return Err(value);
+        };
         if self.pairs.ensure_room(1).is_err() {
             return Err(value);
         }
         // SAFETY: `self.pairs.len()` is the number of values.
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
-        let Some(slot) = detached_slot::<_, C>(self.slots.as_mut_slice(), key) else {
-            return Err(value);
-        };
         // SAFETY: a detached slot's generation is even.
         unsafe { slot.replace_even_unchecked(key.generation(), stored_position) };
         // The room was made above, so only a broken storage refuses the pair.
@@ -1136,12 +1136,13 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
 
     /// Takes the value at `position` and its key out of the pair storage by
     /// moving the last key and value into their place, and points the slot of
-    /// the moved value at `position`. The caller has already freed, retired or
-    /// detached the slot of the value at `position`.
+    /// the moved value at `position`.
     ///
     /// # Safety
     ///
-    /// `position` must be below the number of values.
+    /// `position` must be below the number of values, and the caller must
+    /// already have freed, retired or detached the slot of the value at
+    /// `position`.
     unsafe fn swap_remove(&mut self, position: usize) -> T {
         debug_assert!(position < self.pairs.len());
         let last = self.pairs.len() - 1;

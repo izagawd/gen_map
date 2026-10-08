@@ -105,8 +105,9 @@ fn max_idx<C: MapConfig>() -> Idx<C> {
 /// The largest index a slot can have. It is the largest index a key of `C` can
 /// hold, except that no slot ever gets the largest value of the index type.
 /// That value is [`no_slot`]. Leaving it out also caps the number of slots, and
-/// so the number of values, at the largest value of the index type, so the map
-/// can count its values in that type.
+/// so the number of values, at the largest value of the index type. A `GenMap`
+/// counts its values in that type, and a `DenseGenMap` stores the position of
+/// each value in it.
 #[inline]
 pub(crate) fn max_slot_idx<C: MapConfig>() -> Idx<C> {
     let max = max_idx::<C>();
@@ -161,9 +162,10 @@ fn next_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Option<Even<Gen<C>>
 /// The generation a slot has while it is detached, for a key whose generation
 /// is `generation`. It is one more than `generation`, or zero if `generation`
 /// is the largest value of the generation type. It is even, so no key matches
-/// the slot. [`GenMap::detach`] gives the slot this generation, and
-/// [`GenMap::reattach`] calls this function with the key's generation to
-/// check that the slot is still detached under that key.
+/// the slot. [`GenMap::detach`] and
+/// [`DenseGenMap::detach`](crate::DenseGenMap::detach) give the slot this
+/// generation, and [`detached_slot`] calls this function with the key's
+/// generation to check that the slot is still detached under that key.
 ///
 /// With a [`Packed`](crate::Packed) key config, this generation can be one
 /// past the largest generation a key can hold. That does no harm, because a
@@ -614,7 +616,8 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     ///
     /// # Safety
     ///
-    /// The same as for [`get_at_unchecked`](Self::get_at_unchecked).
+    /// The rules are the same as for
+    /// [`get_at_unchecked`](Self::get_at_unchecked).
     #[inline]
     pub unsafe fn get_at_unchecked_mut(
         &mut self,
@@ -941,8 +944,8 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// Returns [`FullError::IndexExhausted`] if none of the slots are free
     /// and the map's keys have no index left for a new one, and
     /// [`FullError::StorageFull`] if none of them are free and the storage
-    /// cannot make room for another one. When a `Vec` cannot allocate,
-    /// this returns `StorageFull` instead of panicking.
+    /// cannot make room for another one. When a `SingleVec` or a `Vec` cannot
+    /// allocate, this returns `StorageFull` instead of panicking.
     #[inline]
     pub fn vacant_entry(&mut self) -> Result<VacantEntry<'_, T, C>, FullError<StorageError<T, C>>> {
         let target = self.next_target()?;
@@ -1032,7 +1035,8 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             .get(position)?
             .get_odd(key.generation())?;
         // SAFETY: the slot's generation matches the key's, which is odd, so
-        // the slot holds a value.
+        // the slot holds a value, and `position` is the key's index as a
+        // `usize`.
         Some(unsafe { self.take(key.idx(), position) })
     }
 
@@ -1040,10 +1044,11 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// [`remove`](Self::remove), but retires its slot instead of freeing it.
     /// Returns `None` if there is no value for `key`.
     ///
-    /// A retired slot is never used again until [`reset`](Self::reset), no
-    /// matter how the map is configured, so no key to it can ever match a
-    /// new value. This is how a map that wraps generations can still retire
-    /// the slots it chooses.
+    /// The map does not use a retired slot again until [`reset`](Self::reset),
+    /// no matter how the map is configured, so no key to the slot matches a
+    /// new value before then. A map whose config wraps generations never
+    /// retires a slot on its own, so this method is how to retire a slot in
+    /// such a map.
     ///
     /// # Examples
     ///
@@ -1268,8 +1273,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
                 (idx, f(slot_key::<C>(idx, generation), value))
             };
             if !keep {
-                // SAFETY: the slot still holds its value. `f` only had
-                // `&mut T` and could not have removed it.
+                // SAFETY: the slot still holds its value, since `f` only had
+                // `&mut T` and could not have removed it, and `idx` is
+                // `position` as an index.
                 drop(unsafe { self.take(idx, position) });
             }
         }

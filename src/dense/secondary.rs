@@ -858,12 +858,12 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
 
     /// Takes the value at `position` and its key out of the pair storage by
     /// moving the last key and value into their place, and points the slot of
-    /// the moved value at `position`. The caller has already emptied the slot
-    /// of the value at `position`.
+    /// the moved value at `position`.
     ///
     /// # Safety
     ///
-    /// `position` must be below the number of values.
+    /// `position` must be below the number of values, and the caller must
+    /// already have emptied the slot of the value at `position`.
     unsafe fn swap_remove(&mut self, position: usize) -> T {
         debug_assert!(position < self.pairs.len());
         let last = self.pairs.len() - 1;

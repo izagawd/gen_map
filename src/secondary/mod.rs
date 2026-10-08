@@ -114,8 +114,8 @@ where
     if position >= len {
         // `position - len + 1` slots are missing. That count overflows
         // when `position` is `usize::MAX` and the storage is empty, so
-        // the map asks for `usize::MAX` slots instead, which no storage
-        // can hold either.
+        // this function asks for `usize::MAX` slots instead, which no
+        // storage can hold either.
         slots.ensure_room((position - len).saturating_add(1))?;
         for _ in len..=position {
             // `ensure_room` made room for every one of these slots, and
@@ -204,9 +204,9 @@ pub(crate) unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// same kind of storage a `GenMap` uses.
 ///
 /// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`]. A map
-/// with that config keeps its slots in a `Vec` and uses
-/// [`NewerWins`](crate::NewerWins) to decide whether an insert replaces a
-/// value that was inserted under a different generation.
+/// with that config keeps its slots in a [`SingleVec`](crate::SingleVec) and
+/// uses [`NewerWins`](crate::NewerWins) to decide whether an insert replaces
+/// a value that was inserted under a different generation.
 ///
 /// # Examples
 ///
@@ -467,7 +467,8 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// The same as for [`get_at_unchecked`](Self::get_at_unchecked).
+    /// The rules are the same as for
+    /// [`get_at_unchecked`](Self::get_at_unchecked).
     #[inline]
     pub unsafe fn get_at_unchecked_mut(
         &mut self,

@@ -27,9 +27,10 @@ use std::rc::Rc;
 use std::vec::Vec;
 
 /// The keys of this config are a [`Split`] of the two integer types it is
-/// given. Every map keeps its slots in a `Vec`, the dense maps keep their keys
-/// and values in a `PairVec`, and the secondary maps use `NewerWins`. It is
-/// only used as a type parameter, never created as a value.
+/// given. Every map except a `SparseSecondaryMap` keeps its slots in a `Vec`,
+/// the dense maps keep their keys and values in a `PairVec`, and the secondary
+/// maps use `NewerWins`. It is only used as a type parameter, never created as
+/// a value.
 #[allow(dead_code)]
 pub(crate) struct Cfg<Idx, Gen>(PhantomData<(Idx, Gen)>);
 

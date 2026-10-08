@@ -521,8 +521,9 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     #[inline]
     pub fn remove(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
         let idx = key.idx();
-        // The map looks the index up first, so that removing a key without a
-        // value makes no room.
+        // The map checks the generation with `get` before it calls `remove`,
+        // and neither call makes room in the `HashMap`, so removing a key
+        // without a value never allocates.
         if self.slots.get(&idx)?.generation != key.generation() {
             return None;
         }

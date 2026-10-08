@@ -3,17 +3,20 @@ use core::hash::Hash;
 use core::num::NonZero;
 
 // A `Slot` reads one of its union fields based on what `is_odd` says about its
-// generation, so the crate's unsafe code relies on every method behaving
-// exactly like it does for the standard unsigned integers. In particular,
-// `into_non_zero` returns `Some` for every value except `ZERO`. `from_usize`,
-// `into_usize` and `from_u128` return `None` for a value that does not fit in
-// the target type, and converting a value to a type that can hold it and back
-// gives the same value. The largest value is odd, which `Even::next` and
-// `Split`'s `max_generation` rely on.
+// generation, and `SingleVec` and `PairVec` build slices from the lengths they
+// store in this type. So the crate's unsafe code relies on every method
+// behaving exactly like it does for the standard unsigned integers. In
+// particular, `into_non_zero` returns `Some` for every value except `ZERO`.
+// `from_usize`, `into_usize` and `from_u128` return `None` for a value that
+// does not fit in the target type, and converting a value to a type that can
+// hold it and back gives the same value. The largest value is odd, which
+// `Even::next`, `Even::wrapping_previous` and `Split`'s `max_generation` rely
+// on.
 
 /// An unsigned integer that can be the index or the generation of a
-/// [`Key`](crate::Key). It is implemented for `u8`, `u16`, `u32`, `u64`,
-/// `u128` and `usize`.
+/// [`Key`](crate::Key), or the length type of a
+/// [`SingleVec`](crate::SingleVec) or a [`PairVec`](crate::PairVec). It is
+/// implemented for `u8`, `u16`, `u32`, `u64`, `u128` and `usize`.
 ///
 /// It is sealed, so it cannot be implemented outside this crate.
 pub trait KeyPiece:

@@ -37,9 +37,9 @@ use core::iter::FusedIterator;
 ///   the last [`clear`](Self::clear) and not taken out by [`pop`](Self::pop)
 ///   since, in the order they were pushed, and no others. The first item of
 ///   each pair must sit in the first slice, and the second item must sit at
-///   the same position in the second slice. The other slice methods,
-///   [`len`](Self::len) and [`is_empty`](Self::is_empty) must agree with
-///   them, as the provided methods do.
+///   the same position in the second slice. The other slice methods, as
+///   well as [`len`](Self::len) and [`is_empty`](Self::is_empty), must agree
+///   with them, as the provided methods do.
 /// - Apart from `pop` and `clear`, and dropping the storage itself, no method
 ///   may remove, drop, replace or change an item. That includes the methods
 ///   of any other trait. An item only changes through the slices that the
@@ -54,8 +54,12 @@ use core::iter::FusedIterator;
 ///   `&mut self` method of this trait runs in between.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
-/// - [`empty`](Self::empty) and [`with_capacity`](Self::with_capacity) must
-///   return a storage with no pairs.
+/// - Only [`with_capacity`](Self::with_capacity), `ensure_room` and `clear`
+///   may panic, and `clear` only when dropping an item panics. A dense map
+///   calls the other methods partway through changes that a panic would leave
+///   half done.
+/// - [`empty`](Self::empty) and `with_capacity` must return a storage with no
+///   pairs.
 /// - If the storage implements `IntoIterator<Item = (Self::First,
 ///   Self::Second)>`, `into_iter` must yield the same pairs as `slices`, in
 ///   the same order.
@@ -234,8 +238,10 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
 // `Vec`, and every method keeps the two storages at the same length.
 // `from_parts` only accepts two storages of the same length, and `try_push`
 // takes the first item back out when the second storage refuses its item.
-// `clear` empties the second storage even when dropping an item of the first
-// one panics.
+// Neither storage panics outside `with_capacity`, `ensure_room` and `clear`,
+// so `try_push` and `pop` never stop after changing only one storage, and no
+// other method panics either. `clear` empties the second storage even when
+// dropping an item of the first one panics.
 unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
     type First = A::Item;
     type Second = B::Item;
@@ -355,8 +361,8 @@ unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
 
 impl<A: ReserveStorage, B: ReserveStorage> ReservePairStorage for SplitPair<A, B> {}
 
-/// Says which storage of a [`SplitPair`] could not make room, together with
-/// that storage's error.
+/// This error says which storage of a [`SplitPair`] could not make room, and
+/// it holds that storage's error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SplitPairError<A, B> {
     /// The storage of the first slice could not make room.

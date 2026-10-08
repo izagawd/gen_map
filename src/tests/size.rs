@@ -1,6 +1,8 @@
 //! The map counts its values and links its free slots with the index type,
-//! so neither the map nor a slot pays for an `Option` or a `usize`. These
-//! sizes are for 64-bit targets.
+//! so neither the map nor a slot pays for an `Option` or a `usize`. A
+//! `SingleVec` and a `PairVec` store their length and capacity as their
+//! length type, so the default maps do not pay for a `usize` there either.
+//! These sizes are for 64-bit targets.
 
 use super::Cfg;
 use crate::{DefaultMapConfig, DenseGenMap, GenMap, MapSlot, PairVec, SingleVec};

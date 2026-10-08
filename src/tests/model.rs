@@ -182,8 +182,8 @@ struct Model<C: GenMapConfig> {
     /// caught.
     next_value: u32,
     /// How many slots were retired with `retire`. With a config that wraps,
-    /// these slots cannot be told apart from free slots by their generation,
-    /// since both have a generation of zero.
+    /// these slots cannot be told apart by their generation from free slots
+    /// whose generation wrapped, since both have a generation of zero.
     retired: usize,
 }
 

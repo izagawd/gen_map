@@ -53,11 +53,12 @@ pub trait ReplaceStrategy<K: KeyConfig> {
 /// [`SparseSecondaryMap`](crate::SparseSecondaryMap).
 ///
 /// A larger generation only means a newer key while the map that hands out
-/// the keys never wraps a generation. A `GenMap` or a `DenseGenMap` only wraps
-/// generations when `WRAP_ON_OVERFLOW` is `true` in its config, which is not
-/// the default. Once a slot's generation wraps back to zero, a newer key can
-/// have a smaller generation than the key of the stored value, and the
-/// secondary map refuses the newer key's insert.
+/// the keys never starts a slot's generation over. A `GenMap` or a
+/// `DenseGenMap` wraps a slot's generation back to zero when
+/// `WRAP_ON_OVERFLOW` is `true` in its config, and its
+/// [`reset`](crate::GenMap::reset) starts every generation over. After either
+/// one, a newer key can have a smaller generation than the key of the stored
+/// value, and the secondary map refuses the newer key's insert.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct NewerWins;
 

@@ -24,9 +24,11 @@ let b = map.insert("b");
 assert_eq!(map[a], "a");
 assert_eq!(map[b], "b");
 assert_eq!(map.remove(a), Some("a"));
-assert!(map.get(a).is_none()); // A removed key never matches again.
+// Removing "a" changed its slot's generation, so `a` no longer matches.
+assert!(map.get(a).is_none());
 
-let c = map.insert("c"); // This takes the slot `a` had, but under a new key.
+// "c" goes in the slot that "a" was removed from, under a new key.
+let c = map.insert("c");
 assert_ne!(a, c);
 
 for (key, value) in &map {
@@ -90,7 +92,7 @@ their keys, so it uses less memory than a `SecondaryMap` when only a few of a
 
 ## Dense maps
 
-A `DenseGenMap` keeps its values one after another in a storage of their own,
+A `DenseGenMap` keeps its values one after another in a slice of their own,
 so iterating over them is as fast as iterating over a slice. Removing a value
 moves the last value into its place. A `DenseSecondaryMap` does the same for
 a `SecondaryMap`.
@@ -114,11 +116,11 @@ assert_eq!(map.values().copied().collect::<Vec<_>>(), [3, 2]);
 - `alloc` adds the `SingleVec`, `Vec` and `PairVec` storages and the default
   config. Turn default features off and use `arrayvec` instead to run without
   an allocator.
-- `arrayvec` adds `ArrayVec` storage for any of the maps. An
-  `ArrayVec` has a fixed capacity and never allocates.
-- `smallvec` adds `SmallVec` storage for any of the maps. A
-  `SmallVec` keeps a few items inline before it allocates. The feature uses a
-  beta of smallvec 2.0, so it is not covered by semver.
+- `arrayvec` lets a config use `ArrayVec` as a storage. An `ArrayVec` has a
+  fixed capacity and never allocates.
+- `smallvec` lets a config use `SmallVec` as a storage. A `SmallVec` keeps a
+  few items inline before it allocates. The feature uses a beta of smallvec
+  2.0, so it is not covered by semver.
 
 ## License
 

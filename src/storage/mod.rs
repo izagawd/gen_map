@@ -33,10 +33,11 @@ use core::fmt;
 /// whose slots it expects to find unchanged when it reuses them. A
 /// `SecondaryMap` builds each value's key from the position of its slot without
 /// checking that the position fits in the key, and it reads a slot it has just
-/// pushed without a bounds check. A dense map uses its slot storage the way a
-/// `GenMap` does, and a [`SplitPair`](crate::SplitPair) relies on its two
-/// storages to keep each key at the same position as its value. So a storage
-/// must behave like a `Vec` in the ways listed below.
+/// pushed without a bounds check. A `DenseGenMap` uses its slot storage the
+/// way a `GenMap` does, and a `DenseSecondaryMap` uses its slot storage the
+/// way a `SecondaryMap` does. A [`SplitPair`](crate::SplitPair) relies on its
+/// two storages to keep each key at the same position as its value. So a
+/// storage must behave like a `Vec` in the ways listed below.
 ///
 /// - [`as_slice`](Self::as_slice) and [`as_mut_slice`](Self::as_mut_slice)
 ///   must return exactly the items pushed with [`try_push`](Self::try_push)
@@ -58,8 +59,12 @@ use core::fmt;
 ///   other `&mut self` method of this trait runs in between.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
-/// - [`empty`](Self::empty) and [`with_capacity`](Self::with_capacity) must
-///   return a storage with no items.
+/// - Only [`with_capacity`](Self::with_capacity), `ensure_room` and `clear`
+///   may panic, and `clear` only when dropping an item panics. The maps call
+///   the other methods partway through changes that a panic would leave half
+///   done.
+/// - [`empty`](Self::empty) and `with_capacity` must return a storage with no
+///   items.
 /// - If the storage implements `IntoIterator<Item = Self::Item>`,
 ///   `into_iter` must yield the same items as `as_slice`, in the same order.
 /// - If that iterator also implements `DoubleEndedIterator` and

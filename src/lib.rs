@@ -1,5 +1,5 @@
-//! [`GenMap`] is a configurable generational map that stores each value in a slot
-//! and hands out a [`Key`] that points at that slot.
+//! [`GenMap`] is a configurable generational map that stores each value in a
+//! slot and hands out a [`Key`] that points at that slot.
 //!
 //! When a value is removed, the map frees its slot and may reuse
 //! that slot for a value inserted later. The key of the removed value stops
@@ -166,7 +166,7 @@
 //! # Dense maps
 //!
 //! A [`DenseGenMap`] works like a [`GenMap`], but it keeps its values one
-//! after another in a storage of their own, and each slot only stores the
+//! after another in a slice of their own, and each slot only stores the
 //! position of its value. Iterating over the values is then as fast as
 //! iterating over a slice, and a lookup takes one more step. A
 //! [`DenseSecondaryMap`] does the same for a [`SecondaryMap`].

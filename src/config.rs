@@ -45,7 +45,9 @@ use core::hash::Hash;
 /// only if they unpack to the same parts. [`max_idx`](Self::max_idx) and
 /// [`max_generation`](Self::max_generation) must return the same value every
 /// time, because the maps pack parts again long after they first checked them
-/// against those limits.
+/// against those limits. `idx` and `generation` must also return the same
+/// parts every time they are called on the same value, because the maps check
+/// a key's parts once and then read them again.
 ///
 /// Safe code can make a key from any value of the key config it can build,
 /// with [`Key::from_repr`](crate::Key::from_repr), and read the key's parts
@@ -118,8 +120,9 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
 /// ```
 /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
 ///
-/// /// Maps with this config hand out four byte keys, and a slot whose
-/// /// generation runs out wraps instead of retiring.
+/// /// Maps with this config hand out four byte keys, and when a slot's
+/// /// generation runs out, the map wraps it back to zero instead of retiring
+/// /// the slot.
 /// struct Small;
 ///
 /// impl MapConfig for Small {
@@ -151,13 +154,14 @@ pub trait MapConfig {
 /// implements this trait.
 pub trait GenMapConfig: MapConfig {
     /// What happens when a slot's generation runs out, meaning it reaches
-    /// the largest one its key can hold.
+    /// the largest one its key config can hold.
     ///
-    /// `false`, the default, retires the slot. It is never used again, so no
-    /// stale key can ever match a new value.
+    /// When it is `false`, the default, the map retires the slot and does not
+    /// use it again until the map is reset, so no old key to the slot can
+    /// match a new value.
     ///
-    /// `true` wraps the generation back to zero and keeps using the slot. A
-    /// stale key from before the wrap can then match a new value.
+    /// When it is `true`, the map wraps the generation back to zero and keeps
+    /// using the slot. A key from before the wrap can then match a new value.
     const WRAP_ON_OVERFLOW: bool = false;
 
     /// The collection the map keeps its slots in. `S` is the slot type, which
@@ -288,8 +292,8 @@ pub trait DenseGenMapConfig: MapConfig {
     ///     type PairStorage<K, V> = PairVec<K, V>;
     /// }
     ///
-    /// /// Maps with this config keep their keys in one `Vec` and their values in
-    /// /// another.
+    /// /// Maps with this config keep their keys in one `Vec` and their
+    /// /// values in another.
     /// struct TwoVecs;
     ///
     /// impl MapConfig for TwoVecs {
@@ -390,8 +394,8 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     ///     type PairStorage<K, V> = PairVec<K, V>;
     /// }
     ///
-    /// /// Maps with this config keep their keys in one `Vec` and their values in
-    /// /// another.
+    /// /// Maps with this config keep their keys in one `Vec` and their
+    /// /// values in another.
     /// struct TwoVecs;
     ///
     /// impl MapConfig for TwoVecs {
@@ -478,14 +482,14 @@ pub type DefaultKeyConfig = Split<u32, u32>;
 /// [`SparseSecondaryMap<T>`](crate::SparseSecondaryMap), which leave out
 /// their config parameter `C`.
 ///
-/// Keys use the [`DefaultKeyConfig`]. Every map keeps its slots in a
-/// [`SingleVec`](crate::SingleVec), and the dense maps keep their keys and
-/// values in a [`PairVec`](crate::PairVec). Both store their length and
-/// capacity as a `u32`, the index type of the keys. A `SparseSecondaryMap`
-/// keeps its values in a `HashMap`. A slot retires when its generation runs
-/// out. The secondary maps use [`NewerWins`](crate::NewerWins) to decide
-/// whether an insert replaces a value that was inserted under a different
-/// generation.
+/// Keys use the [`DefaultKeyConfig`]. Every map except a `SparseSecondaryMap`
+/// keeps its slots in a [`SingleVec`](crate::SingleVec), and the dense maps
+/// keep their keys and values in a [`PairVec`](crate::PairVec). Both store
+/// their length and capacity as a `u32`, the index type of the keys. A
+/// `SparseSecondaryMap` keeps its values in a `HashMap`. A slot retires when
+/// its generation runs out. The secondary maps use
+/// [`NewerWins`](crate::NewerWins) to decide whether an insert replaces a
+/// value that was inserted under a different generation.
 /// This config needs the `alloc` feature.
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
