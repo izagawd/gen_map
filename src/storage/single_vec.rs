@@ -268,9 +268,12 @@ impl<T, L: KeyPiece> DerefMut for SingleVec<T, L> {
 // `clear` lower the length before they move or drop an item, and growing
 // moves the items with the buffer without changing them. Once
 // `ensure_room` returns `Ok` for `n` items, the capacity is at least the
-// length plus `n`, so the next `n` pushes fit without growing. Only
-// `with_capacity` panics on its own, and `clear` only panics when dropping an
-// item does.
+// length plus `n`, so the next `n` pushes fit without growing. The
+// `SingleVec` that `with_capacity` returns has room for at least `capacity`
+// items, so the first `capacity` pushes fit too. `push_unchecked` writes the
+// item without a check, and the rules only promise that a push succeeds while
+// the length is below the capacity. Only `with_capacity` panics on its own,
+// and `clear` only panics when dropping an item does.
 unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     type Item = T;
     type Error = ReserveError;
@@ -308,6 +311,14 @@ unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     #[inline]
     fn try_push(&mut self, item: T) -> Result<(), T> {
         SingleVec::try_push(self, item)
+    }
+
+    #[inline]
+    unsafe fn push_unchecked(&mut self, item: T) {
+        // SAFETY: the caller promises that the rules of the trait make this
+        // push succeed, and a `SingleVec` only promises that while its length
+        // is below its capacity.
+        unsafe { SingleVec::push_unchecked(self, item) };
     }
 
     #[inline]

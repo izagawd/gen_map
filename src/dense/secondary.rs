@@ -2,8 +2,8 @@
 use crate::config::DefaultMapConfig;
 use crate::config::DenseSecondaryMapConfig;
 use crate::dense::map::{
-    clone_pairs, push_cloned, to_position, to_stored, DenseIntoIter, DenseIter, DenseIterMut,
-    DenseKeys, DenseValues, DenseValuesMut,
+    clone_pairs, to_position, to_stored, DenseIntoIter, DenseIter, DenseIterMut, DenseKeys,
+    DenseValues, DenseValuesMut,
 };
 use crate::error::{
     check_disjoint_idxs, check_disjoint_keys, DenseError, GetDisjointMutAtError,
@@ -17,7 +17,7 @@ use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::secondary::{get_or_grow_slot, key_from_parts_unchecked};
 use crate::slot::{ParityRef, Slot};
 use crate::storage::pair::{PairStorage, ReservePairStorage};
-use crate::storage::{ReserveStorage, SliceStorage};
+use crate::storage::{clone_storage, ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
@@ -705,7 +705,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         // SAFETY: `ensure_room(1)` returned `Ok` above, and no other `&mut`
         // method of the pair storage has run since, so `PairStorage` promises
         // that this push succeeds.
-        unsafe { self.pairs.try_push(key, value).unwrap_unchecked() };
+        unsafe { self.pairs.push_unchecked(key, value) };
         Ok(None)
     }
 
@@ -948,11 +948,10 @@ impl<T: Clone, C: DenseSecondaryMapConfig> Clone for DenseSecondaryMap<T, C> {
     /// original works on it.
     fn clone(&self) -> Self {
         let pairs = clone_pairs(&self.pairs);
-        let mut slots = <Slots<C> as SliceStorage>::with_capacity(self.slots.len());
-        for slot in self.slots.as_slice() {
-            push_cloned(&mut slots, slot.clone());
+        Self {
+            slots: clone_storage(&self.slots),
+            pairs,
         }
-        Self { slots, pairs }
     }
 }
 

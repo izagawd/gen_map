@@ -375,9 +375,13 @@ impl<A, B, L: KeyPiece> Drop for PairVec<A, B, L> {
 // they move or drop an item, and growing moves the items without changing
 // them. Once `ensure_room` returns `Ok` for `n` pairs, the capacity is at
 // least the length plus `n`, so the next `n` pushes fit without growing. The
-// first slice ends before the second slice starts in the buffer, so the two
-// mutable slices never overlap. Only `with_capacity` panics on its own, and
-// `clear` only panics when dropping an item does.
+// `PairVec` that `with_capacity` returns has room for at least `capacity`
+// pairs, so the first `capacity` pushes fit too. `push_unchecked` writes both
+// items without a check, and the rules only promise that a push succeeds while
+// the length is below the capacity. The first slice ends before the second
+// slice starts in the buffer, so the two mutable slices never overlap. Only
+// `with_capacity` panics on its own, and `clear` only panics when dropping an
+// item does.
 unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     type First = A;
     type Second = B;
@@ -452,6 +456,14 @@ unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     #[inline]
     fn try_push(&mut self, first: A, second: B) -> Result<(), (A, B)> {
         PairVec::try_push(self, first, second)
+    }
+
+    #[inline]
+    unsafe fn push_unchecked(&mut self, first: A, second: B) {
+        // SAFETY: the caller promises that the rules of the trait make this
+        // push succeed, and a `PairVec` only promises that while its length is
+        // below its capacity.
+        unsafe { PairVec::push_unchecked(self, first, second) };
     }
 
     #[inline]

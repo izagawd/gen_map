@@ -15,7 +15,7 @@ use crate::key::Key;
 use crate::map::{decrement_len, increment_len, MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
-use crate::storage::{ReserveStorage, SliceStorage};
+use crate::storage::{clone_storage, ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -121,7 +121,7 @@ where
             // SAFETY: `ensure_room` returned `Ok` for all of these pushes, and
             // the loop runs no other `&mut` method of the storage, so
             // `SliceStorage` promises that each push succeeds.
-            unsafe { slots.try_push(empty_slot()).unwrap_unchecked() };
+            unsafe { slots.push_unchecked(empty_slot()) };
         }
     }
     debug_assert!(position < slots.len());
@@ -904,20 +904,12 @@ impl<T: Clone, C: SecondaryMapConfig> Clone for SecondaryMap<T, C> {
     /// The clone has the same slots, so every key of the original works on
     /// it.
     fn clone(&self) -> Self {
-        // This pushes a clone of each slot rather than calling the storage's
-        // own `Clone`, which the `SliceStorage` contract does not cover.
-        // The map builds keys from its slots without checks, which relies on
-        // every slot being where `insert` put it.
-        let mut slots = Slots::<T, C>::with_capacity(self.slots.len());
-        for slot in self.slots.as_slice() {
-            // A push only fails here for a storage that cannot hold as many
-            // slots as another of its type.
-            if slots.try_push(slot.clone()).is_err() {
-                panic!("SliceStorage::try_push failed while cloning a storage of the same type");
-            }
-        }
+        // `clone_storage` pushes a clone of each slot rather than calling the
+        // storage's own `Clone`, which the `SliceStorage` contract does not
+        // cover. The map builds keys from its slots without checks, which
+        // relies on every slot being where `insert` put it.
         Self {
-            slots,
+            slots: clone_storage(&self.slots),
             len: self.len,
         }
     }

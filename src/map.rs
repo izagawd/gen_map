@@ -9,7 +9,7 @@ use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
 use crate::key::Key;
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
-use crate::storage::{ReserveStorage, SliceStorage};
+use crate::storage::{clone_storage, ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -1027,7 +1027,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this
             // slot, and no other `&mut` method of the storage has run since,
             // so `SliceStorage` promises that this push succeeds.
-            unsafe { self.slots.try_push(slot).unwrap_unchecked() };
+            unsafe { self.slots.push_unchecked(slot) };
         }
         increment_len(&mut self.len);
         key
@@ -1379,16 +1379,6 @@ impl<T: fmt::Debug, C: GenMapConfig> fmt::Debug for GenMap<T, C> {
     }
 }
 
-/// Pushes `slot` onto a storage that is being filled with clones of another
-/// storage of the same type, and panics if the push fails. That only
-/// happens with a storage that cannot hold as many slots as another of its
-/// type. The slot is dropped with its value in that case.
-fn push_cloned<T, C: GenMapConfig>(slots: &mut Slots<T, C>, slot: MapSlot<T, C>) {
-    if slots.try_push(slot).is_err() {
-        panic!("SliceStorage::try_push failed while cloning a storage of the same type");
-    }
-}
-
 /// Empties the slot storage on drop. It is only dropped while unwinding out
 /// of `clone_from`, where a half cloned storage would disagree with `len` and
 /// the free list.
@@ -1404,12 +1394,8 @@ impl<T: Clone, C: GenMapConfig> Clone for GenMap<T, C> {
     /// The clone has the same slots, free list and generations, so every key
     /// of the original works on it.
     fn clone(&self) -> Self {
-        let mut slots = Slots::<T, C>::with_capacity(self.slots.len());
-        for slot in self.slots.as_slice() {
-            push_cloned::<T, C>(&mut slots, slot.clone());
-        }
         Self {
-            slots,
+            slots: clone_storage(&self.slots),
             next_free: self.next_free,
             len: self.len,
         }
@@ -1423,13 +1409,21 @@ impl<T: Clone, C: GenMapConfig> Clone for GenMap<T, C> {
         self.len = Idx::<C>::ZERO;
         let guard: ClearOnUnwind<'_, T, C> = ClearOnUnwind(&mut self.slots);
         SliceStorage::clear(guard.0);
+        let needed = source.slots.len();
         // An allocation that is too small would grow several times while the
-        // slots are pushed, so it is swapped for one of the right size.
-        if guard.0.capacity() < source.slots.len() {
-            *guard.0 = Slots::<T, C>::with_capacity(source.slots.len());
+        // slots are pushed, so it is swapped for one of the right size. This
+        // method also swaps the storage when its `ensure_room` returns an
+        // error, so that every push below has room.
+        if guard.0.capacity() < needed || guard.0.ensure_room(needed).is_err() {
+            *guard.0 = Slots::<T, C>::with_capacity(needed);
         }
         for slot in source.slots.as_slice() {
-            push_cloned::<T, C>(guard.0, slot.clone());
+            // SAFETY: either `ensure_room` returned `Ok` for every slot of
+            // `source`, or `with_capacity` made the storage for that many
+            // slots, which `source` holds in a storage of the same type. Only
+            // these pushes have run on the storage since, so `SliceStorage`
+            // promises that each push succeeds.
+            unsafe { guard.0.push_unchecked(slot.clone()) };
         }
         core::mem::forget(guard);
         self.next_free = source.next_free;

@@ -14,7 +14,7 @@ use crate::map::{
 };
 use crate::slot::{ParityRef, Slot};
 use crate::storage::pair::{PairStorage, ReservePairStorage};
-use crate::storage::{ReserveStorage, SliceStorage};
+use crate::storage::{clone_storage, ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
@@ -817,7 +817,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         // SAFETY: `ensure_room(1)` returned `Ok` above, and no other `&mut`
         // method of the pair storage has run since, so `PairStorage` promises
         // that this push succeeds.
-        unsafe { self.pairs.try_push(key, value).unwrap_unchecked() };
+        unsafe { self.pairs.push_unchecked(key, value) };
         Ok(())
     }
 
@@ -1020,7 +1020,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this pair,
         // and no other `&mut` method of the pair storage has run since, so
         // `PairStorage` promises that this push succeeds.
-        unsafe { self.pairs.try_push(key, value).unwrap_unchecked() };
+        unsafe { self.pairs.push_unchecked(key, value) };
         if target.from_free_list {
             // SAFETY: `target.idx` is the index of the slot that was first on
             // the free list when `next_target` looked, and nothing has changed
@@ -1039,7 +1039,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this
             // slot, and no other `&mut` method of the slot storage has run
             // since, so `SliceStorage` promises that this push succeeds.
-            unsafe { self.slots.try_push(slot).unwrap_unchecked() };
+            unsafe { self.slots.push_unchecked(slot) };
         }
         key
     }
@@ -1285,31 +1285,17 @@ impl<T: Clone, C: DenseGenMapConfig> Clone for DenseGenMap<T, C> {
     /// original works on it.
     fn clone(&self) -> Self {
         let pairs = clone_pairs(&self.pairs);
-        let mut slots = <Slots<C> as SliceStorage>::with_capacity(self.slots.len());
-        for slot in self.slots.as_slice() {
-            push_cloned(&mut slots, slot.clone());
-        }
         Self {
-            slots,
+            slots: clone_storage(&self.slots),
             next_free: self.next_free,
             pairs,
         }
     }
 }
 
-/// Pushes `item` onto a storage that is being filled with clones of another
-/// storage of the same type, and panics if the push fails. That only happens
-/// with a storage that cannot hold as many items as another of its type.
-pub(crate) fn push_cloned<St: SliceStorage>(storage: &mut St, item: St::Item) {
-    if storage.try_push(item).is_err() {
-        panic!("SliceStorage::try_push failed while cloning a storage of the same type");
-    }
-}
-
 /// Returns a new pair storage of the same type as `pairs` that holds a clone
-/// of each of its pairs, in the same order. It panics if the new storage
-/// refuses a pair, which only happens with a storage that cannot hold as many
-/// pairs as another of its type.
+/// of each of its pairs, in the same order.
+#[inline]
 pub(crate) fn clone_pairs<P>(pairs: &P) -> P
 where
     P: PairStorage,
@@ -1319,9 +1305,11 @@ where
     let mut clone = P::with_capacity(pairs.len());
     let (firsts, seconds) = pairs.slices();
     for (first, second) in firsts.iter().zip(seconds) {
-        if clone.try_push(first.clone(), second.clone()).is_err() {
-            panic!("PairStorage::try_push failed while cloning a storage of the same type");
-        }
+        // SAFETY: `pairs` has the same type as `clone` and holds the pairs
+        // being pushed, and only these pushes have run on `clone` since
+        // `with_capacity` made it, so `PairStorage` promises that each push
+        // succeeds.
+        unsafe { clone.push_unchecked(first.clone(), second.clone()) };
     }
     clone
 }

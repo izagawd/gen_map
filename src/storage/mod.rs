@@ -41,10 +41,11 @@ use core::fmt;
 ///
 /// - [`as_slice`](Self::as_slice) and [`as_mut_slice`](Self::as_mut_slice)
 ///   must return exactly the items pushed with [`try_push`](Self::try_push)
-///   since the last [`clear`](Self::clear) and not taken out by
-///   [`pop`](Self::pop) since, in the order they were pushed, and no others.
-///   [`len`](Self::len) and [`is_empty`](Self::is_empty) must agree with them,
-///   as the provided methods do.
+///   or [`push_unchecked`](Self::push_unchecked) since the last
+///   [`clear`](Self::clear) and not taken out by [`pop`](Self::pop) since,
+///   in the order they were pushed, and no others. [`len`](Self::len) and
+///   [`is_empty`](Self::is_empty) must agree with them, as the provided
+///   methods do.
 /// - Apart from `pop` and `clear`, and dropping the storage itself, no method/function
 ///   implemented in this trait may remove, drop, replace or change an item.
 ///   An item only mutates through the slice methods. Growing
@@ -54,8 +55,16 @@ use core::fmt;
 /// - `pop` must take out the last item of the slice and return it, or return
 ///   `None` and leave the storage as it was if it has no items.
 /// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n`
-///   items, the next `n` calls of `try_push` must succeed, as long as no
-///   other `&mut self` method of this trait runs in between.
+///   items, the next `n` pushes must succeed, as long as no other `&mut self`
+///   method of this trait runs in between. A push is a call of `try_push` or
+///   `push_unchecked`.
+/// - When another storage of the same type holds `n` items, the first `n`
+///   pushes into a storage that [`with_capacity`](Self::with_capacity)
+///   returns for `n` items must succeed, as long as no other `&mut self`
+///   method of this trait runs in between. The maps rely on this when they
+///   clone a storage.
+/// - When the two rules above promise that a push succeeds, `push_unchecked`
+///   must append the item at the end, as `try_push` does.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
 /// - Only [`with_capacity`](Self::with_capacity), `ensure_room` and `clear`
@@ -98,10 +107,11 @@ pub unsafe trait SliceStorage {
     fn as_mut_slice(&mut self) -> &mut [Self::Item];
 
     /// Makes sure the next `additional` calls of
-    /// [`try_push`](Self::try_push) will succeed, growing if the storage can
-    /// and has to. A `SecondaryMap` asks for room up to a key's index, so
-    /// `additional` can be larger than any storage can hold. The map expects
-    /// an error in that case, not a panic.
+    /// [`try_push`](Self::try_push) or [`push_unchecked`](Self::push_unchecked)
+    /// will succeed, growing if the storage can and has to. A `SecondaryMap`
+    /// asks for room up to a key's index, so `additional` can be larger than
+    /// any storage can hold. The map expects an error in that case, not a
+    /// panic.
     ///
     /// # Errors
     ///
@@ -115,6 +125,21 @@ pub unsafe trait SliceStorage {
     ///
     /// Hands `item` back if the storage cannot make room for it.
     fn try_push(&mut self, item: Self::Item) -> Result<(), Self::Item>;
+
+    /// Appends `item` without checking that the storage has room for it. The
+    /// provided implementation calls [`try_push`](Self::try_push) and assumes
+    /// it succeeds. A storage can override it with one that does not check
+    /// for room at all.
+    ///
+    /// # Safety
+    ///
+    /// The rules of this trait must promise that this push succeeds.
+    #[inline]
+    unsafe fn push_unchecked(&mut self, item: Self::Item) {
+        // SAFETY: the caller promises that the rules of the trait make this
+        // push succeed, so `try_push` returns `Ok`.
+        unsafe { self.try_push(item).unwrap_unchecked() };
+    }
 
     /// Takes out the last item and returns it, or returns `None` if there are
     /// no items.
@@ -145,13 +170,36 @@ pub unsafe trait SliceStorage {
 /// its storages implement this trait.
 pub trait ReserveStorage: SliceStorage {}
 
+/// Returns a storage of the same type as `storage` that holds a clone of each
+/// of its items, in the same order.
+#[inline]
+pub(crate) fn clone_storage<St>(storage: &St) -> St
+where
+    St: SliceStorage,
+    St::Item: Clone,
+{
+    let mut clone = St::with_capacity(storage.len());
+    for item in storage.as_slice() {
+        // SAFETY: `storage` has the same type as `clone` and holds the items
+        // being pushed, and only these pushes have run on `clone` since
+        // `with_capacity` made it, so `SliceStorage` promises that each push
+        // succeeds.
+        unsafe { clone.push_unchecked(item.clone()) };
+    }
+    clone
+}
+
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 // SAFETY: a `Vec` behaves exactly as the trait describes. `Vec::push` itself
 // panics on capacity overflow and aborts on allocation failure, so both
 // `ensure_room` and `try_push` go through `try_reserve`, which reports the
 // two as errors. Once `try_reserve` has made room for `additional` items, the
-// next `additional` pushes cannot fail.
+// next `additional` pushes cannot fail. The `Vec` that `with_capacity`
+// returns has room for at least `capacity` items, so the first `capacity`
+// pushes cannot fail either. `push_unchecked` writes the item at the end
+// without a check, and the rules only promise that a push succeeds while the
+// capacity is above the length.
 unsafe impl<S> SliceStorage for Vec<S> {
     type Item = S;
     type Error = TryReserveError;
@@ -195,6 +243,20 @@ unsafe impl<S> SliceStorage for Vec<S> {
                 Ok(())
             }
             Err(_) => Err(item),
+        }
+    }
+
+    #[inline]
+    unsafe fn push_unchecked(&mut self, item: S) {
+        let len = Vec::len(self);
+        debug_assert!(len < Vec::capacity(self));
+        // SAFETY: the caller promises that the rules of the trait make this
+        // push succeed, and a `Vec` only promises that while its capacity is
+        // above its length. So position `len` is inside the allocation, and
+        // `set_len` counts the item only after it is written.
+        unsafe {
+            self.as_mut_ptr().add(len).write(item);
+            self.set_len(len + 1);
         }
     }
 
@@ -254,9 +316,13 @@ impl<S> ReserveStorage for Vec<S> {}
 #[cfg_attr(docsrs, doc(cfg(feature = "arrayvec")))]
 // SAFETY: an `ArrayVec` keeps its items in order and in place, like a
 // `Vec`. Its `try_push` only fails when it is full, and `ensure_room`
-// returns `Ok` only when it has room for all `additional` items. Its `clear`
-// sets the length to zero before it drops the items, so the storage is empty
-// even when a drop panics.
+// returns `Ok` only when it has room for all `additional` items. Another
+// `ArrayVec` of the same type holds at most `CAP` items, and the one that
+// `with_capacity` returns has room for `CAP`, so it accepts as many pushes as
+// the other one holds. `push_unchecked` writes the item without a check, and
+// the rules only promise that a push succeeds while the `ArrayVec` is not
+// full. Its `clear` sets the length to zero before it drops the items, so the
+// storage is empty even when a drop panics.
 unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
     type Item = S;
     type Error = arrayvec::CapacityError;
@@ -303,6 +369,14 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
     }
 
     #[inline]
+    unsafe fn push_unchecked(&mut self, item: S) {
+        // SAFETY: the caller promises that the rules of the trait make this
+        // push succeed, and an `ArrayVec` only promises that while it is not
+        // full.
+        unsafe { arrayvec::ArrayVec::push_unchecked(self, item) };
+    }
+
+    #[inline]
     fn pop(&mut self) -> Option<S> {
         arrayvec::ArrayVec::pop(self)
     }
@@ -345,7 +419,9 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
 // on the heap. `SmallVec::push` panics or aborts when it cannot grow, so
 // both `ensure_room` and `try_push` go through `try_reserve`, which returns
 // an error instead. Once `try_reserve` has made room for `additional` items,
-// the next `additional` pushes cannot fail.
+// the next `additional` pushes cannot fail. The `SmallVec` that
+// `with_capacity` returns has room for at least `capacity` items, so the
+// first `capacity` pushes cannot fail either.
 unsafe impl<S, const N: usize> SliceStorage for smallvec::SmallVec<S, N> {
     type Item = S;
     type Error = smallvec::SmallVecError;
