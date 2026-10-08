@@ -5,9 +5,9 @@
 //! memory.
 
 use super::model::Rng;
-use super::{key_from_parts, DropTracker};
+use super::{key_from_parts, Cfg, DropTracker};
 use crate::{
-    ExistingWins, GenMap, GetDisjointMutAtError, GetDisjointMutError, Key, MapConfig, NewerWins,
+    ExistingWins, GenMap, GetDisjointMutAtError, GetDisjointMutError, Key, MapConfig,
     SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, SparseSecondaryMap,
     SparseSecondaryMapConfig, Split,
 };
@@ -20,20 +20,7 @@ use std::vec::Vec;
 
 /// This config gives keys a `u8` index and a `u8` generation, and its
 /// secondary maps let a newer key replace a value.
-struct Newer;
-
-impl MapConfig for Newer {
-    type KeyConfig = Split<u8, u8>;
-}
-
-impl SecondaryMapConfig for Newer {
-    type ReplaceStrategy = NewerWins;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
-}
-
-impl SparseSecondaryMapConfig for Newer {
-    type ReplaceStrategy = NewerWins;
-}
+type Newer = Cfg<u8, u8>;
 
 /// This config gives keys the same types as [`Newer`], but its secondary maps
 /// keep a value until it is removed.

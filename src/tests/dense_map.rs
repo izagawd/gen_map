@@ -3,26 +3,17 @@
 //! cannot, such as the order of the values, the iterators, drops, panics and
 //! storage errors.
 
-use super::{Bomb, DropTracker};
+use super::{Bomb, Cfg, DropTracker};
 use crate::{
     DenseError, DenseGenMap, DenseGenMapConfig, GenSlotItem, InsertError, InsertWithError, Key,
-    MapConfig, Packed, PairVec, Split,
+    MapConfig, Packed, PairVec,
 };
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
 use std::{format, vec};
 
 /// `u8` keys, so a map runs out of indices once it has 255 slots.
-struct Small;
-
-impl MapConfig for Small {
-    type KeyConfig = Split<u8, u8>;
-}
-
-impl DenseGenMapConfig for Small {
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
-}
+type Small = Cfg<u8, u8>;
 
 /// Packed keys with a 4 bit generation, so a slot retires once its eighth
 /// value is removed.
@@ -404,7 +395,7 @@ fn a_dense_error_says_which_storage_is_full() {
 #[cfg(feature = "arrayvec")]
 mod capped {
     use super::*;
-    use crate::{SplitPair, SplitPairError};
+    use crate::{Split, SplitPair, SplitPairError};
     use arrayvec::ArrayVec;
 
     /// A dense config whose slot storage holds `S` slots, and whose pair

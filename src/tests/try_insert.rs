@@ -1,16 +1,8 @@
-use crate::{GenMap, GenMapConfig, GenSlotItem, InsertError, MapConfig, Split};
+use super::Cfg;
+use crate::{GenMap, InsertError};
 use std::string::{String, ToString};
-use std::vec::Vec;
 
-struct Byte;
-
-impl MapConfig for Byte {
-    type KeyConfig = Split<u8, u8>;
-}
-
-impl GenMapConfig for Byte {
-    type Storage<S: GenSlotItem> = Vec<S>;
-}
+type Byte = Cfg<u8, u8>;
 
 #[test]
 fn try_insert_works_like_insert_while_there_is_room() {

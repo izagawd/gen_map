@@ -1,7 +1,10 @@
 #[cfg(feature = "alloc")]
 use crate::config::DefaultMapConfig;
 use crate::config::{KeyConfig, MapConfig, SecondaryMapConfig};
-use crate::error::{GetDisjointMutAtError, GetDisjointMutError, SecondaryInsertError};
+use crate::error::{
+    check_disjoint_idxs, check_disjoint_keys, GetDisjointMutAtError, GetDisjointMutError,
+    SecondaryInsertError,
+};
 use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use crate::map::{decrement_len, increment_len, MapGen, MapIdx, MapKeyConfig};
@@ -74,8 +77,58 @@ fn into_parts<G: KeyPiece, T>(slot: Slot<G, T, ()>) -> Option<(Odd<G>, T)> {
 
 /// Returns a slot with generation zero, which holds no value.
 #[inline]
-fn empty_slot<G: KeyPiece, T>() -> Slot<G, T, ()> {
+pub(crate) fn empty_slot<G: KeyPiece, T>() -> Slot<G, T, ()> {
     Slot::new_even(Even::ZERO, ())
+}
+
+/// Returns the slot at `idx`. If the storage has no slot there yet, it
+/// first grows to hold every slot up to and including `idx`, which can
+/// allocate, and the new slots start out empty.
+///
+/// # Errors
+///
+/// Returns the storage's error, and adds no slots, if the storage cannot
+/// make room for all of them.
+pub(crate) fn get_or_grow_slot<St, G, X, I>(
+    slots: &mut St,
+    idx: I,
+) -> Result<&mut Slot<G, X, ()>, St::Error>
+where
+    St: SliceStorage<Item = Slot<G, X, ()>>,
+    G: KeyPiece,
+    I: KeyPiece,
+{
+    let Some(position) = idx.into_usize() else {
+        // No storage can hold a slot past `usize::MAX`. Asking for
+        // `usize::MAX` more slots gets the error the storage gives when
+        // it has no room.
+        return Err(slots
+            .ensure_room(usize::MAX)
+            .expect_err("no storage has room for `usize::MAX` more slots"));
+    };
+    let len = slots.len();
+    if position >= len {
+        // `position - len + 1` slots are missing. That count overflows
+        // when `position` is `usize::MAX` and the storage is empty, so
+        // the map asks for `usize::MAX` slots instead, which no storage
+        // can hold either.
+        slots.ensure_room((position - len).saturating_add(1))?;
+        for _ in len..=position {
+            // `ensure_room` made room for every one of these slots, and
+            // `SliceStorage` promises that the pushes succeed after
+            // that. A push that fails here means the storage broke that
+            // promise.
+            if slots.try_push(empty_slot()).is_err() {
+                panic!("SliceStorage::try_push failed although ensure_room returned Ok");
+            }
+        }
+    }
+    debug_assert!(position < slots.len());
+    // SAFETY: the storage either had a slot at `position` already, or
+    // the loop above pushed a slot for every position up to it.
+    // `SliceStorage` promises that each push adds one slot at the end,
+    // so `position` is in bounds.
+    Ok(unsafe { slots.as_mut_slice().get_unchecked_mut(position) })
 }
 
 /// The storage a config gives the map for its slots.
@@ -100,10 +153,11 @@ type InsertResult<T, C> = Result<Option<T>, SecondaryInsertError<T, SecondarySto
 ///
 /// `position` must fit in the key's index type, and that index and
 /// `generation` must fit the key config together. Both hold for the
-/// position and generation of a slot that holds a value, as the comment on
-/// the map's `slots` field explains.
+/// position and generation of a slot that holds a value, because a secondary
+/// map only stores a value at the index of its key and under the key's
+/// generation.
 #[inline]
-unsafe fn key_from_parts_unchecked<C: MapConfig>(
+pub(crate) unsafe fn key_from_parts_unchecked<C: MapConfig>(
     position: usize,
     generation: Odd<MapGen<C>>,
 ) -> Key<MapKeyConfig<C>> {
@@ -504,14 +558,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         &mut self,
         idxs: [MapIdx<C>; N],
     ) -> Result<[(Key<MapKeyConfig<C>>, &mut T); N], GetDisjointMutAtError> {
-        for (i, idx) in idxs.iter().enumerate() {
-            if self.key_at(*idx).is_none() {
-                return Err(GetDisjointMutAtError::NoValue);
-            }
-            if idxs[..i].contains(idx) {
-                return Err(GetDisjointMutAtError::OverlappingIndices);
-            }
-        }
+        check_disjoint_idxs(&idxs, |idx| self.key_at(*idx).is_some())?;
         // SAFETY: every index was just found to point at a slot that holds
         // a value, and every index is distinct.
         Ok(unsafe { self.get_disjoint_mut_at_unchecked(idxs) })
@@ -531,11 +578,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         &mut self,
         idxs: [MapIdx<C>; N],
     ) -> [(Key<MapKeyConfig<C>>, &mut T); N] {
-        debug_assert!(idxs.iter().all(|idx| self.key_at(*idx).is_some()));
-        debug_assert!(idxs
-            .iter()
-            .enumerate()
-            .all(|(i, idx)| !idxs[..i].contains(idx)));
+        debug_assert!(check_disjoint_idxs(&idxs, |idx| self.key_at(*idx).is_some()).is_ok());
         let slots = self.slots.as_mut_slice().as_mut_ptr();
         idxs.map(|idx| {
             // SAFETY: the caller promises that the slot exists and holds a
@@ -591,16 +634,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         &mut self,
         keys: [Key<MapKeyConfig<C>>; N],
     ) -> Result<[&mut T; N], GetDisjointMutError> {
-        for (i, key) in keys.iter().enumerate() {
-            if !self.contains_key(*key) {
-                return Err(GetDisjointMutError::InvalidKey);
-            }
-            // Keys point at the same slot exactly when their indices are
-            // equal.
-            if keys[..i].iter().any(|earlier| earlier.idx() == key.idx()) {
-                return Err(GetDisjointMutError::OverlappingKeys);
-            }
-        }
+        check_disjoint_keys(&keys, |key| self.contains_key(key))?;
         // SAFETY: every key was just found to have a value, and every index
         // is distinct.
         Ok(unsafe { self.get_disjoint_mut_unchecked(keys) })
@@ -622,11 +656,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         &mut self,
         keys: [Key<MapKeyConfig<C>>; N],
     ) -> [&mut T; N] {
-        debug_assert!(keys.iter().all(|key| self.contains_key(*key)));
-        debug_assert!(keys
-            .iter()
-            .enumerate()
-            .all(|(i, key)| keys[..i].iter().all(|earlier| earlier.idx() != key.idx())));
+        debug_assert!(check_disjoint_keys(&keys, |key| self.contains_key(key)).is_ok());
         let slots = self.slots.as_mut_slice().as_mut_ptr();
         keys.map(|key| {
             // SAFETY: the caller promises that the key has a value, so its
@@ -687,7 +717,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
             return Err(SecondaryInsertError::IndexReserved(value));
         }
         let generation = key.generation();
-        let slot = match Self::get_or_grow_slot(&mut self.slots, key.idx()) {
+        let slot = match get_or_grow_slot(&mut self.slots, key.idx()) {
             Ok(slot) => slot,
             Err(error) => return Err(SecondaryInsertError::StorageFull(value, error)),
         };
@@ -709,51 +739,6 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
             }
             Some(_) => Err(SecondaryInsertError::Refused(value)),
         }
-    }
-
-    /// Returns the slot at `idx`. If the storage has no slot there yet, it
-    /// first grows to hold every slot up to and including `idx`, which can
-    /// allocate, and the new slots start out empty.
-    ///
-    /// # Errors
-    ///
-    /// Returns the storage's error, and adds no slots, if the storage cannot
-    /// make room for all of them.
-    fn get_or_grow_slot(
-        slots: &mut Slots<T, C>,
-        idx: MapIdx<C>,
-    ) -> Result<&mut SecondaryMapSlot<T, C>, SecondaryStorageError<T, C>> {
-        let Some(position) = idx.into_usize() else {
-            // No storage can hold a slot past `usize::MAX`. Asking for
-            // `usize::MAX` more slots gets the error the storage gives when
-            // it has no room.
-            return Err(slots
-                .ensure_room(usize::MAX)
-                .expect_err("no storage has room for `usize::MAX` more slots"));
-        };
-        let len = slots.len();
-        if position >= len {
-            // `position - len + 1` slots are missing. That count overflows
-            // when `position` is `usize::MAX` and the storage is empty, so
-            // the map asks for `usize::MAX` slots instead, which no storage
-            // can hold either.
-            slots.ensure_room((position - len).saturating_add(1))?;
-            for _ in len..=position {
-                // `ensure_room` made room for every one of these slots, and
-                // `SliceStorage` promises that the pushes succeed after
-                // that. A push that fails here means the storage broke that
-                // promise.
-                if slots.try_push(empty_slot()).is_err() {
-                    panic!("SliceStorage::try_push failed although ensure_room returned Ok");
-                }
-            }
-        }
-        debug_assert!(position < slots.len());
-        // SAFETY: the storage either had a slot at `position` already, or
-        // the loop above pushed a slot for every position up to it.
-        // `SliceStorage` promises that each push adds one slot at the end,
-        // so `position` is in bounds.
-        Ok(unsafe { slots.as_mut_slice().get_unchecked_mut(position) })
     }
 
     /// Removes the value stored under `key` and returns it, or returns

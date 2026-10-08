@@ -1,3 +1,5 @@
+use crate::config::KeyConfig;
+use crate::key::Key;
 #[cfg(feature = "alloc")]
 use alloc::alloc::handle_alloc_error;
 #[cfg(feature = "alloc")]
@@ -288,6 +290,30 @@ impl fmt::Display for GetDisjointMutError {
     }
 }
 
+/// Checks the keys given to a map's `get_disjoint_mut`, where `has_value`
+/// says whether the map has a value for a key. Keys point at the same slot
+/// exactly when their indices are equal.
+///
+/// # Errors
+///
+/// Returns [`GetDisjointMutError::InvalidKey`] if the map has no value for one
+/// of the keys, and [`GetDisjointMutError::OverlappingKeys`] if two of the keys
+/// have the same index.
+pub(crate) fn check_disjoint_keys<K: KeyConfig>(
+    keys: &[Key<K>],
+    mut has_value: impl FnMut(Key<K>) -> bool,
+) -> Result<(), GetDisjointMutError> {
+    for (i, key) in keys.iter().enumerate() {
+        if !has_value(*key) {
+            return Err(GetDisjointMutError::InvalidKey);
+        }
+        if keys[..i].iter().any(|earlier| earlier.idx() == key.idx()) {
+            return Err(GetDisjointMutError::OverlappingKeys);
+        }
+    }
+    Ok(())
+}
+
 /// This error says why the `get_disjoint_mut_at` method of a
 /// [`GenMap`](crate::GenMap), [`SecondaryMap`](crate::SecondaryMap),
 /// [`DenseGenMap`](crate::DenseGenMap),
@@ -311,6 +337,29 @@ impl fmt::Display for GetDisjointMutAtError {
             Self::OverlappingIndices => f.write_str("two of the indices are the same"),
         }
     }
+}
+
+/// Checks the indices given to a map's `get_disjoint_mut_at`, where
+/// `has_value` says whether the slot at an index holds a value.
+///
+/// # Errors
+///
+/// Returns [`GetDisjointMutAtError::NoValue`] if the slot at one of the
+/// indices holds no value, and [`GetDisjointMutAtError::OverlappingIndices`]
+/// if two of the indices are the same.
+pub(crate) fn check_disjoint_idxs<I: PartialEq>(
+    idxs: &[I],
+    mut has_value: impl FnMut(&I) -> bool,
+) -> Result<(), GetDisjointMutAtError> {
+    for (i, idx) in idxs.iter().enumerate() {
+        if !has_value(idx) {
+            return Err(GetDisjointMutAtError::NoValue);
+        }
+        if idxs[..i].contains(idx) {
+            return Err(GetDisjointMutAtError::OverlappingIndices);
+        }
+    }
+    Ok(())
 }
 
 /// Which storage of a dense map could not make room, together with that

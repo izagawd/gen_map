@@ -46,7 +46,10 @@ mod unchecked;
 mod vacant_entry;
 mod zero_sized;
 
-use crate::{GenMapConfig, GenSlotItem, Key, KeyConfig, KeyPiece, MapConfig, Odd, Split};
+use crate::{
+    DenseGenMapConfig, DenseSecondaryMapConfig, GenMapConfig, GenSlotItem, Key, KeyConfig,
+    KeyPiece, MapConfig, NewerWins, Odd, PairVec, SecondaryMapConfig, SecondarySlotItem, Split,
+};
 use core::marker::PhantomData;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -54,7 +57,9 @@ use std::rc::Rc;
 use std::vec::Vec;
 
 /// The keys of this config are a [`Split`] of the two integer types it is
-/// given. It is only used as a type parameter, never created as a value.
+/// given. Every map keeps its slots in a `Vec`, the dense maps keep their keys
+/// and values in a `PairVec`, and the secondary maps use `NewerWins`. It is
+/// only used as a type parameter, never created as a value.
 #[allow(dead_code)]
 pub(crate) struct Cfg<Idx, Gen>(PhantomData<(Idx, Gen)>);
 
@@ -64,6 +69,27 @@ impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for Cfg<Idx, Gen> {
 
 impl<Idx: KeyPiece, Gen: KeyPiece> GenMapConfig for Cfg<Idx, Gen> {
     type Storage<S: GenSlotItem> = Vec<S>;
+}
+
+impl<Idx: KeyPiece, Gen: KeyPiece> SecondaryMapConfig for Cfg<Idx, Gen> {
+    type ReplaceStrategy = NewerWins;
+    type Storage<S: SecondarySlotItem> = Vec<S>;
+}
+
+impl<Idx: KeyPiece, Gen: KeyPiece> DenseGenMapConfig for Cfg<Idx, Gen> {
+    type SlotStorage<S: GenSlotItem> = Vec<S>;
+    type PairStorage<K, V> = PairVec<K, V>;
+}
+
+impl<Idx: KeyPiece, Gen: KeyPiece> DenseSecondaryMapConfig for Cfg<Idx, Gen> {
+    type ReplaceStrategy = NewerWins;
+    type SlotStorage<S: GenSlotItem> = Vec<S>;
+    type PairStorage<K, V> = PairVec<K, V>;
+}
+
+#[cfg(feature = "std")]
+impl<Idx: KeyPiece, Gen: KeyPiece> crate::SparseSecondaryMapConfig for Cfg<Idx, Gen> {
+    type ReplaceStrategy = NewerWins;
 }
 
 /// Checks that `reattach` refuses `key` because nothing is detached under

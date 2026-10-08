@@ -1,7 +1,7 @@
 //! Checks each built-in storage against what `SliceStorage` promises,
 //! without a map, so the methods a map seldom calls are covered too.
 
-use super::{DropItem, DropTracker};
+use super::{Bomb, DropItem, DropTracker};
 use crate::{ReserveStorage, SingleVec, SliceStorage};
 use std::vec::Vec;
 
@@ -149,24 +149,14 @@ fn a_small_vec_keeps_the_storage_contract() {
     check_pop::<smallvec::SmallVec<u32, 2>>();
 }
 
-/// An item whose drop panics if it was made with `true`.
-struct Bomb(bool);
-
-impl Drop for Bomb {
-    fn drop(&mut self) {
-        if self.0 {
-            panic!("the drop of this item panics");
-        }
-    }
-}
-
 /// Pushes `count` items, the second of which panics when it is dropped, and
 /// checks that `clear` leaves the storage empty although that drop panics.
 /// `count` must fit the storage and be at least two.
 fn check_clear_with_a_panicking_drop<St: SliceStorage<Item = Bomb>>(count: usize) {
+    let tracker = DropTracker::new();
     let mut storage = St::empty();
     for i in 0..count {
-        assert!(storage.try_push(Bomb(i == 1)).is_ok());
+        assert!(storage.try_push(Bomb::new(&tracker, i == 1)).is_ok());
     }
     let cleared = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| storage.clear()));
     assert!(cleared.is_err());

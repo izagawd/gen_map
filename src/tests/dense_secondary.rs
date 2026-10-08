@@ -3,28 +3,15 @@
 //! what that check cannot, such as the order of the values, drops, panics and
 //! storage errors.
 
-use super::{key_from_parts, Bomb, DropTracker};
-use crate::{
-    DenseError, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap, GenSlotItem, Key, MapConfig,
-    NewerWins, PairVec, SecondaryInsertError, Split,
-};
+use super::{key_from_parts, Bomb, Cfg, DropTracker};
+use crate::{DenseError, DenseSecondaryMap, GenMap, Key, SecondaryInsertError, Split};
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
 
 /// `u8` keys, with the slots in a `Vec` and the keys and values in a
 /// `PairVec`.
-struct Keyed;
-
-impl MapConfig for Keyed {
-    type KeyConfig = Split<u8, u8>;
-}
-
-impl DenseSecondaryMapConfig for Keyed {
-    type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
-}
+type Keyed = Cfg<u8, u8>;
 
 /// Hands out `n` keys from a `GenMap`.
 fn keys(n: usize) -> Vec<Key> {
@@ -192,7 +179,9 @@ fn reserve_panics_when_a_storage_cannot_make_room() {
 #[cfg(feature = "arrayvec")]
 mod capped {
     use super::*;
-    use crate::{SplitPair, SplitPairError};
+    use crate::{
+        DenseSecondaryMapConfig, GenSlotItem, MapConfig, NewerWins, SplitPair, SplitPairError,
+    };
     use arrayvec::ArrayVec;
 
     /// A dense secondary config whose slot storage holds `S` slots, and whose

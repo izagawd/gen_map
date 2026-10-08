@@ -1,3 +1,4 @@
+use super::{Bomb, DropTracker};
 use crate::GenMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -70,7 +71,7 @@ fn reset_on_empty_map_is_a_noop() {
 
 #[test]
 fn reset_drops_values() {
-    let tracker = super::DropTracker::new();
+    let tracker = DropTracker::new();
     let mut map = GenMap::new();
     for _ in 0..4 {
         map.insert(tracker.make_item());
@@ -82,19 +83,11 @@ fn reset_drops_values() {
 
 #[test]
 fn reset_stays_consistent_when_a_drop_panics() {
-    struct Bomb(bool);
-    impl Drop for Bomb {
-        fn drop(&mut self) {
-            if self.0 && !std::thread::panicking() {
-                panic!("boom");
-            }
-        }
-    }
-
+    let tracker = DropTracker::new();
     let mut map = GenMap::new();
-    map.insert(Bomb(true));
-    map.insert(Bomb(false));
-    let vacant = map.insert(Bomb(false));
+    map.insert(Bomb::new(&tracker, true));
+    map.insert(Bomb::new(&tracker, false));
+    let vacant = map.insert(Bomb::new(&tracker, false));
     // Leaves a slot on the free list, which the reset must forget.
     assert!(map.remove(vacant).is_some());
 
@@ -104,7 +97,7 @@ fn reset_stays_consistent_when_a_drop_panics() {
     // point at slots that no longer exist.
     assert!(map.is_empty());
     assert_eq!(map.slots_len(), 0);
-    let k = map.insert(Bomb(false));
+    let k = map.insert(Bomb::new(&tracker, false));
     assert!(map.contains_key(k));
     assert_eq!(map.slots_len(), 1);
 }

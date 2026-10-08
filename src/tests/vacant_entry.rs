@@ -1,19 +1,9 @@
-use crate::{
-    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, MapConfig, Split,
-};
+use super::Cfg;
+use crate::{FullError, GenMap, InsertError, InsertWithError};
 use std::collections::TryReserveError;
 use std::string::{String, ToString};
-use std::vec::Vec;
 
-struct Byte;
-
-impl MapConfig for Byte {
-    type KeyConfig = Split<u8, u8>;
-}
-
-impl GenMapConfig for Byte {
-    type Storage<S: GenSlotItem> = Vec<S>;
-}
+type Byte = Cfg<u8, u8>;
 
 /// A map with a value in every slot a `u8` index allows. That is 255 slots,
 /// since no slot gets the index `u8::MAX`.

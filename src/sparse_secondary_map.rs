@@ -1,5 +1,8 @@
 use crate::config::{DefaultMapConfig, KeyConfig, MapConfig, SparseSecondaryMapConfig};
-use crate::error::{GetDisjointMutAtError, GetDisjointMutError, SecondaryInsertError};
+use crate::error::{
+    check_disjoint_idxs, check_disjoint_keys, GetDisjointMutAtError, GetDisjointMutError,
+    SecondaryInsertError,
+};
 use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use crate::map::{MapGen, MapIdx, MapKeyConfig};
@@ -290,19 +293,12 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         &mut self,
         idxs: [MapIdx<C>; N],
     ) -> Result<[(Key<MapKeyConfig<C>>, &mut T); N], GetDisjointMutAtError> {
-        for (i, idx) in idxs.iter().enumerate() {
-            if !self.slots.contains_key(idx) {
-                return Err(GetDisjointMutAtError::NoValue);
-            }
-            if idxs[..i].contains(idx) {
-                return Err(GetDisjointMutAtError::OverlappingIndices);
-            }
-        }
-        // SAFETY: the loop above found that no two of the indices are the
-        // same.
+        check_disjoint_idxs(&idxs, |idx| self.slots.contains_key(idx))?;
+        // SAFETY: `check_disjoint_idxs` found that no two of the indices are
+        // the same.
         let mut slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };
-        // The loop above found a value at every index, so the `HashMap` only
-        // misses one here if the hasher gave an index a different hash.
+        // `check_disjoint_idxs` found a value at every index, so the `HashMap`
+        // only misses one here if the hasher gave an index a different hash.
         if slots.iter().any(Option::is_none) {
             return Err(GetDisjointMutAtError::NoValue);
         }
@@ -339,11 +335,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         &mut self,
         idxs: [MapIdx<C>; N],
     ) -> [(Key<MapKeyConfig<C>>, &mut T); N] {
-        debug_assert!(idxs.iter().all(|idx| self.slots.contains_key(idx)));
-        debug_assert!(idxs
-            .iter()
-            .enumerate()
-            .all(|(i, idx)| !idxs[..i].contains(idx)));
+        debug_assert!(check_disjoint_idxs(&idxs, |idx| self.slots.contains_key(idx)).is_ok());
         // SAFETY: the caller promises that no two of the indices are the same.
         let mut slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };
         core::array::from_fn(|i| {
@@ -403,19 +395,13 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         &mut self,
         keys: [Key<MapKeyConfig<C>>; N],
     ) -> Result<[&mut T; N], GetDisjointMutError> {
-        for (i, key) in keys.iter().enumerate() {
-            if !self.contains_key(*key) {
-                return Err(GetDisjointMutError::InvalidKey);
-            }
-            if keys[..i].iter().any(|earlier| earlier.idx() == key.idx()) {
-                return Err(GetDisjointMutError::OverlappingKeys);
-            }
-        }
+        check_disjoint_keys(&keys, |key| self.contains_key(key))?;
         let idxs = keys.map(|key| key.idx());
-        // SAFETY: the loop above found that no two keys have the same index.
+        // SAFETY: `check_disjoint_keys` found that no two keys have the same
+        // index.
         let slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };
-        // The loop above found every key's value, so the `HashMap` only misses
-        // one here if the hasher gave an index a different hash.
+        // `check_disjoint_keys` found every key's value, so the `HashMap` only
+        // misses one here if the hasher gave an index a different hash.
         if slots.iter().any(Option::is_none) {
             return Err(GetDisjointMutError::InvalidKey);
         }
@@ -441,11 +427,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         &mut self,
         keys: [Key<MapKeyConfig<C>>; N],
     ) -> [&mut T; N] {
-        debug_assert!(keys.iter().all(|key| self.contains_key(*key)));
-        debug_assert!(keys
-            .iter()
-            .enumerate()
-            .all(|(i, key)| keys[..i].iter().all(|earlier| earlier.idx() != key.idx())));
+        debug_assert!(check_disjoint_keys(&keys, |key| self.contains_key(key)).is_ok());
         let idxs = keys.map(|key| key.idx());
         // SAFETY: the caller promises that no two keys have the same index.
         let slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };

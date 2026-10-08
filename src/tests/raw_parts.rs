@@ -2,13 +2,11 @@
 //! parts that come out of a map, parts that change between the two calls, and
 //! parts that are built by hand.
 
-use super::{key_from_parts, DropTracker};
+use super::{key_from_parts, Cfg, DropTracker};
 use crate::{
-    DenseGenMap, DenseGenMapConfig, DenseGenMapRawParts, DenseSecondaryMap,
-    DenseSecondaryMapConfig, DenseSecondaryMapRawParts, Even, GenMap, GenMapConfig, GenMapRawParts,
-    GenSlotItem, Key, MapConfig, NewerWins, Odd, Packed, PairStorage, PairVec, Parity, ParityMut,
-    ParityRef, SecondaryMap, SecondaryMapConfig, SecondaryMapRawParts, SecondarySlotItem, Slot,
-    Split,
+    DenseGenMap, DenseGenMapRawParts, DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap,
+    GenMapConfig, GenMapRawParts, GenSlotItem, Key, MapConfig, Odd, Packed, PairStorage, Parity,
+    ParityMut, ParityRef, SecondaryMap, SecondaryMapRawParts, Slot, Split,
 };
 use std::vec;
 use std::vec::Vec;
@@ -16,36 +14,7 @@ use std::vec::Vec;
 /// This config gives keys a `u8` index and a `u8` generation, so the parts of
 /// a map are small enough to write out by hand. It keeps the slots in a `Vec`,
 /// and the keys and values of the dense maps in a `PairVec`.
-struct Byte;
-
-impl MapConfig for Byte {
-    type KeyConfig = Split<u8, u8>;
-}
-
-impl GenMapConfig for Byte {
-    type Storage<S: GenSlotItem> = Vec<S>;
-}
-
-impl DenseGenMapConfig for Byte {
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
-}
-
-impl SecondaryMapConfig for Byte {
-    type ReplaceStrategy = NewerWins;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
-}
-
-impl DenseSecondaryMapConfig for Byte {
-    type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
-}
-
-#[cfg(feature = "std")]
-impl crate::SparseSecondaryMapConfig for Byte {
-    type ReplaceStrategy = NewerWins;
-}
+type Byte = Cfg<u8, u8>;
 
 /// This config gives keys a four bit generation, so the largest generation a
 /// key can hold is 15, although the generation type is a `u8`.

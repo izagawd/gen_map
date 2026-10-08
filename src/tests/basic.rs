@@ -3,7 +3,6 @@ use crate::{GenMap, InsertWithError, Key};
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::{String, ToString};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::vec::Vec;
 
 type Map<T> = GenMap<T>;
@@ -336,31 +335,23 @@ fn index_with_stale_key_panics() {
 
 #[test]
 fn drop_is_called_exactly_once_per_value() {
-    static DROPS: AtomicUsize = AtomicUsize::new(0);
-
-    struct Counted;
-    impl Drop for Counted {
-        fn drop(&mut self) {
-            DROPS.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
+    let tracker = DropTracker::new();
     {
         let mut map = Map::new();
-        let keys: Vec<_> = (0..100).map(|_| map.insert(Counted)).collect();
+        let keys: Vec<_> = (0..100).map(|_| map.insert(tracker.make_item())).collect();
         for (i, &k) in keys.iter().enumerate() {
             if i % 2 == 0 {
                 assert!(map.remove(k).is_some());
             }
         }
-        assert_eq!(DROPS.load(Ordering::SeqCst), 50);
+        assert_eq!(tracker.total_dropped(), 50);
         for _ in 0..50 {
-            map.insert(Counted);
+            map.insert(tracker.make_item());
         }
-        assert_eq!(DROPS.load(Ordering::SeqCst), 50);
+        assert_eq!(tracker.total_dropped(), 50);
     }
 
-    assert_eq!(DROPS.load(Ordering::SeqCst), 150);
+    tracker.assert_all_dropped_exactly_once(150);
 }
 
 #[test]

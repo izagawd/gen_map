@@ -2,22 +2,11 @@
 //! so neither the map nor a slot pays for an `Option` or a `usize`. These
 //! sizes are for 64-bit targets.
 
-use crate::{
-    DefaultMapConfig, DenseGenMap, GenMap, GenMapConfig, GenSlotItem, MapConfig, MapSlot, PairVec,
-    SingleVec, Split,
-};
+use super::Cfg;
+use crate::{DefaultMapConfig, DenseGenMap, GenMap, MapSlot, PairVec, SingleVec};
 use core::mem::size_of;
-use std::vec::Vec;
 
-struct Byte;
-
-impl MapConfig for Byte {
-    type KeyConfig = Split<u8, u8>;
-}
-
-impl GenMapConfig for Byte {
-    type Storage<S: GenSlotItem> = Vec<S>;
-}
+type Byte = Cfg<u8, u8>;
 
 #[test]
 fn the_map_is_a_vec_plus_two_indices() {

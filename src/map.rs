@@ -2,7 +2,8 @@
 use crate::config::DefaultMapConfig;
 use crate::config::{GenMapConfig, KeyConfig, MapConfig};
 use crate::error::{
-    FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError, InsertWithError,
+    check_disjoint_idxs, check_disjoint_keys, FullError, GetDisjointMutAtError,
+    GetDisjointMutError, InsertError, InsertWithError,
 };
 use crate::key::Key;
 use crate::key_piece::KeyPiece;
@@ -47,7 +48,10 @@ pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 /// `idx` must be the position of a slot in the storage, and `generation`
 /// must be the generation of that slot while it holds a value.
 #[inline]
-unsafe fn slot_key<C: MapConfig>(idx: Idx<C>, generation: Odd<Gen<C>>) -> Key<MapKeyConfig<C>> {
+pub(crate) unsafe fn slot_key<C: MapConfig>(
+    idx: Idx<C>,
+    generation: Odd<Gen<C>>,
+) -> Key<MapKeyConfig<C>> {
     // SAFETY: the map never lets a slot's position, or the generation of a
     // slot that holds a value, grow past what the key config holds.
     Key::from_repr(unsafe { <MapKeyConfig<C> as KeyConfig>::pack_unchecked(idx, generation) })
@@ -61,7 +65,7 @@ unsafe fn slot_key<C: MapConfig>(idx: Idx<C>, generation: Odd<Gen<C>>) -> Key<Ma
 /// position fits, because the map refuses to push a slot whose position does
 /// not.
 #[inline]
-unsafe fn index_of<C: MapConfig>(position: usize) -> Idx<C> {
+pub(crate) unsafe fn index_of<C: MapConfig>(position: usize) -> Idx<C> {
     debug_assert!(
         Idx::<C>::from_usize(position).is_some(),
         "every slot position fits in the configured index type"
@@ -79,7 +83,7 @@ unsafe fn index_of<C: MapConfig>(position: usize) -> Idx<C> {
 /// carried by a key that has a value. Every such index was made from a slot's
 /// position, so it fits in `usize`.
 #[inline]
-unsafe fn position_of<C: MapConfig>(idx: Idx<C>) -> usize {
+pub(crate) unsafe fn position_of<C: MapConfig>(idx: Idx<C>) -> usize {
     debug_assert!(
         idx.into_usize().is_some(),
         "every index of a slot fits in usize"
@@ -104,7 +108,7 @@ fn max_idx<C: MapConfig>() -> Idx<C> {
 /// so the number of values, at the largest value of the index type, so the map
 /// can count its values in that type.
 #[inline]
-fn max_slot_idx<C: MapConfig>() -> Idx<C> {
+pub(crate) fn max_slot_idx<C: MapConfig>() -> Idx<C> {
     let max = max_idx::<C>();
     if max == Idx::<C>::MAX {
         max.wrapping_sub(Idx::<C>::ONE)
@@ -117,7 +121,7 @@ fn max_slot_idx<C: MapConfig>() -> Idx<C> {
 /// The free list ends with it, `next_free` holds it while no slot is free,
 /// and a retired slot keeps it as its link.
 #[inline]
-fn no_slot<C: MapConfig>() -> Idx<C> {
+pub(crate) fn no_slot<C: MapConfig>() -> Idx<C> {
     Idx::<C>::MAX
 }
 
@@ -166,11 +170,12 @@ fn next_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Option<Even<Gen<C>>
 /// detached slot is never on the free list, so its generation never goes into
 /// a key.
 #[inline]
-fn detached_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Even<Gen<C>> {
+pub(crate) fn detached_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Even<Gen<C>> {
     generation.wrapping_next()
 }
 
-/// Returns `true` if `slot` is detached under `key`.
+/// Returns the slot at the index of `key` if the value of `key` is detached
+/// from it, or `None` if it is not.
 ///
 /// When a key's value is detached, the slot's generation is set to what
 /// [`detached_generation`] returns for the key's generation, and the slot's
@@ -179,25 +184,35 @@ fn detached_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Even<Gen<C>> {
 /// So a slot is detached under a key only if it has that generation and its
 /// own index in its `U`.
 #[inline]
-fn is_detached<T, C: GenMapConfig>(slot: &MapSlot<T, C>, key: Key<MapKeyConfig<C>>) -> bool {
-    slot.get_even(detached_generation::<C>(key.generation()))
-        .is_some_and(|link| *link == key.idx())
+pub(crate) fn detached_slot<V, C: MapConfig>(
+    slots: &mut [MapSlot<V, C>],
+    key: Key<MapKeyConfig<C>>,
+) -> Option<&mut MapSlot<V, C>> {
+    key.idx()
+        .into_usize()
+        .and_then(|position| slots.get_mut(position))
+        .filter(|slot| {
+            slot.get_even(detached_generation::<C>(key.generation()))
+                .is_some_and(|link| *link == key.idx())
+        })
 }
 
 /// Returns the generation and the link to give the slot at `idx` once the
 /// value it held under `generation` is gone. Unless the slot retires, the link
 /// is the old head of the free list, and `next_free` becomes `idx`. A slot
-/// whose generation has run out starts over at zero if `C` wraps, and
-/// otherwise retires, which keeps it off the free list for good.
+/// whose generation has run out starts over at zero if `wrap` is `true`, and
+/// otherwise retires, which keeps it off the free list for good. A map passes
+/// the `WRAP_ON_OVERFLOW` of its config as `wrap`.
 #[inline]
-fn freed_parts<C: GenMapConfig>(
+pub(crate) fn freed_parts<C: MapConfig>(
     next_free: &mut Idx<C>,
     idx: Idx<C>,
     generation: Odd<Gen<C>>,
+    wrap: bool,
 ) -> (Even<Gen<C>>, Idx<C>) {
     match next_generation::<C>(generation) {
         Some(next) => (next, core::mem::replace(next_free, idx)),
-        None if C::WRAP_ON_OVERFLOW => (Even::ZERO, core::mem::replace(next_free, idx)),
+        None if wrap => (Even::ZERO, core::mem::replace(next_free, idx)),
         None => (Even::ZERO, no_slot::<C>()),
     }
 }
@@ -693,14 +708,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         &mut self,
         idxs: [MapIdx<C>; N],
     ) -> Result<[(Key<MapKeyConfig<C>>, &mut T); N], GetDisjointMutAtError> {
-        for (i, idx) in idxs.iter().enumerate() {
-            if self.key_at(*idx).is_none() {
-                return Err(GetDisjointMutAtError::NoValue);
-            }
-            if idxs[..i].contains(idx) {
-                return Err(GetDisjointMutAtError::OverlappingIndices);
-            }
-        }
+        check_disjoint_idxs(&idxs, |idx| self.key_at(*idx).is_some())?;
         // SAFETY: every index was just found to point at an occupied slot,
         // and every index is distinct.
         Ok(unsafe { self.get_disjoint_mut_at_unchecked(idxs) })
@@ -720,11 +728,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         &mut self,
         idxs: [MapIdx<C>; N],
     ) -> [(Key<MapKeyConfig<C>>, &mut T); N] {
-        debug_assert!(idxs.iter().all(|idx| self.key_at(*idx).is_some()));
-        debug_assert!(idxs
-            .iter()
-            .enumerate()
-            .all(|(i, idx)| !idxs[..i].contains(idx)));
+        debug_assert!(check_disjoint_idxs(&idxs, |idx| self.key_at(*idx).is_some()).is_ok());
         let slots = self.slots.as_mut_slice().as_mut_ptr();
         idxs.map(|idx| {
             // SAFETY: the caller promises that the slot exists and holds a
@@ -775,16 +779,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         &mut self,
         keys: [Key<MapKeyConfig<C>>; N],
     ) -> Result<[&mut T; N], GetDisjointMutError> {
-        for (i, key) in keys.iter().enumerate() {
-            if !self.contains_key(*key) {
-                return Err(GetDisjointMutError::InvalidKey);
-            }
-            // Keys point at the same slot exactly when their indices are
-            // equal.
-            if keys[..i].iter().any(|earlier| earlier.idx() == key.idx()) {
-                return Err(GetDisjointMutError::OverlappingKeys);
-            }
-        }
+        check_disjoint_keys(&keys, |key| self.contains_key(key))?;
         // SAFETY: every key was just found to have a value, and every index
         // is distinct.
         Ok(unsafe { self.get_disjoint_mut_unchecked(keys) })
@@ -807,11 +802,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         &mut self,
         keys: [Key<MapKeyConfig<C>>; N],
     ) -> [&mut T; N] {
-        debug_assert!(keys.iter().all(|key| self.contains_key(*key)));
-        debug_assert!(keys
-            .iter()
-            .enumerate()
-            .all(|(i, key)| keys[..i].iter().all(|earlier| earlier.idx() != key.idx())));
+        debug_assert!(check_disjoint_keys(&keys, |key| self.contains_key(key)).is_ok());
         let slots = self.slots.as_mut_slice().as_mut_ptr();
         keys.map(|key| {
             // SAFETY: the caller promises that the key has a value, so its
@@ -1111,7 +1102,8 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             (slot, generation)
         };
         decrement_len(&mut self.len);
-        let (next, link) = freed_parts::<C>(&mut self.next_free, idx, generation);
+        let (next, link) =
+            freed_parts::<C>(&mut self.next_free, idx, generation, C::WRAP_ON_OVERFLOW);
         // SAFETY: the slot's generation is odd.
         unsafe { slot.replace_odd_unchecked(next, link) }
     }
@@ -1175,12 +1167,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// [`release`](Self::release) or removed by [`reset`](Self::reset).
     #[inline]
     pub fn reattach(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> Result<(), T> {
-        let Some(slot) = key
-            .idx()
-            .into_usize()
-            .and_then(|position| self.slots.as_mut_slice().get_mut(position))
-            .filter(|slot| is_detached::<T, C>(slot, key))
-        else {
+        let Some(slot) = detached_slot::<T, C>(self.slots.as_mut_slice(), key) else {
             return Err(value);
         };
         // SAFETY: a detached slot's generation is even.
@@ -1214,15 +1201,15 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// ```
     #[inline]
     pub fn release(&mut self, key: Key<MapKeyConfig<C>>) -> bool {
-        let Some(slot) = key
-            .idx()
-            .into_usize()
-            .and_then(|position| self.slots.as_mut_slice().get_mut(position))
-            .filter(|slot| is_detached::<T, C>(slot, key))
-        else {
+        let Some(slot) = detached_slot::<T, C>(self.slots.as_mut_slice(), key) else {
             return false;
         };
-        let (next, link) = freed_parts::<C>(&mut self.next_free, key.idx(), key.generation());
+        let (next, link) = freed_parts::<C>(
+            &mut self.next_free,
+            key.idx(),
+            key.generation(),
+            C::WRAP_ON_OVERFLOW,
+        );
         slot.set_even(next, link);
         true
     }

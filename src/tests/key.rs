@@ -77,23 +77,9 @@ fn key_debug_prints_both_parts() {
 
 #[test]
 fn every_integer_type_works_as_a_config() {
-    struct Mixed;
-    impl MapConfig for Mixed {
-        type KeyConfig = Split<u64, u8>;
-    }
+    type Mixed = Cfg<u64, u8>;
 
-    impl GenMapConfig for Mixed {
-        type Storage<S: GenSlotItem> = Vec<S>;
-    }
-
-    struct Wide;
-    impl MapConfig for Wide {
-        type KeyConfig = Split<u128, usize>;
-    }
-
-    impl GenMapConfig for Wide {
-        type Storage<S: GenSlotItem> = Vec<S>;
-    }
+    type Wide = Cfg<u128, usize>;
 
     let mut mixed = GenMap::<i32, Mixed>::new_with_config();
     let k = mixed.insert(1);
@@ -116,14 +102,7 @@ fn map_is_send_and_sync_when_its_values_are() {
 
 #[test]
 fn an_index_that_does_not_fit_in_usize_matches_nothing() {
-    struct Wide;
-    impl MapConfig for Wide {
-        type KeyConfig = Split<u128, u32>;
-    }
-
-    impl GenMapConfig for Wide {
-        type Storage<S: GenSlotItem> = Vec<S>;
-    }
+    type Wide = Cfg<u128, u32>;
 
     let mut map = GenMap::<i32, Wide>::new_with_config();
     let k = map.insert(1);

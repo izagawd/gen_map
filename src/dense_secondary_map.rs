@@ -1,18 +1,21 @@
 #[cfg(feature = "alloc")]
 use crate::config::DefaultMapConfig;
 use crate::config::DenseSecondaryMapConfig;
-use crate::config::{KeyConfig, MapConfig};
 use crate::dense_map::{
     clone_pairs, push_cloned, to_position, to_stored, DenseIntoIter, DenseIter, DenseIterMut,
     DenseKeys, DenseValues, DenseValuesMut,
 };
-use crate::error::{DenseError, GetDisjointMutAtError, GetDisjointMutError, SecondaryInsertError};
+use crate::error::{
+    check_disjoint_idxs, check_disjoint_keys, DenseError, GetDisjointMutAtError,
+    GetDisjointMutError, SecondaryInsertError,
+};
 use crate::key::Key;
 use crate::key_piece::KeyPiece;
 use crate::map::{MapGen, MapIdx, MapKeyConfig};
 use crate::pair_storage::{PairStorage, ReservePairStorage};
 use crate::parity::{Even, Odd};
 use crate::replace_strategy::ReplaceStrategy;
+use crate::secondary_map::{get_or_grow_slot, key_from_parts_unchecked};
 use crate::slot::{ParityRef, Slot};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
@@ -49,41 +52,6 @@ fn occupied<C: DenseSecondaryMapConfig>(
     }
 }
 
-/// Builds the key whose index is `slot_index` and whose generation is
-/// `generation`, without checking that they fit.
-///
-/// # Safety
-///
-/// `slot_index` must fit in the key's index type, and that index and
-/// `generation` must fit the key config together. Both are true for the
-/// position and generation of a slot that holds a value.
-#[inline]
-unsafe fn key_from_parts_unchecked<C: MapConfig>(
-    slot_index: usize,
-    generation: Odd<MapGen<C>>,
-) -> Key<MapKeyConfig<C>> {
-    debug_assert!(
-        MapIdx::<C>::from_usize(slot_index)
-            .and_then(|idx| <MapKeyConfig<C> as KeyConfig>::pack(idx, generation))
-            .is_some(),
-        "the index and the generation fit the key"
-    );
-    // SAFETY: the caller promises that `slot_index` fits in the index type,
-    // and that the index and `generation` fit the key config.
-    unsafe {
-        let idx = MapIdx::<C>::from_usize_unchecked(slot_index);
-        Key::from_repr(<MapKeyConfig<C> as KeyConfig>::pack_unchecked(
-            idx, generation,
-        ))
-    }
-}
-
-/// Returns a slot with generation zero, which holds no value.
-#[inline]
-fn empty_slot<C: DenseSecondaryMapConfig>() -> DenseSecondaryMapSlot<C> {
-    Slot::new_even(Even::ZERO, ())
-}
-
 /// The error a `DenseSecondaryMap<T, C>` gives when one of its storages cannot
 /// make room.
 pub type DenseSecondaryStorageError<T, C> = DenseError<
@@ -114,8 +82,8 @@ type InsertResult<T, C> =
 /// position.
 ///
 /// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`]. To use
-/// your own config, implement [`MapConfig`] and [`DenseSecondaryMapConfig`]
-/// for it.
+/// your own config, implement [`MapConfig`](crate::MapConfig) and
+/// [`DenseSecondaryMapConfig`] for it.
 ///
 /// # Examples
 ///
@@ -512,14 +480,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         &mut self,
         idxs: [MapIdx<C>; N],
     ) -> Result<[(Key<MapKeyConfig<C>>, &mut T); N], GetDisjointMutAtError> {
-        for (i, idx) in idxs.iter().enumerate() {
-            if self.key_at(*idx).is_none() {
-                return Err(GetDisjointMutAtError::NoValue);
-            }
-            if idxs[..i].contains(idx) {
-                return Err(GetDisjointMutAtError::OverlappingIndices);
-            }
-        }
+        check_disjoint_idxs(&idxs, |idx| self.key_at(*idx).is_some())?;
         // SAFETY: every index was just found to point at a slot that holds a
         // value, and every index is distinct.
         Ok(unsafe { self.get_disjoint_mut_at_unchecked(idxs) })
@@ -539,11 +500,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         &mut self,
         idxs: [MapIdx<C>; N],
     ) -> [(Key<MapKeyConfig<C>>, &mut T); N] {
-        debug_assert!(idxs.iter().all(|idx| self.key_at(*idx).is_some()));
-        debug_assert!(idxs
-            .iter()
-            .enumerate()
-            .all(|(i, idx)| !idxs[..i].contains(idx)));
+        debug_assert!(check_disjoint_idxs(&idxs, |idx| self.key_at(*idx).is_some()).is_ok());
         // SAFETY: the caller promises that every index has a slot that holds a
         // value and that the indices are different. So each index points at a
         // slot in bounds with an odd generation, the slots are different, and
@@ -578,15 +535,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         &mut self,
         keys: [Key<MapKeyConfig<C>>; N],
     ) -> Result<[&mut T; N], GetDisjointMutError> {
-        for (i, key) in keys.iter().enumerate() {
-            if !self.contains_key(*key) {
-                return Err(GetDisjointMutError::InvalidKey);
-            }
-            // Keys point at the same slot exactly when their indices are equal.
-            if keys[..i].iter().any(|earlier| earlier.idx() == key.idx()) {
-                return Err(GetDisjointMutError::OverlappingKeys);
-            }
-        }
+        check_disjoint_keys(&keys, |key| self.contains_key(key))?;
         // SAFETY: every key was just found to have a value, and every index is
         // distinct.
         Ok(unsafe { self.get_disjoint_mut_unchecked(keys) })
@@ -606,11 +555,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         &mut self,
         keys: [Key<MapKeyConfig<C>>; N],
     ) -> [&mut T; N] {
-        debug_assert!(keys.iter().all(|key| self.contains_key(*key)));
-        debug_assert!(keys
-            .iter()
-            .enumerate()
-            .all(|(i, key)| keys[..i].iter().all(|earlier| earlier.idx() != key.idx())));
+        debug_assert!(check_disjoint_keys(&keys, |key| self.contains_key(key)).is_ok());
         // SAFETY: the caller promises that a value is stored under every key
         // and that no two keys point at the same slot. So each key's index
         // points at a slot in bounds that holds a value, and the positions
@@ -746,7 +691,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         }
         // SAFETY: `self.pairs.len()` is the number of values.
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
-        match Self::get_or_grow_slot(&mut self.slots, key.idx()) {
+        match get_or_grow_slot(&mut self.slots, key.idx()) {
             Ok(slot) => {
                 slot.set_odd(key.generation(), stored_position);
             }
@@ -791,50 +736,6 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     #[inline]
     pub fn values_mut(&mut self) -> DenseValuesMut<'_, T> {
         DenseValuesMut(self.pairs.second_slice_mut().iter_mut())
-    }
-
-    /// Returns the slot at `idx` in `slots`. If the storage has no slot there
-    /// yet, it first grows to hold every slot up to and including `idx`, which
-    /// can allocate, and the new slots start out empty.
-    ///
-    /// # Errors
-    ///
-    /// Returns the storage's error, and adds no slots, if the storage cannot
-    /// make room for all of them.
-    fn get_or_grow_slot(
-        slots: &mut Slots<C>,
-        idx: MapIdx<C>,
-    ) -> Result<&mut DenseSecondaryMapSlot<C>, <Slots<C> as SliceStorage>::Error> {
-        let Some(slot_index) = idx.into_usize() else {
-            // No storage can hold a slot past `usize::MAX`. Asking for
-            // `usize::MAX` more slots gets the error the storage gives when it
-            // has no room.
-            return Err(slots
-                .ensure_room(usize::MAX)
-                .expect_err("no storage has room for `usize::MAX` more slots"));
-        };
-        let len = slots.len();
-        if slot_index >= len {
-            // `slot_index - len + 1` slots are missing. That count overflows
-            // when `slot_index` is `usize::MAX` and the storage is empty, so
-            // the map asks for `usize::MAX` slots instead, which no storage can
-            // hold either.
-            slots.ensure_room((slot_index - len).saturating_add(1))?;
-            for _ in len..=slot_index {
-                // `ensure_room` made room for every one of these slots, and
-                // `SliceStorage` promises that the pushes succeed after that. A
-                // push that fails here means the storage broke that promise.
-                if slots.try_push(empty_slot::<C>()).is_err() {
-                    panic!("SliceStorage::try_push failed although ensure_room returned Ok");
-                }
-            }
-        }
-        debug_assert!(slot_index < slots.len());
-        // SAFETY: the storage either had a slot at `slot_index` already, or the
-        // loop above pushed a slot for every position up to it. `SliceStorage`
-        // promises that each push adds one slot at the end, so `slot_index` is
-        // in bounds.
-        Ok(unsafe { slots.as_mut_slice().get_unchecked_mut(slot_index) })
     }
 
     /// The position of the value stored under `key`, as its slot stores it, or

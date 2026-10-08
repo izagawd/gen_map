@@ -1,17 +1,10 @@
+use super::Cfg;
 use crate::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
 use std::vec::Vec;
 
 /// A `u8` index and a `u8` generation, so a slot retires after holding 128
 /// values.
-struct Retire;
-
-impl MapConfig for Retire {
-    type KeyConfig = Split<u8, u8>;
-}
-
-impl GenMapConfig for Retire {
-    type Storage<S: GenSlotItem> = Vec<S>;
-}
+type Retire = Cfg<u8, u8>;
 
 /// The same keys as [`Retire`], but a slot whose generation runs out wraps
 /// and is used again.
