@@ -284,7 +284,7 @@ impl<'a, T, C: GenMapConfig> VacantEntry<'a, T, C> {
 
     /// Puts `value` in the slot and returns its key, the same one
     /// [`key`](Self::key) returns.
-    #[inline]
+    #[inline(always)]
     pub fn insert(self, value: T) -> Key<MapKeyConfig<C>> {
         // SAFETY: `target` came from `next_target`, and this entry has held
         // `&mut` on the map since, so nothing has touched it.
@@ -824,9 +824,14 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// either its keys have no index left for a new slot or the storage cannot
     /// make room for one. Use [`try_insert`](Self::try_insert) to get
     /// the value back instead.
-    #[inline]
     pub fn insert(&mut self, value: T) -> Key<MapKeyConfig<C>> {
-        self.insert_with_key(|_| value)
+        let target = match self.next_target() {
+            Ok(target) => target,
+            Err(full) => panic_full::<T, C>(full, self.slots.len()),
+        };
+        // SAFETY: `target` came from `next_target`, and nothing has touched
+        // the map since.
+        unsafe { self.fill(target, value) }
     }
 
     /// Inserts a value and returns its key, or hands the value back if the
@@ -861,7 +866,6 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// }
     /// assert!(matches!(map.try_insert(255), Err(InsertError::IndexExhausted(255))));
     /// ```
-    #[inline]
     #[allow(clippy::type_complexity)]
     pub fn try_insert(
         &mut self,
@@ -886,7 +890,6 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// cannot make room for one. Use
     /// [`try_insert_with_key`](Self::try_insert_with_key) or
     /// [`vacant_entry`](Self::vacant_entry) to get an error instead.
-    #[inline]
     pub fn insert_with_key<F>(&mut self, f: F) -> Key<MapKeyConfig<C>>
     where
         F: FnOnce(Key<MapKeyConfig<C>>) -> T,

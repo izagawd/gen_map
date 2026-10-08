@@ -738,6 +738,57 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         DenseValuesMut(self.pairs.second_slice_mut().iter_mut())
     }
 
+    /// Returns the keys and the values as two slices, in the order the values
+    /// are stored. The value at each position in the second slice is stored
+    /// under the key at the same position in the first slice.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{DenseSecondaryMap, GenMap};
+    ///
+    /// let mut people = GenMap::new();
+    /// let mut ages = DenseSecondaryMap::new();
+    /// let alice = people.insert("Alice");
+    /// let bob = people.insert("Bob");
+    /// ages.insert(alice, 30).unwrap();
+    /// ages.insert(bob, 25).unwrap();
+    ///
+    /// let (keys, values) = ages.as_slices();
+    /// assert_eq!(keys, [alice, bob]);
+    /// assert_eq!(values, [30, 25]);
+    /// ```
+    #[inline]
+    pub fn as_slices(&self) -> (&[Key<MapKeyConfig<C>>], &[T]) {
+        self.pairs.slices()
+    }
+
+    /// Returns the keys as a slice and the values as a mutable slice, in the
+    /// order the values are stored. The value at each position in the second
+    /// slice is stored under the key at the same position in the first slice.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{DenseSecondaryMap, GenMap};
+    ///
+    /// let mut people = GenMap::new();
+    /// let mut ages = DenseSecondaryMap::new();
+    /// let alice = people.insert("Alice");
+    /// let bob = people.insert("Bob");
+    /// ages.insert(alice, 30).unwrap();
+    /// ages.insert(bob, 25).unwrap();
+    ///
+    /// let (_, values) = ages.as_slices_mut();
+    /// values[0] = 31;
+    /// assert_eq!((ages[alice], ages[bob]), (31, 25));
+    /// ```
+    #[inline]
+    pub fn as_slices_mut(&mut self) -> (&[Key<MapKeyConfig<C>>], &mut [T]) {
+        let (keys, values) = self.pairs.slices_mut();
+        (keys, values)
+    }
+
     /// The position of the value stored under `key`, as its slot stores it, or
     /// `None` if no value is stored under `key`.
     #[inline]
