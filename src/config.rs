@@ -49,6 +49,10 @@ use core::hash::Hash;
 /// parts every time they are called on the same value, because the maps check
 /// a key's parts once and then read them again.
 ///
+/// [`Key`](crate::Key) compares and hashes keys with this value's `PartialEq` and `Hash`
+/// implementations, so those must only look at the index and the generation,
+/// and compare/hash them correctly.
+///
 /// None of the implemented methods/functions of this trait should trigger a panic,
 /// as it could cause a panic when a map is in the middle of doing something important,
 /// which may cause undefined behavior, and the [`Clone`](core::clone::Clone)
