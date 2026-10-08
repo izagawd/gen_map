@@ -8,6 +8,16 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec;
 use std::vec::Vec;
 
+/// Makes room for a pair with `ensure_room` and pushes it, and panics if the
+/// storage cannot make room.
+fn push_pair<P: PairStorage>(pairs: &mut P, first: P::First, second: P::Second) {
+    pairs
+        .ensure_room(1)
+        .expect("the pair storage has room for one more pair");
+    // SAFETY: `ensure_room` just returned `Ok` for this push.
+    unsafe { pairs.push_unchecked(first, second) };
+}
+
 #[test]
 fn from_parts_needs_two_storages_of_the_same_length() {
     assert!(SplitPair::from_parts(vec![1, 2], vec!["a"]).is_none());
@@ -19,8 +29,8 @@ fn from_parts_needs_two_storages_of_the_same_length() {
 #[test]
 fn pushes_and_pops_move_both_slices_together() {
     let mut pairs = SplitPair::<Vec<u32>, Vec<char>>::empty();
-    pairs.try_push(1, 'a').unwrap();
-    pairs.try_push(2, 'b').unwrap();
+    push_pair(&mut pairs, 1, 'a');
+    push_pair(&mut pairs, 2, 'b');
     pairs.first_slice_mut()[0] = 10;
     pairs.second_slice_mut()[1] = 'z';
     assert_eq!(pairs.len(), 2);
@@ -35,8 +45,11 @@ fn clear_empties_both_slices_when_a_drop_in_the_first_slice_panics() {
     let tracker = DropTracker::new();
     let mut pairs = SplitPair::<Vec<Bomb>, Vec<Bomb>>::with_capacity(4);
     for i in 0..4 {
-        let pushed = pairs.try_push(Bomb::new(&tracker, i == 1), Bomb::new(&tracker, false));
-        assert!(pushed.is_ok());
+        push_pair(
+            &mut pairs,
+            Bomb::new(&tracker, i == 1),
+            Bomb::new(&tracker, false),
+        );
     }
     assert!(catch_unwind(AssertUnwindSafe(|| pairs.clear())).is_err());
     assert!(pairs.first_slice().is_empty());
@@ -76,31 +89,29 @@ mod capped {
     use arrayvec::ArrayVec;
 
     #[test]
-    fn a_refused_second_item_hands_back_both_items_and_changes_nothing() {
+    fn a_full_second_storage_refuses_room_and_changes_nothing() {
         // The first storage has room for four items, but the second only has
         // room for two.
         let mut pairs = SplitPair::<ArrayVec<u8, 4>, ArrayVec<u8, 2>>::empty();
         assert_eq!(pairs.capacity(), 2);
-        pairs.try_push(1, 10).unwrap();
-        pairs.try_push(2, 20).unwrap();
-        assert_eq!(pairs.try_push(3, 30), Err((3, 30)));
-        assert_eq!(pairs.slices(), (&[1, 2][..], &[10, 20][..]));
+        push_pair(&mut pairs, 1, 10);
+        push_pair(&mut pairs, 2, 20);
         assert!(matches!(
             pairs.ensure_room(1),
             Err(SplitPairError::Second(_))
         ));
+        assert_eq!(pairs.slices(), (&[1, 2][..], &[10, 20][..]));
     }
 
     #[test]
-    fn a_refused_first_item_hands_back_both_items_and_changes_nothing() {
+    fn a_full_first_storage_refuses_room_and_changes_nothing() {
         let mut pairs = SplitPair::<ArrayVec<u8, 2>, ArrayVec<u8, 4>>::empty();
-        pairs.try_push(1, 10).unwrap();
-        pairs.try_push(2, 20).unwrap();
-        assert_eq!(pairs.try_push(3, 30), Err((3, 30)));
-        assert_eq!(pairs.slices(), (&[1, 2][..], &[10, 20][..]));
+        push_pair(&mut pairs, 1, 10);
+        push_pair(&mut pairs, 2, 20);
         assert!(matches!(
             pairs.ensure_room(1),
             Err(SplitPairError::First(_))
         ));
+        assert_eq!(pairs.slices(), (&[1, 2][..], &[10, 20][..]));
     }
 }

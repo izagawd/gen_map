@@ -33,9 +33,10 @@ use core::iter::FusedIterator;
 /// two `Vec`s that always change together, in the ways listed below.
 ///
 /// - [`slices`](Self::slices) and [`slices_mut`](Self::slices_mut) must
-///   return exactly the pairs pushed with [`try_push`](Self::try_push) since
-///   the last [`clear`](Self::clear) and not taken out by [`pop`](Self::pop)
-///   since, in the order they were pushed, and no others. The first item of
+///   return exactly the pairs pushed with
+///   [`push_unchecked`](Self::push_unchecked) since the last
+///   [`clear`](Self::clear) and not taken out by [`pop`](Self::pop) since,
+///   in the order they were pushed, and no others. The first item of
 ///   each pair must sit in the first slice, and the second item must sit at
 ///   the same position in the second slice. The other slice methods, as
 ///   well as [`len`](Self::len) and [`is_empty`](Self::is_empty), must agree
@@ -44,13 +45,18 @@ use core::iter::FusedIterator;
 ///   implemented in this trait may remove, drop, replace or change an item.
 ///   An item only mutates through the slice methods.
 ///   Growing may move the items in memory, but must keep them in the same order and indices.
-/// - `try_push` must either append both items and return `Ok`, or hand both
-///   items back in `Err` and leave the storage as it was.
 /// - `pop` must take out the last pair and return it, or return `None` and
 ///   leave the storage as it was if it has no pairs.
 /// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n` pairs,
-///   the next `n` calls of `try_push` must succeed, as long as no other
-///   `&mut self` method of this trait runs in between.
+///   the storage must have room for the next `n` calls of `push_unchecked`,
+///   as long as no other `&mut self` method of this trait runs in between.
+/// - When another storage of the same type holds `n` pairs, a storage that
+///   [`with_capacity`](Self::with_capacity) returns for `n` pairs must have
+///   room for its first `n` calls of `push_unchecked`, as long as no other
+///   `&mut self` method of this trait runs in between. The dense maps rely on
+///   this when they clone a storage.
+/// - When one of the two rules above promises room, `push_unchecked` must
+///   append both items.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
 /// - Only [`with_capacity`](Self::with_capacity), `ensure_room` and `clear`
@@ -127,29 +133,25 @@ pub unsafe trait PairStorage {
     /// the same pair.
     fn slices_mut(&mut self) -> (&mut [Self::First], &mut [Self::Second]);
 
-    /// Makes sure the next `additional` calls of [`try_push`](Self::try_push)
-    /// will succeed, growing if the storage can and has to. A dense map passes
-    /// on the room its `try_reserve` is asked for, so `additional` can be
-    /// larger than any storage can hold. The map expects an error in that
-    /// case, not a panic.
+    /// Makes sure the storage has room for the next `additional` calls of
+    /// [`push_unchecked`](Self::push_unchecked), growing if the storage can
+    /// and has to. A dense map passes on the room its `try_reserve` is asked
+    /// for, so `additional` can be larger than any storage can hold. The map
+    /// expects an error in that case, not a panic.
     ///
     /// # Errors
     ///
-    /// Returns the reason the pushes would fail if the storage cannot make
-    /// room for all of them.
+    /// Returns why the storage cannot make room for all of them, when it
+    /// cannot.
     fn ensure_room(&mut self, additional: usize) -> Result<(), Self::Error>;
 
     /// Appends `first` to the first slice and `second` to the second slice, as
-    /// one pair.
+    /// one pair, without checking that the storage has room for them.
     ///
-    /// # Errors
+    /// # Safety
     ///
-    /// Hands both items back if the storage cannot make room for them.
-    fn try_push(
-        &mut self,
-        first: Self::First,
-        second: Self::Second,
-    ) -> Result<(), (Self::First, Self::Second)>;
+    /// The rules of this trait must promise room for this call.
+    unsafe fn push_unchecked(&mut self, first: Self::First, second: Self::Second);
 
     /// Takes out the last pair and returns it, or returns `None` if there are
     /// no pairs.
@@ -235,11 +237,15 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
 
 // SAFETY: each slice is kept in a `SliceStorage`, which behaves like a
 // `Vec`, and every method keeps the two storages at the same length.
-// `from_parts` only accepts two storages of the same length, and `try_push`
-// takes the first item back out when the second storage refuses its item.
-// Neither storage panics outside `with_capacity`, `ensure_room` and `clear`,
-// so `try_push` and `pop` never stop after changing only one storage, and no
-// other method panics either. `clear` empties the second storage even when
+// `from_parts` only accepts two storages of the same length. Neither storage
+// panics outside `with_capacity`, `ensure_room` and `clear`, so
+// `push_unchecked` and `pop` never stop after changing only one storage, and
+// no other method panics either. `ensure_room` returns `Ok` only when both
+// storages do. When another `SplitPair` of the same type holds `n` pairs, each
+// of its storages holds `n` items, so both storages that `with_capacity(n)`
+// makes have room for `n` items. `push_unchecked` pushes into both storages
+// without a check, and the rules only promise room for a pair when they
+// promise room in both storages. `clear` empties the second storage even when
 // dropping an item of the first one panics.
 unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
     type First = A::Item;
@@ -308,19 +314,13 @@ unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
     }
 
     #[inline]
-    fn try_push(&mut self, first: A::Item, second: B::Item) -> Result<(), (A::Item, B::Item)> {
-        if let Err(first) = self.first.try_push(first) {
-            return Err((first, second));
-        }
-        match self.second.try_push(second) {
-            Ok(()) => Ok(()),
-            // The first storage took `first` just before, so `pop` hands it
-            // back and leaves that storage as it was. Only a broken storage
-            // returns `None` here.
-            Err(second) => match self.first.pop() {
-                Some(first) => Err((first, second)),
-                None => panic!("SliceStorage::pop returned None right after a push succeeded"),
-            },
+    unsafe fn push_unchecked(&mut self, first: A::Item, second: B::Item) {
+        // SAFETY: the caller guarantees that the rules of the trait promise
+        // room for this call, and a `SplitPair` only promises room when the
+        // rules of both storages promise room for their next item.
+        unsafe {
+            self.first.push_unchecked(first);
+            self.second.push_unchecked(second);
         }
     }
 

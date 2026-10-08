@@ -10,6 +10,16 @@ fn ids<St: SliceStorage<Item = DropItem>>(storage: &St) -> Vec<u32> {
     storage.as_slice().iter().map(|item| item.id).collect()
 }
 
+/// Makes room for `item` with `ensure_room` and pushes it, and panics if the
+/// storage cannot make room.
+fn push<St: SliceStorage>(storage: &mut St, item: St::Item) {
+    storage
+        .ensure_room(1)
+        .expect("the storage has room for one more item");
+    // SAFETY: `ensure_room` just returned `Ok` for this push.
+    unsafe { storage.push_unchecked(item) };
+}
+
 /// Pushes `count` items and checks their order, then checks that `clear`
 /// drops every one of them exactly once. `count` must fit the storage.
 fn check_storage<St>(count: u32)
@@ -25,7 +35,8 @@ where
     // One call to `ensure_room` makes room for every push that follows.
     assert!(storage.ensure_room(count as usize).is_ok());
     for _ in 0..count {
-        assert!(storage.try_push(tracker.make_item()).is_ok());
+        // SAFETY: `ensure_room` returned `Ok` for all of these pushes.
+        unsafe { storage.push_unchecked(tracker.make_item()) };
     }
     assert_eq!(storage.len(), count as usize);
     assert!(storage.capacity() >= count as usize);
@@ -41,7 +52,7 @@ where
     tracker.assert_all_dropped_exactly_once(count);
 
     for _ in 0..3 {
-        assert!(storage.try_push(tracker.make_item()).is_ok());
+        push(&mut storage, tracker.make_item());
     }
     let backwards: Vec<_> = storage.into_iter().rev().map(|item| item.id).collect();
     assert_eq!(backwards, [count + 2, count + 1, count]);
@@ -54,7 +65,7 @@ fn check_pop<St: SliceStorage<Item = u32>>() {
     let mut storage = St::empty();
     assert_eq!(storage.pop(), None);
     for i in 0..3 {
-        assert!(storage.try_push(i).is_ok());
+        push(&mut storage, i);
     }
     storage.as_mut_slice().swap(0, 2);
     assert_eq!(storage.pop(), Some(0));
@@ -66,15 +77,18 @@ fn check_pop<St: SliceStorage<Item = u32>>() {
 }
 
 /// Checks that a storage marked as one that can grow makes room for more
-/// items than it was created with, and that the pushes after that succeed.
+/// items than it was created with, and that it holds every item pushed after
+/// that.
 fn check_growth<St: ReserveStorage<Item = u32>>() {
     let mut storage = St::with_capacity(2);
     let wanted = storage.capacity() + 10;
     assert!(storage.ensure_room(wanted).is_ok());
     assert!(storage.capacity() >= wanted);
     for item in (0u32..).take(wanted) {
-        assert!(storage.try_push(item).is_ok());
+        // SAFETY: `ensure_room` returned `Ok` for all of these pushes.
+        unsafe { storage.push_unchecked(item) };
     }
+    assert_eq!(storage.len(), wanted);
 }
 
 #[test]
@@ -103,30 +117,20 @@ fn an_array_vec_keeps_the_storage_contract() {
 
 #[cfg(feature = "arrayvec")]
 #[test]
-fn a_full_array_vec_hands_the_item_back() {
-    let tracker = DropTracker::new();
-    let mut storage = arrayvec::ArrayVec::<DropItem, 2>::empty();
-    for _ in 0..2 {
-        assert!(storage.try_push(tracker.make_item()).is_ok());
-    }
+fn a_full_array_vec_has_no_room_left() {
+    let mut storage = arrayvec::ArrayVec::<u32, 2>::empty();
+    push(&mut storage, 0);
+    push(&mut storage, 1);
     assert_eq!(SliceStorage::capacity(&storage), 2);
     assert!(storage.ensure_room(1).is_err());
     assert!(storage.ensure_room(0).is_ok());
-
-    let item = tracker.make_item();
-    let back = SliceStorage::try_push(&mut storage, item).unwrap_err();
-    assert_eq!(back.id, 2);
-    tracker.assert_none_dropped();
-    drop(back);
-    drop(storage);
-    tracker.assert_all_dropped_exactly_once(3);
 }
 
 #[cfg(feature = "arrayvec")]
 #[test]
 fn an_array_vec_makes_room_only_for_what_fits() {
     let mut storage = arrayvec::ArrayVec::<u32, 4>::empty();
-    assert!(storage.try_push(0).is_ok());
+    push(&mut storage, 0);
     assert!(storage.ensure_room(3).is_ok());
     assert!(storage.ensure_room(4).is_err());
     assert!(storage.ensure_room(usize::MAX).is_err());
@@ -156,7 +160,7 @@ fn check_clear_with_a_panicking_drop<St: SliceStorage<Item = Bomb>>(count: usize
     let tracker = DropTracker::new();
     let mut storage = St::empty();
     for i in 0..count {
-        assert!(storage.try_push(Bomb::new(&tracker, i == 1)).is_ok());
+        push(&mut storage, Bomb::new(&tracker, i == 1));
     }
     let cleared = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| storage.clear()));
     assert!(cleared.is_err());

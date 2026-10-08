@@ -26,8 +26,8 @@ impl<S> IntoIterator for Capped<S> {
     }
 }
 
-// SAFETY: this is a `Vec` that refuses pushes past `CAP`, and it behaves as
-// the trait describes.
+// SAFETY: this is a `Vec` whose `ensure_room` refuses room past `CAP` items,
+// and it behaves as the trait describes.
 unsafe impl<S> SliceStorage for Capped<S> {
     type Item = S;
     type Error = CapReached;
@@ -60,13 +60,9 @@ unsafe impl<S> SliceStorage for Capped<S> {
         }
     }
 
-    fn try_push(&mut self, item: S) -> Result<(), S> {
-        if self.0.len() < CAP {
-            self.0.push(item);
-            Ok(())
-        } else {
-            Err(item)
-        }
+    unsafe fn push_unchecked(&mut self, item: S) {
+        debug_assert!(self.0.len() < CAP);
+        self.0.push(item);
     }
 
     fn pop(&mut self) -> Option<S> {
