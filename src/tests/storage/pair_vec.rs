@@ -2,10 +2,10 @@
 //! of the default config, so the dense map tests cover it as well.
 
 use crate::tests::model::Rng;
-use crate::tests::{Bomb, DropTracker};
+use crate::tests::{Bomb, DropItem, DropTracker};
 use crate::{PairStorage, PairVec, PairVecIntoIter, PairVecRawParts, ReserveError};
 use core::alloc::Layout;
-use core::mem::ManuallyDrop;
+use core::fmt::Debug;
 use core::ptr::NonNull;
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -43,11 +43,11 @@ fn the_mutable_slices_change_the_pairs_in_place() {
 }
 
 #[test]
-fn growing_moves_every_pair_into_the_new_buffers() {
+fn growing_moves_every_pair_into_the_new_buffer() {
     let mut pairs = PairVec::<_, _>::with_capacity(3);
     let capacity = pairs.capacity();
     assert!(capacity >= 3);
-    // Pushing as many pairs as there is room for needs no new buffers.
+    // Pushing as many pairs as there is room for does not grow the buffer.
     for i in 0..capacity as u64 {
         pairs.push(i, [i as u8; 3]);
     }
@@ -63,6 +63,37 @@ fn growing_moves_every_pair_into_the_new_buffers() {
         .iter()
         .copied()
         .eq((0..100).map(|i| [i as u8; 3])));
+}
+
+#[test]
+fn growing_keeps_both_slices_whatever_the_sizes_and_alignments_of_their_items() {
+    fn check<A, B>(make: impl Fn(u8) -> (A, B))
+    where
+        A: Copy + PartialEq + Debug,
+        B: Copy + PartialEq + Debug,
+    {
+        let mut pairs = PairVec::<A, B>::new();
+        let mut firsts = Vec::new();
+        let mut seconds = Vec::new();
+        for i in 0..100 {
+            let (first, second) = make(i);
+            pairs.push(first, second);
+            firsts.push(first);
+            seconds.push(second);
+            assert_eq!(pairs.slices(), (firsts.as_slice(), seconds.as_slice()));
+        }
+        // Making room for many more pairs moves the second slice far from
+        // where it was.
+        pairs.ensure_room(1000).unwrap();
+        assert_eq!(pairs.slices(), (firsts.as_slice(), seconds.as_slice()));
+    }
+
+    check(|i| (i, u64::from(i)));
+    check(|i| (u64::from(i), i));
+    check(|i| ([i; 3], u16::from(i)));
+    check(|i| (u16::from(i), [i; 3]));
+    check(|i| (u128::from(i), ()));
+    check(|i| ((), u128::from(i)));
 }
 
 #[test]
@@ -347,7 +378,7 @@ fn raw_parts_of_pairs_that_take_no_space_keep_their_count() {
     }
     let mut parts = pairs.into_raw_parts();
     assert_eq!((parts.capacity, parts.len), (255, 3));
-    // Items that take no space need no buffers, so any capacity of at least
+    // Items that take no space need no buffer, so any capacity of at least
     // `len` follows the rules, and the vec's capacity is still the largest
     // `u8`.
     parts.capacity = 3;
@@ -356,23 +387,29 @@ fn raw_parts_of_pairs_that_take_no_space_keep_their_count() {
 }
 
 #[test]
-fn a_vec_can_take_over_the_buffers_of_two_std_vecs() {
+fn a_vec_can_take_over_a_buffer_allocated_by_hand() {
     let tracker = DropTracker::new();
-    let mut firsts = ManuallyDrop::new(Vec::with_capacity(4));
-    let mut seconds = ManuallyDrop::new(Vec::with_capacity(4));
+    let (layout, offset) = Layout::array::<u32>(4)
+        .unwrap()
+        .extend(Layout::array::<DropItem>(4).unwrap())
+        .unwrap();
+    let buffer = NonNull::new(unsafe { std::alloc::alloc(layout) }).unwrap();
+    let first = buffer.cast::<u32>();
+    let second = unsafe { buffer.add(offset) }.cast::<DropItem>();
     for i in 0..3u32 {
-        firsts.push(i);
-        seconds.push(tracker.make_item());
+        unsafe {
+            first.add(i as usize).write(i);
+            second.add(i as usize).write(tracker.make_item());
+        }
     }
-    assert_eq!(firsts.capacity(), seconds.capacity());
     let parts = PairVecRawParts {
-        first: NonNull::new(firsts.as_mut_ptr()).unwrap(),
-        second: NonNull::new(seconds.as_mut_ptr()).unwrap(),
-        capacity: firsts.capacity(),
-        len: firsts.len(),
+        first,
+        second,
+        capacity: 4usize,
+        len: 3,
     };
     let mut pairs: PairVec<_, _> = unsafe { PairVec::from_raw_parts(parts) };
-    // Growing frees the buffers of the `Vec`s.
+    // Growing reallocates the buffer that was allocated by hand.
     for i in 3..10 {
         pairs.push(i, tracker.make_item());
     }

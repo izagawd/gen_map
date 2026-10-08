@@ -13,8 +13,8 @@ use core::iter::FusedIterator;
 /// the second slice, and the key of each value at the same position in the
 /// first slice.
 ///
-/// [`PairVec`](crate::PairVec) keeps the two slices in two buffers that
-/// share one length and one capacity. [`SplitPair`] keeps each slice in a
+/// [`PairVec`](crate::PairVec) keeps the two slices in one buffer, with one
+/// length and one capacity for both. [`SplitPair`] keeps each slice in a
 /// [`SliceStorage`] of its own, so it works with any slice storage, such as an
 /// `ArrayVec`.
 ///

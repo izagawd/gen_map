@@ -39,7 +39,7 @@ fn growing_moves_every_item_into_the_new_buffer() {
     let mut items = SingleVec::<_, u32>::with_capacity(3);
     let capacity = items.capacity();
     assert!(capacity >= 3);
-    // Pushing as many items as there is room for needs no new buffer.
+    // Pushing as many items as there is room for does not grow the buffer.
     for i in 0..capacity as u64 {
         items.push(i);
     }
@@ -275,7 +275,7 @@ fn a_vec_can_take_over_the_buffer_of_a_std_vec() {
         len: vec.len(),
     };
     let mut items: SingleVec<_> = unsafe { SingleVec::from_raw_parts(parts) };
-    // Growing frees the buffer of the `Vec`.
+    // Growing reallocates the buffer of the `Vec`.
     for _ in 0..10 {
         items.push(tracker.make_item());
     }
