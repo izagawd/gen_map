@@ -702,10 +702,10 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
                 ));
             }
         }
-        // The room was made above, so only a broken storage refuses the pair.
-        if self.pairs.try_push(key, value).is_err() {
-            panic!("PairStorage::try_push failed although ensure_room returned Ok");
-        }
+        // SAFETY: `ensure_room(1)` returned `Ok` above, and no other `&mut`
+        // method of the pair storage has run since, so `PairStorage` promises
+        // that this push succeeds.
+        unsafe { self.pairs.try_push(key, value).unwrap_unchecked() };
         Ok(None)
     }
 

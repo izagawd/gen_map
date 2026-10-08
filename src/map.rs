@@ -1024,13 +1024,10 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             self.next_free = unsafe { slot.replace_even_unchecked(target.generation, value) };
         } else {
             let slot = Slot::new_odd(target.generation, value);
-            // `next_target` made room for this slot, and `SliceStorage`
-            // promises that `try_push` succeeds after that, so only a broken
-            // storage refuses the push. The slot is dropped with its value in
-            // that case.
-            if self.slots.try_push(slot).is_err() {
-                panic!("SliceStorage::try_push failed although ensure_room returned Ok");
-            }
+            // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this
+            // slot, and no other `&mut` method of the storage has run since,
+            // so `SliceStorage` promises that this push succeeds.
+            unsafe { self.slots.try_push(slot).unwrap_unchecked() };
         }
         increment_len(&mut self.len);
         key

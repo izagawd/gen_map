@@ -814,10 +814,10 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
         // SAFETY: a detached slot's generation is even.
         unsafe { slot.replace_even_unchecked(key.generation(), stored_position) };
-        // The room was made above, so only a broken storage refuses the pair.
-        if self.pairs.try_push(key, value).is_err() {
-            panic!("PairStorage::try_push failed although ensure_room returned Ok");
-        }
+        // SAFETY: `ensure_room(1)` returned `Ok` above, and no other `&mut`
+        // method of the pair storage has run since, so `PairStorage` promises
+        // that this push succeeds.
+        unsafe { self.pairs.try_push(key, value).unwrap_unchecked() };
         Ok(())
     }
 
@@ -1017,12 +1017,10 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         let key = target.key();
         // SAFETY: `self.pairs.len()` is the number of values.
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
-        // `next_target` made room for one more pair, and `PairStorage` promises
-        // that the push succeeds after that, so only a broken storage refuses
-        // it.
-        if self.pairs.try_push(key, value).is_err() {
-            panic!("PairStorage::try_push failed although ensure_room returned Ok");
-        }
+        // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this pair,
+        // and no other `&mut` method of the pair storage has run since, so
+        // `PairStorage` promises that this push succeeds.
+        unsafe { self.pairs.try_push(key, value).unwrap_unchecked() };
         if target.from_free_list {
             // SAFETY: `target.idx` is the index of the slot that was first on
             // the free list when `next_target` looked, and nothing has changed
@@ -1037,13 +1035,11 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             self.next_free =
                 unsafe { slot.replace_even_unchecked(target.generation, stored_position) };
         } else {
-            // `next_target` made room for this slot, and `SliceStorage`
-            // promises that `try_push` succeeds after that, so only a broken
-            // storage refuses the push.
             let slot = Slot::new_odd(target.generation, stored_position);
-            if self.slots.try_push(slot).is_err() {
-                panic!("SliceStorage::try_push failed although ensure_room returned Ok");
-            }
+            // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this
+            // slot, and no other `&mut` method of the slot storage has run
+            // since, so `SliceStorage` promises that this push succeeds.
+            unsafe { self.slots.try_push(slot).unwrap_unchecked() };
         }
         key
     }

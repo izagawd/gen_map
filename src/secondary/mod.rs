@@ -118,13 +118,10 @@ where
         // storage can hold either.
         slots.ensure_room((position - len).saturating_add(1))?;
         for _ in len..=position {
-            // `ensure_room` made room for every one of these slots, and
-            // `SliceStorage` promises that the pushes succeed after
-            // that. A push that fails here means the storage broke that
-            // promise.
-            if slots.try_push(empty_slot()).is_err() {
-                panic!("SliceStorage::try_push failed although ensure_room returned Ok");
-            }
+            // SAFETY: `ensure_room` returned `Ok` for all of these pushes, and
+            // the loop runs no other `&mut` method of the storage, so
+            // `SliceStorage` promises that each push succeeds.
+            unsafe { slots.try_push(empty_slot()).unwrap_unchecked() };
         }
     }
     debug_assert!(position < slots.len());
