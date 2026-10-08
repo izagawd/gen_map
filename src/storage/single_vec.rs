@@ -1,21 +1,23 @@
 use crate::error::ReserveError;
 use crate::key::piece::KeyPiece;
-use crate::storage::buffer::{allocate, deallocate, grown_capacity, max_len, saturating_usize};
+use crate::storage::buffer::{
+    allocate, deallocate, grown_capacity, max_len, reallocate, saturating_usize,
+};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
-use core::mem::{self, size_of, ManuallyDrop};
+use core::mem::{size_of, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
 use core::ptr::{self, NonNull};
 use core::slice;
 
-/// A `SingleVec` keeps its items in one buffer on the heap, where a
-/// [`PairVec`](crate::PairVec) keeps them in two. It is a [`SliceStorage`]
-/// that works like a `Vec`, but it stores its length and capacity as its
-/// length type, the second type parameter. The length type can be `u8`,
-/// `u16`, `u32`, `u64`, `u128` or `usize`, which is the default. A
-/// `SingleVec` never holds more items than its length type can count, and
+/// A `SingleVec` keeps one slice of items in a buffer on the heap, where a
+/// [`PairVec`](crate::PairVec) keeps two slices in one buffer. It is a
+/// [`SliceStorage`] that works like a `Vec`, but it stores its length and
+/// capacity as its length type, the second type parameter. The length type
+/// can be `u8`, `u16`, `u32`, `u64`, `u128` or `usize`, which is the default.
+/// A `SingleVec` never holds more items than its length type can count, and
 /// with a `u32` length type it takes 16 bytes on a 64-bit target, where a
 /// `Vec` takes 24.
 ///
@@ -100,9 +102,9 @@ impl<T, L: KeyPiece> Buffer<T, L> {
 impl<T, L: KeyPiece> Drop for Buffer<T, L> {
     fn drop(&mut self) {
         // SAFETY: unless `capacity` items take no space, the buffer was
-        // allocated with the layout `deallocate` expects, by `allocate` or as
-        // the rules of `SingleVecRawParts` require. Nothing uses it after
-        // this.
+        // allocated with the layout `deallocate` expects, by `allocate`, by
+        // `reallocate` or as the rules of `SingleVecRawParts` require. Nothing
+        // uses it after this.
         unsafe { deallocate(self.pointer, self.capacity()) };
     }
 }
@@ -172,32 +174,38 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
         Ok(())
     }
 
-    /// Makes room for at least `additional` more items. When the buffer is
-    /// too small, it moves the items into a new buffer with at least twice
-    /// the old capacity, unless the length type cannot count that many items.
+    /// Makes room for at least `additional` more items, and grows the buffer
+    /// when it is too small.
+    #[inline]
     fn make_room(&mut self, additional: usize) -> Result<(), ReserveError> {
-        let len = self.buffer.len();
-        let required = len
+        let required = self
+            .buffer
+            .len()
             .checked_add(additional)
             .ok_or(ReserveError::CapacityOverflow)?;
         if required <= self.buffer.capacity() {
             return Ok(());
         }
-        let capacity = grown_capacity(
-            self.buffer.capacity(),
-            required,
-            max_len::<L>(),
-            size_of::<T>(),
-        )?;
-        let mut buffer = Buffer::with_capacity(capacity)?;
-        // SAFETY: the new buffer has room for more than `len` items, and it
-        // does not overlap the old one. The items move into the new buffer,
-        // and the old buffer is freed without dropping them.
-        unsafe {
-            ptr::copy_nonoverlapping(self.buffer.pointer.as_ptr(), buffer.pointer.as_ptr(), len);
-        }
-        buffer.len = self.buffer.len;
-        mem::swap(&mut self.buffer, &mut buffer);
+        self.grow(required)
+    }
+
+    /// Grows the buffer so it has room for at least `required` items, which
+    /// must be more than its capacity. The new capacity is at least twice the
+    /// old one, unless the length type cannot count that many items. The grown
+    /// buffer keeps the items.
+    #[cold]
+    #[inline(never)]
+    fn grow(&mut self, required: usize) -> Result<(), ReserveError> {
+        let old_capacity = self.buffer.capacity();
+        let capacity = grown_capacity(old_capacity, required, max_len::<L>(), size_of::<T>())?;
+        let stored = L::from_usize(capacity).ok_or(ReserveError::CapacityOverflow)?;
+        // SAFETY: unless `old_capacity` items take no space, the buffer was
+        // allocated for them, by `allocate`, by `reallocate` or as the rules of
+        // `SingleVecRawParts` require. `grown_capacity` returns at least
+        // `required`, which is more than `old_capacity`. The old pointer is
+        // overwritten right away, so nothing uses it afterwards.
+        self.buffer.pointer = unsafe { reallocate(self.buffer.pointer, old_capacity, capacity)? };
+        self.buffer.capacity = stored;
         Ok(())
     }
 
@@ -259,7 +267,7 @@ impl<T, L: KeyPiece> DerefMut for SingleVec<T, L> {
 // items pushed since the last `clear` and not popped, in the order they were
 // pushed. `try_push` writes an item only once there is room for it, `pop` and
 // `clear` lower the length before they move or drop an item, and growing
-// copies the items into the new buffer without changing them. Once
+// moves the items with the buffer without changing them. Once
 // `ensure_room` returns `Ok` for `n` items, the capacity is at least the
 // length plus `n`, so the next `n` pushes fit without growing. Only
 // `with_capacity` panics on its own, and `clear` only panics when dropping an

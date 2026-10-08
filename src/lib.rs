@@ -176,7 +176,7 @@
 //! slot at its new position, so a dense map also keeps the key of each value.
 //! It keeps the keys and values in a [`PairStorage`], which its config picks.
 //! The default config picks a [`PairVec`], which keeps the keys and the
-//! values in two buffers that share one length and one capacity.
+//! values in one buffer, with one length and one capacity for both.
 //!
 //! ```
 //! use gen_map::DenseGenMap;
