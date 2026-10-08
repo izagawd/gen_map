@@ -52,12 +52,9 @@ pub struct SingleVec<T, L: KeyPiece = usize> {
 /// frees the memory without dropping any item in it.
 struct Buffer<T, L: KeyPiece> {
     pointer: NonNull<T>,
-    /// How many items the buffer has room for. When the items take no space,
-    /// it is the largest value of the length type.
+    /// How many items the buffer has room for.
     capacity: L,
-    /// The number of items. The first `len` items of the buffer are
-    /// initialized, and the rest are not. It is never more than the capacity
-    /// or the largest `usize`.
+    /// The number of live items.
     len: L,
 }
 
