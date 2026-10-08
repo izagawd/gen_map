@@ -136,8 +136,7 @@ impl<T, C: DenseGenMapConfig> DenseVacantEntry<'_, T, C> {
     #[inline]
     pub fn insert(self, value: T) -> Key<MapKeyConfig<C>> {
         // SAFETY: `target` came from `next_target`, and this entry has held
-        // `&mut` on the map since, so nothing has touched it. `vacant_entry`
-        // also made room for one more value and key.
+        // `&mut` on the map since, so nothing has touched it.
         unsafe { self.map.fill(self.target, value) }
     }
 }
@@ -713,8 +712,10 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         &mut self,
         value: T,
     ) -> Result<Key<MapKeyConfig<C>>, InsertError<T, DenseStorageError<T, C>>> {
-        match self.vacant_entry() {
-            Ok(entry) => Ok(entry.insert(value)),
+        match self.next_target() {
+            // SAFETY: `target` came from `next_target`, and nothing has
+            // touched the map since.
+            Ok(target) => Ok(unsafe { self.fill(target, value) }),
             Err(FullError::IndexExhausted) => Err(InsertError::IndexExhausted(value)),
             Err(FullError::StorageFull(error)) => Err(InsertError::StorageFull(value, error)),
         }
@@ -733,13 +734,15 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     where
         F: FnOnce(Key<MapKeyConfig<C>>) -> T,
     {
-        let slots_len = self.slots_len();
-        let entry = match self.vacant_entry() {
-            Ok(entry) => entry,
-            Err(full) => panic_full(full, slots_len),
+        let target = match self.next_target() {
+            Ok(target) => target,
+            Err(full) => panic_full(full, self.slots.len()),
         };
-        let value = f(entry.key());
-        entry.insert(value)
+        let value = f(target.key());
+        // SAFETY: `target` came from `next_target`, and nothing has touched
+        // the map since, because `f` cannot reach the map while this method
+        // holds `&mut self`.
+        unsafe { self.fill(target, value) }
     }
 
     /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail and
@@ -759,9 +762,12 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     where
         F: FnOnce(Key<MapKeyConfig<C>>) -> Result<T, E>,
     {
-        let entry = self.vacant_entry()?;
-        let value = f(entry.key()).map_err(InsertWithError::Rejected)?;
-        Ok(entry.insert(value))
+        let target = self.next_target()?;
+        let value = f(target.key()).map_err(InsertWithError::Rejected)?;
+        // SAFETY: `target` came from `next_target`, and nothing has touched
+        // the map since, because `f` cannot reach the map while this method
+        // holds `&mut self`.
+        Ok(unsafe { self.fill(target, value) })
     }
 
     /// Hands out the slot the next insert would use, without writing to it.
@@ -779,13 +785,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     pub fn vacant_entry(
         &mut self,
     ) -> Result<DenseVacantEntry<'_, T, C>, FullError<DenseStorageError<T, C>>> {
-        let target = self.next_target().map_err(|full| match full {
-            FullError::IndexExhausted => FullError::IndexExhausted,
-            FullError::StorageFull(error) => FullError::StorageFull(DenseError::Slots(error)),
-        })?;
-        self.pairs
-            .ensure_room(1)
-            .map_err(|error| FullError::StorageFull(DenseError::Pairs(error)))?;
+        let target = self.next_target()?;
         Ok(DenseVacantEntry { map: self, target })
     }
 
@@ -915,14 +915,15 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         unsafe { slot.replace_odd_unchecked(next, link) }
     }
 
-    /// Works out which slot the next value gets, without writing any slot. When
-    /// a slot has to be pushed, this makes sure there is room for it, so that
-    /// the push in [`fill`](Self::fill) cannot fail.
+    /// Works out which slot the next value gets, without writing any slot, and
+    /// makes room for one more pair in the pair storage. When a slot has to be
+    /// pushed, this also makes sure there is room for it, so that the pushes in
+    /// [`fill`](Self::fill) cannot fail.
     ///
     /// When the keys have no index left for a new slot and the slot storage is
     /// also full, the error is `IndexExhausted`.
     #[inline]
-    fn next_target(&mut self) -> Result<Target<C>, FullError<<Slots<C> as SliceStorage>::Error>> {
+    fn next_target(&mut self) -> Result<Target<C>, FullError<DenseStorageError<T, C>>> {
         let (idx, generation, from_free_list) = if self.next_free != no_slot::<C>() {
             let idx = self.next_free;
             // SAFETY: `idx` is on the free list, so it is the index of a slot
@@ -937,9 +938,14 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             let idx = MapIdx::<C>::from_usize(self.slots.len())
                 .filter(|idx| *idx <= max_slot_idx::<C>())
                 .ok_or(FullError::IndexExhausted)?;
-            self.slots.ensure_room(1).map_err(FullError::StorageFull)?;
+            self.slots
+                .ensure_room(1)
+                .map_err(|error| FullError::StorageFull(DenseError::Slots(error)))?;
             (idx, Even::ZERO, false)
         };
+        self.pairs
+            .ensure_room(1)
+            .map_err(|error| FullError::StorageFull(DenseError::Pairs(error)))?;
         // A new slot has generation zero, and a free slot has a generation
         // below the largest one a key can hold, so a key can hold the
         // generation after either one.
@@ -957,14 +963,13 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// # Safety
     ///
     /// `target` must have come from [`next_target`](Self::next_target) with
-    /// nothing having touched the map since, and the pair storage must have
-    /// room for one more pair.
+    /// nothing having touched the map since.
     #[inline]
     unsafe fn fill(&mut self, target: Target<C>, value: T) -> Key<MapKeyConfig<C>> {
         let key = target.key();
         // SAFETY: `self.pairs.len()` is the number of values.
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
-        // The caller made room for one more pair, and `PairStorage` promises
+        // `next_target` made room for one more pair, and `PairStorage` promises
         // that the push succeeds after that, so only a broken storage refuses
         // it.
         if self.pairs.try_push(key, value).is_err() {

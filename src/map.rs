@@ -867,8 +867,10 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         &mut self,
         value: T,
     ) -> Result<Key<MapKeyConfig<C>>, InsertError<T, StorageError<T, C>>> {
-        match self.vacant_entry() {
-            Ok(entry) => Ok(entry.insert(value)),
+        match self.next_target() {
+            // SAFETY: `target` came from `next_target`, and nothing has
+            // touched the map since.
+            Ok(target) => Ok(unsafe { self.fill(target, value) }),
             Err(FullError::IndexExhausted) => Err(InsertError::IndexExhausted(value)),
             Err(FullError::StorageFull(error)) => Err(InsertError::StorageFull(value, error)),
         }
@@ -889,12 +891,15 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     where
         F: FnOnce(Key<MapKeyConfig<C>>) -> T,
     {
-        let entry = match self.vacant_entry() {
-            Ok(entry) => entry,
+        let target = match self.next_target() {
+            Ok(target) => target,
             Err(full) => panic_full::<T, C>(full, self.slots.len()),
         };
-        let value = f(entry.key());
-        entry.insert(value)
+        let value = f(target.key());
+        // SAFETY: `target` came from `next_target`, and nothing has touched
+        // the map since, because `f` cannot reach the map while this method
+        // holds `&mut self`.
+        unsafe { self.fill(target, value) }
     }
 
     /// Like [`insert_with_key`](Self::insert_with_key), but `f` may fail and
@@ -929,9 +934,12 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     where
         F: FnOnce(Key<MapKeyConfig<C>>) -> Result<T, E>,
     {
-        let entry = self.vacant_entry()?;
-        let value = f(entry.key()).map_err(InsertWithError::Rejected)?;
-        Ok(entry.insert(value))
+        let target = self.next_target()?;
+        let value = f(target.key()).map_err(InsertWithError::Rejected)?;
+        // SAFETY: `target` came from `next_target`, and nothing has touched
+        // the map since, because `f` cannot reach the map while this method
+        // holds `&mut self`.
+        Ok(unsafe { self.fill(target, value) })
     }
 
     /// Hands out the slot the next insert would use, without writing to it.

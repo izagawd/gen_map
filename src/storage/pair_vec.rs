@@ -64,10 +64,11 @@ struct Buffer<A, B, L: KeyPiece> {
     /// `second` points at the second slice, which starts after the room for
     /// the first slice.
     second: NonNull<B>,
-    /// How many items each slice has room for. When the items of both
-    /// slices take no space, it is the largest value of the length type.
+    /// `capacity` is how many items each slice has room for. When the items
+    /// of both slices take no space, it is the largest value of the length
+    /// type.
     capacity: L,
-    /// The number of pairs. The first `len` items of each slice are
+    /// `len` is the number of pairs. The first `len` items of each slice are
     /// initialized, and the rest are not. It is never more than the capacity
     /// or the largest `usize`.
     len: L,
@@ -170,8 +171,8 @@ impl<A, B, L: KeyPiece> Buffer<A, B, L> {
         saturating_usize(self.len)
     }
 
-    /// How many items each slice has room for, as a `usize`. A capacity
-    /// larger than the largest `usize` counts as the largest `usize`.
+    /// Returns how many items each slice has room for, as a `usize`. A
+    /// capacity larger than the largest `usize` counts as the largest `usize`.
     #[inline]
     fn capacity(&self) -> usize {
         saturating_usize(self.capacity)
@@ -424,16 +425,18 @@ unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
 
     #[inline]
     fn second_slice_mut(&mut self) -> &mut [B] {
-        // SAFETY: the same as in `first_slice_mut`, for the second slice.
+        // SAFETY: the first `len` items of the second slice are initialized,
+        // and `&mut self` keeps any other reference to them from existing.
         unsafe { slice::from_raw_parts_mut(self.buffer.second.as_ptr(), self.buffer.len()) }
     }
 
     #[inline]
     fn slices_mut(&mut self) -> (&mut [A], &mut [B]) {
         let len = self.buffer.len();
-        // SAFETY: the same as in `first_slice_mut`. The first slice ends before
-        // the second slice starts in the buffer, so the two slices do not
-        // overlap.
+        // SAFETY: the first `len` items of both slices are initialized, and
+        // `&mut self` keeps any other reference to them from existing. The
+        // first slice ends before the second slice starts in the buffer, so the
+        // two slices do not overlap.
         unsafe {
             (
                 slice::from_raw_parts_mut(self.buffer.first.as_ptr(), len),
@@ -554,11 +557,12 @@ impl<A, B, L: KeyPiece> IntoIterator for PairVec<A, B, L> {
 /// pushed. It is created by consuming a `PairVec` with `into_iter`. Dropping
 /// it drops the pairs it has not yielded yet.
 pub struct PairVecIntoIter<A, B, L: KeyPiece = usize> {
-    /// The buffer of the `PairVec`. Its length is one past the position of
-    /// the pair that `next_back` yields.
+    /// `buffer` holds the buffer of the `PairVec`. Its length is one past the
+    /// position of the pair that `next_back` yields.
     buffer: Buffer<A, B, L>,
-    /// The position of the pair that `next` yields. The pairs from `start` up
-    /// to the length of the buffer are initialized and not yielded yet.
+    /// `start` is the position of the pair that `next` yields. The pairs from
+    /// `start` up to the length of the buffer are initialized and not yielded
+    /// yet.
     start: usize,
     /// The iterator owns the pairs it has not yielded yet.
     _items: PhantomData<(A, B)>,
