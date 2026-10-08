@@ -3,7 +3,9 @@
 
 use super::model::Rng;
 use super::{Bomb, DropTracker};
-use crate::{ReserveError, SingleVec, SingleVecIntoIter, SliceStorage};
+use crate::{ReserveError, SingleVec, SingleVecIntoIter, SingleVecRawParts, SliceStorage};
+use core::mem::ManuallyDrop;
+use core::ptr::NonNull;
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::{String, ToString};
@@ -245,4 +247,50 @@ fn a_single_vec_agrees_with_a_vec() {
         }
         assert_eq!(items.into_iter().collect::<Vec<_>>(), expected);
     }
+}
+
+#[test]
+fn raw_parts_give_back_the_same_vec() {
+    let tracker = DropTracker::new();
+    let mut items = SingleVec::<_, u16>::with_capacity(8);
+    for _ in 0..5 {
+        items.push(tracker.make_item());
+    }
+    let parts = items.into_raw_parts();
+    assert_eq!((parts.capacity, parts.len), (8, 5));
+    tracker.assert_none_dropped();
+    let items = unsafe { SingleVec::from_raw_parts(parts) };
+    assert_eq!((items.capacity(), items.len()), (8, 5));
+    drop(items);
+    tracker.assert_all_dropped_exactly_once(5);
+}
+
+#[test]
+fn a_vec_can_take_over_the_buffer_of_a_std_vec() {
+    let tracker = DropTracker::new();
+    let mut vec = ManuallyDrop::new((0..3).map(|_| tracker.make_item()).collect::<Vec<_>>());
+    let parts = SingleVecRawParts {
+        pointer: NonNull::new(vec.as_mut_ptr()).unwrap(),
+        capacity: vec.capacity(),
+        len: vec.len(),
+    };
+    let mut items: SingleVec<_> = unsafe { SingleVec::from_raw_parts(parts) };
+    // Growing frees the buffer of the `Vec`.
+    for _ in 0..10 {
+        items.push(tracker.make_item());
+    }
+    drop(items);
+    tracker.assert_all_dropped_exactly_once(13);
+}
+
+#[test]
+fn raw_parts_of_items_that_take_no_space_keep_their_count() {
+    let mut units = SingleVec::<(), u8>::new();
+    for _ in 0..3 {
+        units.push(());
+    }
+    let parts = units.into_raw_parts();
+    assert_eq!((parts.capacity, parts.len), (255, 3));
+    let units = unsafe { SingleVec::from_raw_parts(parts) };
+    assert_eq!(units.len(), 3);
 }

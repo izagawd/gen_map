@@ -3,8 +3,10 @@
 
 use super::model::Rng;
 use super::{Bomb, DropTracker};
-use crate::{PairStorage, PairVec, PairVecIntoIter, ReserveError};
+use crate::{PairStorage, PairVec, PairVecIntoIter, PairVecRawParts, ReserveError};
 use core::alloc::Layout;
+use core::mem::ManuallyDrop;
+use core::ptr::NonNull;
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::{String, ToString};
@@ -318,4 +320,47 @@ fn a_pair_vec_agrees_with_two_vecs() {
         let expected: Vec<_> = firsts.into_iter().zip(seconds).collect();
         assert_eq!(pairs.into_iter().collect::<Vec<_>>(), expected);
     }
+}
+
+#[test]
+fn raw_parts_give_back_the_same_vec() {
+    let tracker = DropTracker::new();
+    let mut pairs = PairVec::<_, _, u16>::with_capacity(8);
+    for i in 0..5u32 {
+        pairs.push(i, tracker.make_item());
+    }
+    let parts = pairs.into_raw_parts();
+    assert_eq!((parts.capacity, parts.len), (8, 5));
+    tracker.assert_none_dropped();
+    let pairs = unsafe { PairVec::from_raw_parts(parts) };
+    assert_eq!((pairs.capacity(), pairs.len()), (8, 5));
+    assert!(pairs.first_slice().iter().copied().eq(0..5));
+    drop(pairs);
+    tracker.assert_all_dropped_exactly_once(5);
+}
+
+#[test]
+fn a_vec_can_take_over_the_buffers_of_two_std_vecs() {
+    let tracker = DropTracker::new();
+    let mut firsts = ManuallyDrop::new(Vec::with_capacity(4));
+    let mut seconds = ManuallyDrop::new(Vec::with_capacity(4));
+    for i in 0..3u32 {
+        firsts.push(i);
+        seconds.push(tracker.make_item());
+    }
+    assert_eq!(firsts.capacity(), seconds.capacity());
+    let parts = PairVecRawParts {
+        first: NonNull::new(firsts.as_mut_ptr()).unwrap(),
+        second: NonNull::new(seconds.as_mut_ptr()).unwrap(),
+        capacity: firsts.capacity(),
+        len: firsts.len(),
+    };
+    let mut pairs: PairVec<_, _> = unsafe { PairVec::from_raw_parts(parts) };
+    // Growing frees the buffers of the `Vec`s.
+    for i in 3..10 {
+        pairs.push(i, tracker.make_item());
+    }
+    assert!(pairs.first_slice().iter().copied().eq(0..10));
+    drop(pairs);
+    tracker.assert_all_dropped_exactly_once(10);
 }

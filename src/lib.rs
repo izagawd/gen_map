@@ -290,7 +290,7 @@ pub use pair_storage::{
 };
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-pub use pair_vec::{PairVec, PairVecIntoIter};
+pub use pair_vec::{PairVec, PairVecIntoIter, PairVecRawParts};
 pub use parity::{Even, Odd};
 pub use replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
 pub use secondary_map::{
@@ -300,7 +300,7 @@ pub use secondary_map::{
 };
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-pub use single_vec::{SingleVec, SingleVecIntoIter};
+pub use single_vec::{SingleVec, SingleVecIntoIter, SingleVecRawParts};
 pub use slot::{GenSlotItem, Parity, ParityMut, ParityRef, SecondarySlotItem, Slot};
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]

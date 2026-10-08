@@ -589,3 +589,136 @@ unsafe impl<A: Send, B: Send, L: KeyPiece> Send for PairVecIntoIter<A, B, L> {}
 
 // SAFETY: a shared iterator hands out no references to its pairs.
 unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVecIntoIter<A, B, L> {}
+
+/// `PairVecRawParts` holds the fields of a [`PairVec`].
+/// [`into_raw_parts`](PairVec::into_raw_parts) takes a vec apart into these
+/// fields, and [`from_raw_parts`](PairVec::from_raw_parts) builds a vec from
+/// them.
+///
+/// The parts given to `from_raw_parts` must follow every rule below, and the
+/// parts that `into_raw_parts` returns always do.
+///
+/// # Rules
+///
+/// - If the items of the first slice take space and `capacity` is above
+///   zero, `first` points at a buffer that the global allocator allocated
+///   with the layout that `Layout::array` gives for `capacity` of those items.
+///   Otherwise `first` only has to be aligned for those items, as a dangling
+///   pointer is. The same goes for `second` and the items of the second slice.
+/// - When the items of both slices take space, `first` and `second` point at
+///   two different buffers.
+/// - `len` is not more than `capacity` or the largest `usize`.
+/// - The first `len` items of both buffers are initialized.
+/// - Nothing else uses, drops or frees the buffers or their items.
+///
+/// # Examples
+///
+/// ```
+/// use core::mem::ManuallyDrop;
+/// use core::ptr::NonNull;
+/// use gen_map::{PairStorage, PairVec, PairVecRawParts};
+///
+/// let mut keys = ManuallyDrop::new(vec![1, 2]);
+/// let mut values = ManuallyDrop::new(vec!["a", "b"]);
+/// assert_eq!(keys.capacity(), values.capacity());
+/// let parts = PairVecRawParts {
+///     first: NonNull::new(keys.as_mut_ptr()).unwrap(),
+///     second: NonNull::new(values.as_mut_ptr()).unwrap(),
+///     capacity: keys.capacity(),
+///     len: keys.len(),
+/// };
+/// // SAFETY: the global allocator allocated the buffers of the two `Vec`s for
+/// // the same capacity, their first two items are initialized, and the `Vec`s
+/// // are never dropped, so nothing else frees the buffers.
+/// let pairs: PairVec<i32, &str> = unsafe { PairVec::from_raw_parts(parts) };
+/// assert_eq!(pairs.slices(), (&[1, 2][..], &["a", "b"][..]));
+/// ```
+pub struct PairVecRawParts<A, B, L: KeyPiece = usize> {
+    // These fields are in the same order as the fields of the buffers of a
+    // `PairVec` on purpose, so that the two structs can be read side by side.
+    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
+    // so the compiler catches a field that only one of them has, but nothing
+    // catches a change in order. Think twice before removing this comment,
+    // because it is the only thing that keeps the two orders the same.
+    /// The buffer of the first slice, which has room for `capacity` items.
+    pub first: NonNull<A>,
+    /// The buffer of the second slice, which has room for `capacity` items.
+    pub second: NonNull<B>,
+    /// How many items each buffer has room for.
+    pub capacity: L,
+    /// The number of pairs. The first `len` items of each buffer are
+    /// initialized.
+    pub len: L,
+}
+
+impl<A, B, L: KeyPiece> PairVec<A, B, L> {
+    /// Takes the vec apart into its fields.
+    /// [`from_raw_parts`](Self::from_raw_parts) builds a vec from them again,
+    /// and [`PairVecRawParts`] lists the rules they follow. Nothing drops the
+    /// items or frees the buffers until a vec is built from the parts again.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{PairStorage, PairVec};
+    ///
+    /// let mut pairs = PairVec::<u32, char, u16>::new();
+    /// pairs.push(1, 'a');
+    /// pairs.push(2, 'b');
+    ///
+    /// let mut parts = pairs.into_raw_parts();
+    /// assert_eq!(parts.len, 2);
+    /// // Leaving out the last pair keeps the parts following the rules.
+    /// parts.len = 1;
+    /// // SAFETY: the parts came from `into_raw_parts`, and only `len` went
+    /// // down.
+    /// let pairs = unsafe { PairVec::from_raw_parts(parts) };
+    /// assert_eq!(pairs.slices(), (&[1][..], &['a'][..]));
+    /// ```
+    #[inline]
+    pub fn into_raw_parts(self) -> PairVecRawParts<A, B, L> {
+        // The vec is never dropped, so its buffers and items now belong to
+        // the parts.
+        let pairs = ManuallyDrop::new(self);
+        let Buffers {
+            first,
+            second,
+            capacity,
+            len,
+        } = &pairs.buffers;
+        PairVecRawParts {
+            first: *first,
+            second: *second,
+            capacity: *capacity,
+            len: *len,
+        }
+    }
+
+    /// Builds a vec from the fields that
+    /// [`into_raw_parts`](Self::into_raw_parts) takes a vec apart into.
+    ///
+    /// # Safety
+    ///
+    /// `parts` must follow every rule listed on [`PairVecRawParts`]. The
+    /// vec's methods rely on those rules, and parts that break one can make
+    /// them cause undefined behavior.
+    #[inline]
+    #[must_use]
+    pub unsafe fn from_raw_parts(parts: PairVecRawParts<A, B, L>) -> Self {
+        let PairVecRawParts {
+            first,
+            second,
+            capacity,
+            len,
+        } = parts;
+        Self {
+            buffers: Buffers {
+                first,
+                second,
+                capacity,
+                len,
+            },
+            _items: PhantomData,
+        }
+    }
+}

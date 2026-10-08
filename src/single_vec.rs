@@ -464,3 +464,126 @@ unsafe impl<T: Send, L: KeyPiece> Send for SingleVecIntoIter<T, L> {}
 
 // SAFETY: a shared iterator hands out no references to its items.
 unsafe impl<T: Sync, L: KeyPiece> Sync for SingleVecIntoIter<T, L> {}
+
+/// `SingleVecRawParts` holds the fields of a [`SingleVec`].
+/// [`into_raw_parts`](SingleVec::into_raw_parts) takes a vec apart into these
+/// fields, and [`from_raw_parts`](SingleVec::from_raw_parts) builds a vec from
+/// them.
+///
+/// The parts given to `from_raw_parts` must follow every rule below, and the
+/// parts that `into_raw_parts` returns always do.
+///
+/// # Rules
+///
+/// - If the items take space and `capacity` is above zero, `pointer` points
+///   at a buffer that the global allocator allocated with the layout that
+///   `Layout::array` gives for `capacity` items. Otherwise `pointer` only has
+///   to be aligned for the items, as a dangling pointer is.
+/// - `len` is not more than `capacity` or the largest `usize`.
+/// - The first `len` items of the buffer are initialized.
+/// - Nothing else uses, drops or frees the buffer or its items.
+///
+/// # Examples
+///
+/// ```
+/// use core::mem::ManuallyDrop;
+/// use core::ptr::NonNull;
+/// use gen_map::{SingleVec, SingleVecRawParts};
+///
+/// let mut vec = ManuallyDrop::new(vec![1, 2, 3]);
+/// let parts = SingleVecRawParts {
+///     pointer: NonNull::new(vec.as_mut_ptr()).unwrap(),
+///     capacity: u32::try_from(vec.capacity()).unwrap(),
+///     len: u32::try_from(vec.len()).unwrap(),
+/// };
+/// // SAFETY: the global allocator allocated the buffer of the `Vec` for its
+/// // capacity, its first three items are initialized, and the `Vec` is never
+/// // dropped, so nothing else frees the buffer.
+/// let items: SingleVec<i32, u32> = unsafe { SingleVec::from_raw_parts(parts) };
+/// assert_eq!(items[..], [1, 2, 3]);
+/// ```
+pub struct SingleVecRawParts<T, L: KeyPiece = usize> {
+    // These fields are in the same order as the fields of the buffer of a
+    // `SingleVec` on purpose, so that the two structs can be read side by
+    // side. `into_raw_parts` and `from_raw_parts` list every field of both
+    // structs, so the compiler catches a field that only one of them has, but
+    // nothing catches a change in order. Think twice before removing this
+    // comment, because it is the only thing that keeps the two orders the
+    // same.
+    /// The buffer, which has room for `capacity` items.
+    pub pointer: NonNull<T>,
+    /// How many items the buffer has room for.
+    pub capacity: L,
+    /// The number of items. The first `len` items of the buffer are
+    /// initialized.
+    pub len: L,
+}
+
+impl<T, L: KeyPiece> SingleVec<T, L> {
+    /// Takes the vec apart into its fields.
+    /// [`from_raw_parts`](Self::from_raw_parts) builds a vec from them again,
+    /// and [`SingleVecRawParts`] lists the rules they follow. Nothing drops
+    /// the items or frees the buffer until a vec is built from the parts
+    /// again.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::SingleVec;
+    ///
+    /// let mut items = SingleVec::<u32, u16>::new();
+    /// items.push(1);
+    /// items.push(2);
+    ///
+    /// let mut parts = items.into_raw_parts();
+    /// assert_eq!(parts.len, 2);
+    /// // Leaving out the last item keeps the parts following the rules.
+    /// parts.len = 1;
+    /// // SAFETY: the parts came from `into_raw_parts`, and only `len` went
+    /// // down.
+    /// let items = unsafe { SingleVec::from_raw_parts(parts) };
+    /// assert_eq!(items[..], [1]);
+    /// ```
+    #[inline]
+    pub fn into_raw_parts(self) -> SingleVecRawParts<T, L> {
+        // The vec is never dropped, so its buffer and items now belong to the
+        // parts.
+        let items = ManuallyDrop::new(self);
+        let Buffer {
+            pointer,
+            capacity,
+            len,
+        } = &items.buffer;
+        SingleVecRawParts {
+            pointer: *pointer,
+            capacity: *capacity,
+            len: *len,
+        }
+    }
+
+    /// Builds a vec from the fields that
+    /// [`into_raw_parts`](Self::into_raw_parts) takes a vec apart into.
+    ///
+    /// # Safety
+    ///
+    /// `parts` must follow every rule listed on [`SingleVecRawParts`]. The
+    /// vec's methods rely on those rules, and parts that break one can make
+    /// them cause undefined behavior.
+    #[inline]
+    #[must_use]
+    pub unsafe fn from_raw_parts(parts: SingleVecRawParts<T, L>) -> Self {
+        let SingleVecRawParts {
+            pointer,
+            capacity,
+            len,
+        } = parts;
+        Self {
+            buffer: Buffer {
+                pointer,
+                capacity,
+                len,
+            },
+            _items: PhantomData,
+        }
+    }
+}
