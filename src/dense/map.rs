@@ -133,7 +133,7 @@ impl<T, C: DenseGenMapConfig> DenseVacantEntry<'_, T, C> {
 
     /// Puts `value` in the map and returns its key, the same one
     /// [`key`](Self::key) returns.
-    #[inline]
+    #[inline(always)]
     pub fn insert(self, value: T) -> Key<MapKeyConfig<C>> {
         // SAFETY: `target` came from `next_target`, and this entry has held
         // `&mut` on the map since, so nothing has touched it.
@@ -692,9 +692,14 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// its keys have no index left for a new slot, or one of its storages
     /// cannot make room for the value. Use [`try_insert`](Self::try_insert) to
     /// get the value back instead.
-    #[inline]
     pub fn insert(&mut self, value: T) -> Key<MapKeyConfig<C>> {
-        self.insert_with_key(|_| value)
+        let target = match self.next_target() {
+            Ok(target) => target,
+            Err(full) => panic_full(full, self.slots.len()),
+        };
+        // SAFETY: `target` came from `next_target`, and nothing has touched
+        // the map since.
+        unsafe { self.fill(target, value) }
     }
 
     /// Inserts a value and returns its key, or hands the value back if the
@@ -706,7 +711,6 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// and the map's keys have no index left for a new one, and
     /// [`InsertError::StorageFull`] if one of the storages cannot make room.
     /// The [`DenseError`] in it says which storage that was.
-    #[inline]
     #[allow(clippy::type_complexity)]
     pub fn try_insert(
         &mut self,
@@ -729,7 +733,6 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// Panics if the map is full, as [`insert`](Self::insert) does. Use
     /// [`try_insert_with_key`](Self::try_insert_with_key) or
     /// [`vacant_entry`](Self::vacant_entry) to get an error instead.
-    #[inline]
     pub fn insert_with_key<F>(&mut self, f: F) -> Key<MapKeyConfig<C>>
     where
         F: FnOnce(Key<MapKeyConfig<C>>) -> T,
@@ -879,6 +882,51 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     #[inline]
     pub fn values_mut(&mut self) -> DenseValuesMut<'_, T> {
         DenseValuesMut(self.pairs.second_slice_mut().iter_mut())
+    }
+
+    /// Returns the keys and the values as two slices, in the order the values
+    /// are stored. The value at each position in the second slice is stored
+    /// under the key at the same position in the first slice.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::DenseGenMap;
+    ///
+    /// let mut map = DenseGenMap::new();
+    /// let a = map.insert(1);
+    /// let b = map.insert(2);
+    ///
+    /// let (keys, values) = map.as_slices();
+    /// assert_eq!(keys, [a, b]);
+    /// assert_eq!(values, [1, 2]);
+    /// ```
+    #[inline]
+    pub fn as_slices(&self) -> (&[Key<MapKeyConfig<C>>], &[T]) {
+        self.pairs.slices()
+    }
+
+    /// Returns the keys as a slice and the values as a mutable slice, in the
+    /// order the values are stored. The value at each position in the second
+    /// slice is stored under the key at the same position in the first slice.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::DenseGenMap;
+    ///
+    /// let mut map = DenseGenMap::new();
+    /// let a = map.insert(1);
+    /// let b = map.insert(2);
+    ///
+    /// let (_, values) = map.as_slices_mut();
+    /// values[0] = 10;
+    /// assert_eq!((map[a], map[b]), (10, 2));
+    /// ```
+    #[inline]
+    pub fn as_slices_mut(&mut self) -> (&[Key<MapKeyConfig<C>>], &mut [T]) {
+        let (keys, values) = self.pairs.slices_mut();
+        (keys, values)
     }
 
     /// The position of the value corresponding to `key`, as its slot stores it,

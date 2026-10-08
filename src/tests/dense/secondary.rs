@@ -171,6 +171,33 @@ fn values_mut_and_index_mut_change_the_values_in_place() {
 }
 
 #[test]
+fn as_slices_and_as_slices_mut_follow_the_stored_order() {
+    let empty = DenseSecondaryMap::<u32>::new();
+    let (slice_keys, slice_values) = empty.as_slices();
+    assert!(slice_keys.is_empty() && slice_values.is_empty());
+
+    let k = keys(4);
+    let mut map = DenseSecondaryMap::new();
+    for (i, key) in (0..).zip(&k) {
+        map.insert(*key, i).unwrap();
+    }
+    map.remove(k[1]);
+    let stored = [k[0], k[3], k[2]];
+    assert_eq!(map.as_slices(), (&stored[..], &[0, 3, 2][..]));
+
+    let (slice_keys, slice_values) = map.as_slices_mut();
+    assert_eq!(slice_keys, stored);
+    for value in slice_values {
+        *value += 10;
+    }
+    assert_eq!((map[k[0]], map[k[2]], map[k[3]]), (10, 12, 13));
+
+    // Removing a value moves the last key and value into its place.
+    assert_eq!(map.remove(k[0]), Some(10));
+    assert_eq!(map.as_slices(), (&[k[2], k[3]][..], &[12, 13][..]));
+}
+
+#[test]
 #[should_panic(expected = "DenseSecondaryMap cannot make room for")]
 fn reserve_panics_when_a_storage_cannot_make_room() {
     DenseSecondaryMap::<u32>::new().reserve(usize::MAX);

@@ -193,7 +193,6 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
     /// must be more than its capacity. The new capacity is at least twice the
     /// old one, unless the length type cannot count that many items. The grown
     /// buffer keeps the items.
-    #[cold]
     #[inline(never)]
     fn grow(&mut self, required: usize) -> Result<(), ReserveError> {
         let old_capacity = self.buffer.capacity();

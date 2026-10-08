@@ -280,7 +280,6 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
     /// of the first slice stay at the start of the grown buffer, and this
     /// method moves the items of the second slice to where the second slice
     /// starts in it.
-    #[cold]
     #[inline(never)]
     fn grow(&mut self, required: usize) -> Result<(), ReserveError> {
         let old_capacity = self.buffer.capacity();
