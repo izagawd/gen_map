@@ -1650,10 +1650,9 @@ impl<T, C: MapConfig> FusedIterator for ValuesMut<'_, T, C> {}
 
 /// Owning iterator over `(key, value)` pairs. It is created by consuming a map
 /// with `into_iter`, which a map only has when its storage implements
-/// `IntoIterator`. It implements `DoubleEndedIterator`, which gives it
-/// `next_back` and `rev`, only when the storage's iterator implements both
-/// `DoubleEndedIterator` and `ExactSizeIterator`, because it needs the length
-/// of the storage's iterator to work out the position of a slot taken from the
+/// `IntoIterator`. It implements `DoubleEndedIterator`, only when the storage's iterator
+/// implements both `DoubleEndedIterator` and `ExactSizeIterator`, because it needs the
+/// length of the storage's iterator to work out the position of a slot taken from the
 /// back.
 pub struct IntoIter<T, C: GenMapConfig>
 where
