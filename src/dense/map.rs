@@ -816,7 +816,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         unsafe { slot.replace_even_unchecked(key.generation(), stored_position) };
         // SAFETY: `ensure_room(1)` returned `Ok` above, and no other `&mut`
         // method of the pair storage has run since, so `PairStorage` promises
-        // that this push succeeds.
+        // room for this push.
         unsafe { self.pairs.push_unchecked(key, value) };
         Ok(())
     }
@@ -1019,7 +1019,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
         // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this pair,
         // and no other `&mut` method of the pair storage has run since, so
-        // `PairStorage` promises that this push succeeds.
+        // `PairStorage` promises room for this push.
         unsafe { self.pairs.push_unchecked(key, value) };
         if target.from_free_list {
             // SAFETY: `target.idx` is the index of the slot that was first on
@@ -1038,7 +1038,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             let slot = Slot::new_odd(target.generation, stored_position);
             // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this
             // slot, and no other `&mut` method of the slot storage has run
-            // since, so `SliceStorage` promises that this push succeeds.
+            // since, so `SliceStorage` promises room for this push.
             unsafe { self.slots.push_unchecked(slot) };
         }
         key
@@ -1307,8 +1307,8 @@ where
     for (first, second) in firsts.iter().zip(seconds) {
         // SAFETY: `pairs` has the same type as `clone` and holds the pairs
         // being pushed, and only these pushes have run on `clone` since
-        // `with_capacity` made it, so `PairStorage` promises that each push
-        // succeeds.
+        // `with_capacity` made it, so `PairStorage` promises room for each
+        // push.
         unsafe { clone.push_unchecked(first.clone(), second.clone()) };
     }
     clone

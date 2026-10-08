@@ -120,7 +120,7 @@ where
         for _ in len..=position {
             // SAFETY: `ensure_room` returned `Ok` for all of these pushes, and
             // the loop runs no other `&mut` method of the storage, so
-            // `SliceStorage` promises that each push succeeds.
+            // `SliceStorage` promises room for each push.
             unsafe { slots.push_unchecked(empty_slot()) };
         }
     }

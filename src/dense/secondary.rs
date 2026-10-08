@@ -704,7 +704,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         }
         // SAFETY: `ensure_room(1)` returned `Ok` above, and no other `&mut`
         // method of the pair storage has run since, so `PairStorage` promises
-        // that this push succeeds.
+        // room for this push.
         unsafe { self.pairs.push_unchecked(key, value) };
         Ok(None)
     }

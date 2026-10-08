@@ -1026,7 +1026,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             let slot = Slot::new_odd(target.generation, value);
             // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this
             // slot, and no other `&mut` method of the storage has run since,
-            // so `SliceStorage` promises that this push succeeds.
+            // so `SliceStorage` promises room for this push.
             unsafe { self.slots.push_unchecked(slot) };
         }
         increment_len(&mut self.len);
@@ -1422,7 +1422,7 @@ impl<T: Clone, C: GenMapConfig> Clone for GenMap<T, C> {
             // `source`, or `with_capacity` made the storage for that many
             // slots, which `source` holds in a storage of the same type. Only
             // these pushes have run on the storage since, so `SliceStorage`
-            // promises that each push succeeds.
+            // promises room for each push.
             unsafe { guard.0.push_unchecked(slot.clone()) };
         }
         core::mem::forget(guard);

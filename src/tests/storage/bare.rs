@@ -14,7 +14,7 @@ struct Bare<S, const ITER: bool>(Vec<S>);
 
 // SAFETY: every method except `ensure_room` forwards to the `Vec`, which
 // behaves as the trait describes. `ensure_room` can skip making room because
-// `try_push` always returns `Ok`.
+// `push_unchecked` grows the `Vec` when it is full.
 unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
     type Item = S;
     type Error = ();
@@ -43,9 +43,8 @@ unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
         Ok(())
     }
 
-    fn try_push(&mut self, item: S) -> Result<(), S> {
+    unsafe fn push_unchecked(&mut self, item: S) {
         self.0.push(item);
-        Ok(())
     }
 
     fn pop(&mut self) -> Option<S> {

@@ -264,16 +264,15 @@ impl<T, L: KeyPiece> DerefMut for SingleVec<T, L> {
 
 // SAFETY: the first `len` items of the buffer are initialized and are the
 // items pushed since the last `clear` and not popped, in the order they were
-// pushed. `try_push` writes an item only once there is room for it, `pop` and
-// `clear` lower the length before they move or drop an item, and growing
-// moves the items with the buffer without changing them. Once
+// pushed. `pop` and `clear` lower the length before they move or drop an item,
+// and growing moves the items with the buffer without changing them. Once
 // `ensure_room` returns `Ok` for `n` items, the capacity is at least the
 // length plus `n`, so the next `n` pushes fit without growing. The
 // `SingleVec` that `with_capacity` returns has room for at least `capacity`
-// items, so the first `capacity` pushes fit too. `push_unchecked` writes the
-// item without a check, and the rules only promise that a push succeeds while
-// the length is below the capacity. Only `with_capacity` panics on its own,
-// and `clear` only panics when dropping an item does.
+// items, so its first `capacity` pushes fit too. `push_unchecked` writes the
+// item without a check, and the rules only promise room while the length is
+// below the capacity. Only `with_capacity` panics on its own, and `clear` only
+// panics when dropping an item does.
 unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     type Item = T;
     type Error = ReserveError;
@@ -309,15 +308,10 @@ unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     }
 
     #[inline]
-    fn try_push(&mut self, item: T) -> Result<(), T> {
-        SingleVec::try_push(self, item)
-    }
-
-    #[inline]
     unsafe fn push_unchecked(&mut self, item: T) {
-        // SAFETY: the caller promises that the rules of the trait make this
-        // push succeed, and a `SingleVec` only promises that while its length
-        // is below its capacity.
+        // SAFETY: the caller guarantees that the rules of the trait promise
+        // room for this call, and a `SingleVec` only promises room while its
+        // length is below its capacity.
         unsafe { SingleVec::push_unchecked(self, item) };
     }
 
