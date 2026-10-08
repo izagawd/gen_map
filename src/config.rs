@@ -49,6 +49,10 @@ use core::hash::Hash;
 /// parts every time they are called on the same value, because the maps check
 /// a key's parts once and then read them again.
 ///
+/// None of the implemented methods of this trait should trigger a panic,
+/// as it could cause a panic when a map is in the middle of doing something important,
+/// which may cause undefined behavior.
+///
 /// Safe code can make a key from any value of the key config it can build,
 /// with [`Key::from_repr`](crate::Key::from_repr), and read the key's parts
 /// through the safe [`idx`](Self::idx) and [`generation`](Self::generation)
