@@ -9,7 +9,7 @@ use super::{DropItem, DropTracker};
 use crate::{
     DefaultMapConfig, DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig,
     GenMap, GenMapConfig, GenSlotItem, Key, KeyPiece, MapConfig, MapIdx, MapKeyConfig, NewerWins,
-    Packed, SecondaryMap, SecondaryMapConfig, SecondarySlotItem,
+    Packed, PairVec, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, SplitPair,
 };
 use std::cell::{Cell, RefCell};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -61,9 +61,9 @@ impl Drop for Fragile {
 
 /// Implements `MapConfig`, `GenMapConfig`, `SecondaryMapConfig`,
 /// `DenseGenMapConfig` and `DenseSecondaryMapConfig` for a config with the
-/// given key config, overflow rule, and slot, value and key storages.
+/// given key config, overflow rule, slot storage and pair storage.
 macro_rules! config {
-    ($(#[$doc:meta])* $name:ident, $key:ty, $wrap:expr, $slots:ident, $values:ident, $keys:ident) => {
+    ($(#[$doc:meta])* $name:ident, $key:ty, $wrap:expr, $slots:ident, $pairs:ident) => {
         $(#[$doc])*
         struct $name;
 
@@ -84,18 +84,19 @@ macro_rules! config {
         impl DenseGenMapConfig for $name {
             const WRAP_ON_OVERFLOW: bool = $wrap;
             type SlotStorage<S: GenSlotItem> = $slots<S>;
-            type ValueStorage<V> = $values<V>;
-            type KeyStorage<K> = $keys<K>;
+            type PairStorage<K, V> = $pairs<K, V>;
         }
 
         impl DenseSecondaryMapConfig for $name {
             type ReplaceStrategy = NewerWins;
             type SlotStorage<S: GenSlotItem> = $slots<S>;
-            type ValueStorage<V> = $values<V>;
-            type KeyStorage<K> = $keys<K>;
+            type PairStorage<K, V> = $pairs<K, V>;
         }
     };
 }
+
+/// A pair storage that keeps the keys in one `Vec` and the values in another.
+type TwoVecs<K, V> = SplitPair<Vec<K>, Vec<V>>;
 
 config!(
     /// Packed keys with a 3 bit generation, in maps that wrap generations.
@@ -103,8 +104,7 @@ config!(
     Packed<u16, 3>,
     true,
     Vec,
-    Vec,
-    Vec
+    PairVec
 );
 
 config!(
@@ -115,15 +115,15 @@ config!(
     Packed<u8, 3>,
     false,
     Vec,
-    Vec,
-    Vec
+    TwoVecs
 );
 
 #[cfg(feature = "arrayvec")]
 type Eight<T> = arrayvec::ArrayVec<T, 8>;
 
+/// A pair storage with room for eight keys but only six values.
 #[cfg(feature = "arrayvec")]
-type Six<T> = arrayvec::ArrayVec<T, 6>;
+type EightKeysSixValues<K, V> = SplitPair<Eight<K>, arrayvec::ArrayVec<V, 6>>;
 
 #[cfg(feature = "arrayvec")]
 config!(
@@ -133,8 +133,7 @@ config!(
     crate::Split<u8, u8>,
     false,
     Eight,
-    Six,
-    Eight
+    EightKeysSixValues
 );
 
 /// How many seeds to run and how many steps each one takes. Miri gets fewer
@@ -364,8 +363,8 @@ where
 }
 
 /// Checks that every map finds each of its values under that value's key. A
-/// dense map must also keep each key next to its value, and exactly one of its
-/// slots must hold each value.
+/// dense map must also keep each key at the same position as its value, and
+/// exactly one of its slots must hold each value.
 fn check<C>(
     sparse: &GenMap<Fragile, C>,
     dense: &DenseGenMap<Fragile, C>,

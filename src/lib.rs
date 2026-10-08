@@ -1,5 +1,5 @@
-//! [`GenMap`] is a configurable generational map that stores each value in a slot
-//! and hands out a [`Key`] that points at that slot.
+//! [`GenMap`] is a configurable generational map that stores each value in a
+//! slot and hands out a [`Key`] that points at that slot.
 //!
 //! When a value is removed, the map frees its slot and may reuse
 //! that slot for a value inserted later. The key of the removed value stops
@@ -126,14 +126,15 @@
 //!   map retires a slot with no generations left or starts its generation over
 //!   at zero.
 //! - [`Storage`](GenMapConfig::Storage) is the collection the map keeps its
-//!   slots in. It can be a `Vec`, an `ArrayVec`, a `SmallVec` or any other
-//!   type that implements [`SliceStorage`].
+//!   slots in. It can be a [`SingleVec`], a `Vec`, an `ArrayVec`, a `SmallVec`
+//!   or any other type that implements [`SliceStorage`].
 //!
 //! When its `C` parameter is left out, as in `GenMap<T>`, a map uses
-//! [`DefaultMapConfig`]. Maps with that config hand out keys with a `u32`
-//! index and a `u32` generation, keep their slots in a `Vec` and retire a slot
-//! that has no generations left. [`GenMap::new`] only exists for the default
-//! config, so use [`GenMap::new_with_config`] for any other.
+//! [`DefaultMapConfig`]. Maps with that config hand out keys with a `u32` index
+//! and a `u32` generation, keep their slots in a [`SingleVec`] with a `u32`
+//! length and retire a slot that has no generations left. [`GenMap::new`] only
+//! exists for the default config, so use [`GenMap::new_with_config`] for any
+//! other.
 //!
 //! Maps whose configs have the same key config share a key type. A key does
 //! not record which map handed it out, so a map also accepts keys from another
@@ -165,7 +166,7 @@
 //! # Dense maps
 //!
 //! A [`DenseGenMap`] works like a [`GenMap`], but it keeps its values one
-//! after another in a storage of their own, and each slot only stores the
+//! after another in a slice of their own, and each slot only stores the
 //! position of its value. Iterating over the values is then as fast as
 //! iterating over a slice, and a lookup takes one more step. A
 //! [`DenseSecondaryMap`] does the same for a [`SecondaryMap`].
@@ -173,6 +174,9 @@
 //! Removing a value from a dense map moves its last value into the place of
 //! the removed one. The map reads the moved value's key to point that value's
 //! slot at its new position, so a dense map also keeps the key of each value.
+//! It keeps the keys and values in a [`PairStorage`], which its config picks.
+//! The default config picks a [`PairVec`], which keeps the keys and the
+//! values in two buffers that share one length and one capacity.
 //!
 //! ```
 //! use gen_map::DenseGenMap;
@@ -189,8 +193,8 @@
 //!
 //! - `std` is on by default, and it turns `alloc` on too. It adds
 //!   [`SparseSecondaryMap`], which keeps its values in std's `HashMap`.
-//! - `alloc` adds the `Vec` storage and [`DefaultMapConfig`]. Without it,
-//!   every map needs a config of its own.
+//! - `alloc` adds the [`SingleVec`], `Vec` and [`PairVec`] storages and
+//!   [`DefaultMapConfig`]. Without it, every map needs a config of its own.
 //! - `arrayvec` lets a config use `arrayvec::ArrayVec` as a storage. An
 //!   `ArrayVec` has a fixed capacity and never allocates.
 //! - `smallvec` lets a config use `smallvec::SmallVec` as a storage. A
@@ -227,19 +231,12 @@ extern crate alloc;
 extern crate std;
 
 mod config;
-mod dense_map;
-mod dense_secondary_map;
+mod dense;
 mod error;
 mod key;
-mod key_layout;
-mod key_piece;
 mod map;
-mod parity;
-mod replace_strategy;
-mod secondary_map;
+mod secondary;
 mod slot;
-#[cfg(feature = "std")]
-mod sparse_secondary_map;
 mod storage;
 
 #[cfg(feature = "alloc")]
@@ -252,40 +249,52 @@ pub use config::{
     DefaultKeyConfig, DenseGenMapConfig, DenseSecondaryMapConfig, GenMapConfig, KeyConfig,
     MapConfig, SecondaryMapConfig,
 };
-pub use dense_map::{
+pub use dense::map::{
     DenseDrain, DenseGenMap, DenseGenMapRawParts, DenseIntoIter, DenseIter, DenseIterMut,
     DenseKeys, DenseMapSlot, DenseStorageError, DenseVacantEntry, DenseValues, DenseValuesMut,
 };
-pub use dense_secondary_map::{
+pub use dense::secondary::{
     DenseSecondaryDrain, DenseSecondaryMap, DenseSecondaryMapRawParts, DenseSecondaryMapSlot,
     DenseSecondaryStorageError,
 };
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub use error::ReserveError;
 pub use error::{
     DenseError, FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError,
     InsertWithError, SecondaryInsertError,
 };
+pub use key::layout::{Packed, Split};
+pub use key::parity::{Even, Odd};
+pub use key::piece::KeyPiece;
 pub use key::Key;
-pub use key_layout::{Packed, Split};
-pub use key_piece::KeyPiece;
 pub use map::{
     Drain, GenMap, GenMapRawParts, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig,
     MapSlot, StorageError, VacantEntry, Values, ValuesMut,
 };
-pub use parity::{Even, Odd};
-pub use replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
-pub use secondary_map::{
+pub use secondary::replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+pub use secondary::sparse::{
+    SparseSecondaryDrain, SparseSecondaryIntoIter, SparseSecondaryIter, SparseSecondaryIterMut,
+    SparseSecondaryKeys, SparseSecondaryMap, SparseSecondaryMapRawParts, SparseSecondaryMapSlot,
+    SparseSecondaryValues, SparseSecondaryValuesMut, SparseSlot,
+};
+pub use secondary::{
     SecondaryDrain, SecondaryIntoIter, SecondaryIter, SecondaryIterMut, SecondaryKeys,
     SecondaryMap, SecondaryMapRawParts, SecondaryMapSlot, SecondaryStorageError, SecondaryValues,
     SecondaryValuesMut,
 };
 pub use slot::{GenSlotItem, Parity, ParityMut, ParityRef, SecondarySlotItem, Slot};
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-pub use sparse_secondary_map::{
-    SparseSecondaryDrain, SparseSecondaryIntoIter, SparseSecondaryIter, SparseSecondaryIterMut,
-    SparseSecondaryKeys, SparseSecondaryMap, SparseSecondaryMapRawParts, SparseSecondaryMapSlot,
-    SparseSecondaryValues, SparseSecondaryValuesMut, SparseSlot,
+pub use storage::pair::{
+    PairStorage, ReservePairStorage, SplitPair, SplitPairError, SplitPairIntoIter,
 };
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub use storage::pair_vec::{PairVec, PairVecIntoIter, PairVecRawParts};
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub use storage::single_vec::{SingleVec, SingleVecIntoIter, SingleVecRawParts};
 pub use storage::{ReserveStorage, SliceStorage};
 
 // The tests use `Vec` storage and the default config, so they need `alloc`.

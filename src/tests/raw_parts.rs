@@ -2,51 +2,19 @@
 //! parts that come out of a map, parts that change between the two calls, and
 //! parts that are built by hand.
 
-use super::{key_from_parts, DropTracker};
+use super::{key_from_parts, Cfg, DropTracker};
 use crate::{
-    DenseGenMap, DenseGenMapConfig, DenseGenMapRawParts, DenseSecondaryMap,
-    DenseSecondaryMapConfig, DenseSecondaryMapRawParts, Even, GenMap, GenMapConfig, GenMapRawParts,
-    GenSlotItem, Key, MapConfig, NewerWins, Odd, Packed, Parity, ParityMut, ParityRef,
-    SecondaryMap, SecondaryMapConfig, SecondaryMapRawParts, SecondarySlotItem, Slot, Split,
+    DenseGenMap, DenseGenMapRawParts, DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap,
+    GenMapConfig, GenMapRawParts, GenSlotItem, Key, MapConfig, Odd, Packed, PairStorage, Parity,
+    ParityMut, ParityRef, SecondaryMap, SecondaryMapRawParts, Slot, Split,
 };
 use std::vec;
 use std::vec::Vec;
 
 /// This config gives keys a `u8` index and a `u8` generation, so the parts of
-/// a map are small enough to write out by hand. It keeps every storage in a
-/// `Vec`.
-struct Byte;
-
-impl MapConfig for Byte {
-    type KeyConfig = Split<u8, u8>;
-}
-
-impl GenMapConfig for Byte {
-    type Storage<S: GenSlotItem> = Vec<S>;
-}
-
-impl DenseGenMapConfig for Byte {
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
-}
-
-impl SecondaryMapConfig for Byte {
-    type ReplaceStrategy = NewerWins;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
-}
-
-impl DenseSecondaryMapConfig for Byte {
-    type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type ValueStorage<V> = Vec<V>;
-    type KeyStorage<K> = Vec<K>;
-}
-
-#[cfg(feature = "std")]
-impl crate::SparseSecondaryMapConfig for Byte {
-    type ReplaceStrategy = NewerWins;
-}
+/// a map are small enough to write out by hand. It keeps the slots in a `Vec`,
+/// and the keys and values of the dense maps in a `PairVec`.
+type Byte = Cfg<u8, u8>;
 
 /// This config gives keys a four bit generation, so the largest generation a
 /// key can hold is 15, although the generation type is a `u8`.
@@ -242,8 +210,8 @@ fn the_parts_of_a_dense_gen_map_keep_its_values_keys_and_slots_in_step() {
 
     let parts = map.into_raw_parts();
     // Removing `a` moved the last value into its place.
-    assert_eq!(parts.values, ["c", "b"]);
-    assert_eq!(parts.keys, [c, b]);
+    assert_eq!(parts.pairs.second_slice(), ["c", "b"]);
+    assert_eq!(parts.pairs.first_slice(), [c, b]);
     assert_eq!(parts.next_free, a.idx());
     let slots: Vec<_> = parts.slots.iter().map(parity).collect();
     assert_eq!(
@@ -271,8 +239,7 @@ fn a_dense_gen_map_built_by_hand_moves_its_last_value_on_remove() {
             Slot::new_odd(odd(3), 0),
         ],
         next_free: 1,
-        values: vec!["x", "y"],
-        keys: vec![key(2, 3), key(0, 1)],
+        pairs: [(key(2, 3), "x"), (key(0, 1), "y")].into_iter().collect(),
     };
     let mut map = unsafe { DenseGenMap::from_raw_parts(parts) };
     assert_eq!((map[key(0, 1)], map[key(2, 3)]), ("y", "x"));
@@ -338,8 +305,8 @@ fn the_parts_of_a_dense_secondary_map_keep_its_values_keys_and_slots_in_step() {
     map.remove(key(2, 1));
 
     let parts = map.into_raw_parts();
-    assert_eq!(parts.values, ["c", "b"]);
-    assert_eq!(parts.keys, [key(1, 1), key(0, 3)]);
+    assert_eq!(parts.pairs.second_slice(), ["c", "b"]);
+    assert_eq!(parts.pairs.first_slice(), [key(1, 1), key(0, 3)]);
     let slots: Vec<_> = parts.slots.iter().map(parity).collect();
     assert_eq!(
         slots,
@@ -363,8 +330,7 @@ fn a_dense_secondary_map_built_by_hand_moves_its_last_value_on_remove() {
             Slot::new_even(Even::ZERO, ()),
             Slot::new_odd(odd(3), 0),
         ],
-        values: vec!["x", "y"],
-        keys: vec![key(2, 3), key(0, 1)],
+        pairs: [(key(2, 3), "x"), (key(0, 1), "y")].into_iter().collect(),
     };
     let mut map = unsafe { DenseSecondaryMap::from_raw_parts(parts) };
     assert_eq!((map[key(0, 1)], map[key(2, 3)]), ("y", "x"));

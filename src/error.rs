@@ -1,7 +1,13 @@
+use crate::config::KeyConfig;
+use crate::key::Key;
+#[cfg(feature = "alloc")]
+use alloc::alloc::handle_alloc_error;
+#[cfg(feature = "alloc")]
+use core::alloc::Layout;
 use core::fmt;
 
-/// Why a [`GenMap`](crate::GenMap) or a [`DenseGenMap`](crate::DenseGenMap)
-/// has no room for another value.
+/// This error says why a [`GenMap`](crate::GenMap) or a
+/// [`DenseGenMap`](crate::DenseGenMap) has no room for another value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FullError<S> {
     /// The map has a slot at every index it can use and none of them are
@@ -11,7 +17,8 @@ pub enum FullError<S> {
 
     /// A storage could not make room for the value. For a `GenMap`, that is
     /// the slot storage, and none of the slots are free. The field says why,
-    /// which for a `Vec` is its `TryReserveError`.
+    /// which for a [`SingleVec`](crate::SingleVec) is a
+    /// [`ReserveError`](crate::ReserveError).
     StorageFull(S),
 }
 
@@ -38,7 +45,7 @@ impl<S: fmt::Display> fmt::Display for FullError<S> {
     }
 }
 
-/// Why [`GenMap::try_insert`](crate::GenMap::try_insert) or
+/// This error says why [`GenMap::try_insert`](crate::GenMap::try_insert) or
 /// [`DenseGenMap::try_insert`](crate::DenseGenMap::try_insert) could not
 /// insert. Each variant hands the value back so that the caller can keep it.
 /// `S` is the map's [`StorageError`](crate::StorageError), or the
@@ -166,7 +173,8 @@ impl<T, S: fmt::Display> fmt::Display for SecondaryInsertError<T, S> {
     }
 }
 
-/// Why [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key) or
+/// This error says why
+/// [`GenMap::try_insert_with_key`](crate::GenMap::try_insert_with_key) or
 /// [`DenseGenMap::try_insert_with_key`](crate::DenseGenMap::try_insert_with_key)
 /// could not insert. The map can be full before the closure runs, or the
 /// closure can refuse to make a value, and the variant says which of the two
@@ -190,17 +198,16 @@ impl<E, S> InsertWithError<E, S> {
     /// # Examples
     ///
     /// ```
-    /// use gen_map::{FullError, GenMap};
-    /// use std::collections::TryReserveError;
+    /// use gen_map::{FullError, GenMap, ReserveError};
     ///
     /// #[derive(Debug)]
     /// enum MyError {
-    ///     Full(FullError<TryReserveError>),
+    ///     Full(FullError<ReserveError>),
     ///     Parse,
     /// }
     ///
-    /// impl From<FullError<TryReserveError>> for MyError {
-    ///     fn from(e: FullError<TryReserveError>) -> Self {
+    /// impl From<FullError<ReserveError>> for MyError {
+    ///     fn from(e: FullError<ReserveError>) -> Self {
     ///         MyError::Full(e)
     ///     }
     /// }
@@ -284,6 +291,30 @@ impl fmt::Display for GetDisjointMutError {
     }
 }
 
+/// Checks the keys given to a map's `get_disjoint_mut`, where `has_value`
+/// says whether the map has a value for a key. Keys point at the same slot
+/// exactly when their indices are equal.
+///
+/// # Errors
+///
+/// Returns [`GetDisjointMutError::InvalidKey`] if the map has no value for one
+/// of the keys, and [`GetDisjointMutError::OverlappingKeys`] if two of the keys
+/// have the same index.
+pub(crate) fn check_disjoint_keys<K: KeyConfig>(
+    keys: &[Key<K>],
+    mut has_value: impl FnMut(Key<K>) -> bool,
+) -> Result<(), GetDisjointMutError> {
+    for (i, key) in keys.iter().enumerate() {
+        if !has_value(*key) {
+            return Err(GetDisjointMutError::InvalidKey);
+        }
+        if keys[..i].iter().any(|earlier| earlier.idx() == key.idx()) {
+            return Err(GetDisjointMutError::OverlappingKeys);
+        }
+    }
+    Ok(())
+}
+
 /// This error says why the `get_disjoint_mut_at` method of a
 /// [`GenMap`](crate::GenMap), [`SecondaryMap`](crate::SecondaryMap),
 /// [`DenseGenMap`](crate::DenseGenMap),
@@ -309,25 +340,88 @@ impl fmt::Display for GetDisjointMutAtError {
     }
 }
 
-/// Which storage of a dense map could not make room, together with that
-/// storage's error. `S` is the error of the slot storage, `V` is the error of
-/// the value storage, and `K` is the error of the key storage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DenseError<S, V, K> {
-    /// The slot storage could not make room for another slot.
-    Slots(S),
-    /// The value storage could not make room for another value.
-    Values(V),
-    /// The key storage could not make room for another key.
-    Keys(K),
+/// Checks the indices given to a map's `get_disjoint_mut_at`, where
+/// `has_value` says whether the slot at an index holds a value.
+///
+/// # Errors
+///
+/// Returns [`GetDisjointMutAtError::NoValue`] if the slot at one of the
+/// indices holds no value, and [`GetDisjointMutAtError::OverlappingIndices`]
+/// if two of the indices are the same.
+pub(crate) fn check_disjoint_idxs<I: PartialEq>(
+    idxs: &[I],
+    mut has_value: impl FnMut(&I) -> bool,
+) -> Result<(), GetDisjointMutAtError> {
+    for (i, idx) in idxs.iter().enumerate() {
+        if !has_value(idx) {
+            return Err(GetDisjointMutAtError::NoValue);
+        }
+        if idxs[..i].contains(idx) {
+            return Err(GetDisjointMutAtError::OverlappingIndices);
+        }
+    }
+    Ok(())
 }
 
-impl<S: fmt::Display, V: fmt::Display, K: fmt::Display> fmt::Display for DenseError<S, V, K> {
+/// This error says which storage of a dense map could not make room, and it
+/// holds that storage's error. The first type parameter is the error of the
+/// slot storage, and the second is the error of the
+/// [`PairStorage`](crate::PairStorage) that holds the keys and values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DenseError<S, P> {
+    /// The slot storage could not make room for another slot.
+    Slots(S),
+    /// The pair storage could not make room for another key and value.
+    Pairs(P),
+}
+
+impl<S: fmt::Display, P: fmt::Display> fmt::Display for DenseError<S, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Slots(error) => write!(f, "the slot storage is full: {error}"),
-            Self::Values(error) => write!(f, "the value storage is full: {error}"),
-            Self::Keys(error) => write!(f, "the key storage is full: {error}"),
+            Self::Pairs(error) => write!(f, "the pair storage is full: {error}"),
+        }
+    }
+}
+
+/// This error says why a [`SingleVec`](crate::SingleVec) or a
+/// [`PairVec`](crate::PairVec) could not make room for more items. It needs
+/// the `alloc` feature.
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReserveError {
+    /// The vec would need room for more items than its length type can count,
+    /// or a buffer that takes more than `isize::MAX` bytes.
+    CapacityOverflow,
+    /// The allocator could not allocate a buffer with this layout.
+    AllocError(Layout),
+}
+
+#[cfg(feature = "alloc")]
+impl ReserveError {
+    /// Panics for a capacity overflow, and calls `handle_alloc_error` for a
+    /// failed allocation, which aborts the program by default.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn handle(self) -> ! {
+        match self {
+            Self::CapacityOverflow => panic!("capacity overflow"),
+            Self::AllocError(layout) => handle_alloc_error(layout),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl fmt::Display for ReserveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CapacityOverflow => f.write_str("the vec cannot hold that many items"),
+            Self::AllocError(layout) => write!(
+                f,
+                "the allocator could not allocate {} bytes for a buffer",
+                layout.size()
+            ),
         }
     }
 }
