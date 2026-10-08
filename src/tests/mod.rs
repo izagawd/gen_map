@@ -2,48 +2,18 @@
 // purpose, so their unsafe code is not documented block by block.
 #![allow(clippy::undocumented_unsafe_blocks)]
 
-#[cfg(feature = "arrayvec")]
-mod arrayvec_storage;
-mod bare_storage;
-mod basic;
-mod capped_storage;
-mod clone;
-mod dense_map;
-mod dense_model;
-mod dense_secondary;
-mod detach;
-mod disjoint;
-mod drain;
-mod get_at;
-mod iter;
+mod dense;
 mod key;
-mod key_at;
-mod key_piece;
+mod map;
 mod model;
-mod overflow;
-mod packed;
-mod pair_vec;
 mod panic_fuzz;
-mod parity;
 mod raw_parts;
-mod reset;
-mod retain;
-mod retire;
 mod secondary;
-mod single_vec;
 // The `size` tests expect the sizes that types have on 64-bit targets.
 #[cfg(target_pointer_width = "64")]
 mod size;
 mod slot;
-#[cfg(feature = "smallvec")]
-mod smallvec_storage;
-#[cfg(feature = "std")]
-mod sparse_secondary;
-mod split_pair;
-mod storage_contract;
-mod try_insert;
-mod unchecked;
-mod vacant_entry;
+mod storage;
 mod zero_sized;
 
 use crate::{

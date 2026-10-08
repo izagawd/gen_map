@@ -230,27 +230,13 @@ extern crate alloc;
 #[cfg(any(test, feature = "std"))]
 extern crate std;
 
-#[cfg(feature = "alloc")]
-mod buffer;
 mod config;
-mod dense_map;
-mod dense_secondary_map;
+mod dense;
 mod error;
 mod key;
-mod key_layout;
-mod key_piece;
 mod map;
-mod pair_storage;
-#[cfg(feature = "alloc")]
-mod pair_vec;
-mod parity;
-mod replace_strategy;
-mod secondary_map;
-#[cfg(feature = "alloc")]
-mod single_vec;
+mod secondary;
 mod slot;
-#[cfg(feature = "std")]
-mod sparse_secondary_map;
 mod storage;
 
 #[cfg(feature = "alloc")]
@@ -263,11 +249,11 @@ pub use config::{
     DefaultKeyConfig, DenseGenMapConfig, DenseSecondaryMapConfig, GenMapConfig, KeyConfig,
     MapConfig, SecondaryMapConfig,
 };
-pub use dense_map::{
+pub use dense::map::{
     DenseDrain, DenseGenMap, DenseGenMapRawParts, DenseIntoIter, DenseIter, DenseIterMut,
     DenseKeys, DenseMapSlot, DenseStorageError, DenseVacantEntry, DenseValues, DenseValuesMut,
 };
-pub use dense_secondary_map::{
+pub use dense::secondary::{
     DenseSecondaryDrain, DenseSecondaryMap, DenseSecondaryMapRawParts, DenseSecondaryMapSlot,
     DenseSecondaryStorageError,
 };
@@ -278,37 +264,37 @@ pub use error::{
     DenseError, FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError,
     InsertWithError, SecondaryInsertError,
 };
+pub use key::layout::{Packed, Split};
+pub use key::parity::{Even, Odd};
+pub use key::piece::KeyPiece;
 pub use key::Key;
-pub use key_layout::{Packed, Split};
-pub use key_piece::KeyPiece;
 pub use map::{
     Drain, GenMap, GenMapRawParts, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig,
     MapSlot, StorageError, VacantEntry, Values, ValuesMut,
 };
-pub use pair_storage::{
-    PairStorage, ReservePairStorage, SplitPair, SplitPairError, SplitPairIntoIter,
-};
-#[cfg(feature = "alloc")]
-#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-pub use pair_vec::{PairVec, PairVecIntoIter, PairVecRawParts};
-pub use parity::{Even, Odd};
-pub use replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
-pub use secondary_map::{
-    SecondaryDrain, SecondaryIntoIter, SecondaryIter, SecondaryIterMut, SecondaryKeys,
-    SecondaryMap, SecondaryMapRawParts, SecondaryMapSlot, SecondaryStorageError, SecondaryValues,
-    SecondaryValuesMut,
-};
-#[cfg(feature = "alloc")]
-#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-pub use single_vec::{SingleVec, SingleVecIntoIter, SingleVecRawParts};
-pub use slot::{GenSlotItem, Parity, ParityMut, ParityRef, SecondarySlotItem, Slot};
+pub use secondary::replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-pub use sparse_secondary_map::{
+pub use secondary::sparse::{
     SparseSecondaryDrain, SparseSecondaryIntoIter, SparseSecondaryIter, SparseSecondaryIterMut,
     SparseSecondaryKeys, SparseSecondaryMap, SparseSecondaryMapRawParts, SparseSecondaryMapSlot,
     SparseSecondaryValues, SparseSecondaryValuesMut, SparseSlot,
 };
+pub use secondary::{
+    SecondaryDrain, SecondaryIntoIter, SecondaryIter, SecondaryIterMut, SecondaryKeys,
+    SecondaryMap, SecondaryMapRawParts, SecondaryMapSlot, SecondaryStorageError, SecondaryValues,
+    SecondaryValuesMut,
+};
+pub use slot::{GenSlotItem, Parity, ParityMut, ParityRef, SecondarySlotItem, Slot};
+pub use storage::pair::{
+    PairStorage, ReservePairStorage, SplitPair, SplitPairError, SplitPairIntoIter,
+};
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub use storage::pair_vec::{PairVec, PairVecIntoIter, PairVecRawParts};
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub use storage::single_vec::{SingleVec, SingleVecIntoIter, SingleVecRawParts};
 pub use storage::{ReserveStorage, SliceStorage};
 
 // The tests use `Vec` storage and the default config, so they need `alloc`.

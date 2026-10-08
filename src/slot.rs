@@ -1,5 +1,5 @@
-use crate::key_piece::KeyPiece;
-use crate::parity::{Even, Odd};
+use crate::key::parity::{Even, Odd};
+use crate::key::piece::KeyPiece;
 use core::fmt;
 use core::mem::ManuallyDrop;
 use core::ptr;

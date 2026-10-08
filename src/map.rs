@@ -5,9 +5,9 @@ use crate::error::{
     check_disjoint_idxs, check_disjoint_keys, FullError, GetDisjointMutAtError,
     GetDisjointMutError, InsertError, InsertWithError,
 };
+use crate::key::parity::{Even, Odd};
+use crate::key::piece::KeyPiece;
 use crate::key::Key;
-use crate::key_piece::KeyPiece;
-use crate::parity::{Even, Odd};
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
 use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;

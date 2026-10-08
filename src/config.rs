@@ -1,17 +1,17 @@
-use crate::key_layout::Split;
-use crate::key_piece::KeyPiece;
+use crate::key::layout::Split;
+use crate::key::parity::Odd;
+use crate::key::piece::KeyPiece;
 #[cfg(feature = "alloc")]
 use crate::map::MapIdx;
-use crate::pair_storage::PairStorage;
 #[cfg(feature = "alloc")]
-use crate::pair_vec::PairVec;
-use crate::parity::Odd;
-#[cfg(feature = "alloc")]
-use crate::replace_strategy::NewerWins;
-use crate::replace_strategy::ReplaceStrategy;
-#[cfg(feature = "alloc")]
-use crate::single_vec::SingleVec;
+use crate::secondary::replace_strategy::NewerWins;
+use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::slot::{GenSlotItem, SecondarySlotItem};
+use crate::storage::pair::PairStorage;
+#[cfg(feature = "alloc")]
+use crate::storage::pair_vec::PairVec;
+#[cfg(feature = "alloc")]
+use crate::storage::single_vec::SingleVec;
 use crate::storage::SliceStorage;
 use core::hash::Hash;
 
