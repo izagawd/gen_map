@@ -126,14 +126,15 @@
 //!   map retires a slot with no generations left or starts its generation over
 //!   at zero.
 //! - [`Storage`](GenMapConfig::Storage) is the collection the map keeps its
-//!   slots in. It can be a `Vec`, an `ArrayVec`, a `SmallVec` or any other
-//!   type that implements [`SliceStorage`].
+//!   slots in. It can be a [`LenVec`], a `Vec`, an `ArrayVec`, a `SmallVec`
+//!   or any other type that implements [`SliceStorage`].
 //!
 //! When its `C` parameter is left out, as in `GenMap<T>`, a map uses
 //! [`DefaultMapConfig`]. Maps with that config hand out keys with a `u32`
-//! index and a `u32` generation, keep their slots in a `Vec` and retire a slot
-//! that has no generations left. [`GenMap::new`] only exists for the default
-//! config, so use [`GenMap::new_with_config`] for any other.
+//! index and a `u32` generation, keep their slots in a [`LenVec`] with a `u32`
+//! length and retire a slot that has no generations left. [`GenMap::new`] only
+//! exists for the default config, so use [`GenMap::new_with_config`] for any
+//! other.
 //!
 //! Maps whose configs have the same key config share a key type. A key does
 //! not record which map handed it out, so a map also accepts keys from another
@@ -192,8 +193,8 @@
 //!
 //! - `std` is on by default, and it turns `alloc` on too. It adds
 //!   [`SparseSecondaryMap`], which keeps its values in std's `HashMap`.
-//! - `alloc` adds the `Vec` storage and [`DefaultMapConfig`]. Without it,
-//!   every map needs a config of its own.
+//! - `alloc` adds the [`LenVec`], `Vec` and [`PairVec`] storages and
+//!   [`DefaultMapConfig`]. Without it, every map needs a config of its own.
 //! - `arrayvec` lets a config use `arrayvec::ArrayVec` as a storage. An
 //!   `ArrayVec` has a fixed capacity and never allocates.
 //! - `smallvec` lets a config use `smallvec::SmallVec` as a storage. A
@@ -229,6 +230,8 @@ extern crate alloc;
 #[cfg(any(test, feature = "std"))]
 extern crate std;
 
+#[cfg(feature = "alloc")]
+mod buffer;
 mod config;
 mod dense_map;
 mod dense_secondary_map;
@@ -236,6 +239,8 @@ mod error;
 mod key;
 mod key_layout;
 mod key_piece;
+#[cfg(feature = "alloc")]
+mod len_vec;
 mod map;
 mod pair_storage;
 #[cfg(feature = "alloc")]
@@ -266,6 +271,9 @@ pub use dense_secondary_map::{
     DenseSecondaryDrain, DenseSecondaryMap, DenseSecondaryMapRawParts, DenseSecondaryMapSlot,
     DenseSecondaryStorageError,
 };
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub use error::ReserveError;
 pub use error::{
     DenseError, FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError,
     InsertWithError, SecondaryInsertError,
@@ -273,6 +281,9 @@ pub use error::{
 pub use key::Key;
 pub use key_layout::{Packed, Split};
 pub use key_piece::KeyPiece;
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub use len_vec::{LenVec, LenVecIntoIter};
 pub use map::{
     Drain, GenMap, GenMapRawParts, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig,
     MapSlot, StorageError, VacantEntry, Values, ValuesMut,
@@ -282,7 +293,7 @@ pub use pair_storage::{
 };
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-pub use pair_vec::{PairVec, PairVecError, PairVecIntoIter};
+pub use pair_vec::{PairVec, PairVecIntoIter};
 pub use parity::{Even, Odd};
 pub use replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
 pub use secondary_map::{

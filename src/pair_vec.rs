@@ -1,5 +1,7 @@
+use crate::buffer::{allocate, deallocate, grown_capacity, max_len, saturating_usize};
+use crate::error::ReserveError;
+use crate::key_piece::KeyPiece;
 use crate::pair_storage::{PairStorage, ReservePairStorage};
-use alloc::alloc::{alloc, dealloc, handle_alloc_error, Layout};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
@@ -9,13 +11,18 @@ use core::slice;
 
 /// A [`PairStorage`] that keeps its two slices in two buffers on the heap.
 /// Both buffers always have room for the same number of items, so a
-/// `PairVec` stores one length and one capacity for both buffers. It is the
-/// pair storage of [`DefaultMapConfig`](crate::DefaultMapConfig), and it needs
-/// the `alloc` feature.
+/// `PairVec` stores one length and one capacity for both buffers. It stores
+/// them as its length type, the third type parameter, which works the same
+/// way as the length type of a [`LenVec`](crate::LenVec). The length type is
+/// `usize` when it is left out.
+///
+/// [`DefaultMapConfig`](crate::DefaultMapConfig) keeps the keys and values of
+/// the dense maps in a `PairVec` whose length type is the index type of the
+/// keys. A `PairVec` needs the `alloc` feature.
 ///
 /// A slice whose items take no space needs no buffer. When the items of
 /// both slices take no space, a `PairVec` never allocates, and its capacity
-/// is `usize::MAX`.
+/// is the most pairs its length type can count.
 ///
 /// A `PairVec` drops its items in its own `Drop` implementation, so the
 /// compiler requires everything its items borrow to outlive it.
@@ -25,7 +32,7 @@ use core::slice;
 /// ```
 /// use gen_map::{PairStorage, PairVec};
 ///
-/// let mut pairs = PairVec::new();
+/// let mut pairs = PairVec::<i32, &str>::new();
 /// pairs.push(1, "one");
 /// pairs.push(2, "two");
 /// assert_eq!(pairs.first_slice(), [1, 2]);
@@ -33,22 +40,25 @@ use core::slice;
 /// assert_eq!(pairs.pop(), Some((2, "two")));
 /// assert_eq!(pairs.len(), 1);
 /// ```
-pub struct PairVec<A, B> {
-    buffers: Buffers<A, B>,
-    /// The number of pairs. The first `len` items of each buffer are
-    /// initialized, and the rest are not.
-    len: usize,
+pub struct PairVec<A, B, L: KeyPiece = usize> {
+    buffers: Buffers<A, B, L>,
     /// A `PairVec` owns the items in its buffers.
     _items: PhantomData<(A, B)>,
 }
 
-/// The two buffers of a [`PairVec`] or a [`PairVecIntoIter`], which have room
-/// for `capacity` items each. Dropping a `Buffers` frees both buffers without
-/// dropping any item in them.
-struct Buffers<A, B> {
+/// The two buffers of a [`PairVec`] or a [`PairVecIntoIter`], together with
+/// their capacity and how many of their items are initialized. Dropping a
+/// `Buffers` frees both buffers without dropping any item in them.
+struct Buffers<A, B, L: KeyPiece> {
     first: NonNull<A>,
     second: NonNull<B>,
-    capacity: usize,
+    /// How many items each buffer has room for. When the items of both
+    /// buffers take no space, it is the largest value of the length type.
+    capacity: L,
+    /// The number of pairs. The first `len` items of each buffer are
+    /// initialized, and the rest are not. It is never more than the capacity
+    /// or the largest `usize`.
+    len: L,
 }
 
 /// Returns `true` if the items of both slices take no space, so that neither
@@ -56,39 +66,6 @@ struct Buffers<A, B> {
 #[inline]
 const fn takes_no_space<A, B>() -> bool {
     size_of::<A>() == 0 && size_of::<B>() == 0
-}
-
-/// Allocates a buffer with room for `capacity` items. A buffer for items that
-/// take no space, or for no items, needs no memory, so it is a dangling
-/// pointer.
-fn allocate<T>(capacity: usize) -> Result<NonNull<T>, PairVecError> {
-    let layout = Layout::array::<T>(capacity).map_err(|_| PairVecError::CapacityOverflow)?;
-    if layout.size() == 0 {
-        return Ok(NonNull::dangling());
-    }
-    // SAFETY: the layout's size is above zero.
-    let pointer = unsafe { alloc(layout) };
-    NonNull::new(pointer.cast::<T>()).ok_or(PairVecError::AllocError(layout))
-}
-
-/// Frees a buffer that [`allocate`] returned for `capacity` items. A buffer
-/// that holds no memory is left as it is.
-///
-/// # Safety
-///
-/// `pointer` must have come from `allocate` for `capacity` items, or the
-/// buffer must be for `capacity` items that take no space. Nothing may use
-/// the buffer afterwards.
-unsafe fn deallocate<T>(pointer: NonNull<T>, capacity: usize) {
-    // SAFETY: `allocate` made this layout for `capacity` items, or `capacity`
-    // items take no space, so making the layout again succeeds.
-    let layout = unsafe { Layout::array::<T>(capacity).unwrap_unchecked() };
-    if layout.size() != 0 {
-        // SAFETY: the layout takes space, so `allocate` allocated `pointer`
-        // with this layout, and the caller promises that nothing uses the
-        // buffer afterwards.
-        unsafe { dealloc(pointer.as_ptr().cast(), layout) };
-    }
 }
 
 /// Drops the first `len` items of both buffers. If dropping an item of the
@@ -121,24 +98,27 @@ unsafe fn drop_items<A, B>(first: *mut A, second: *mut B, len: usize) {
     unsafe { ptr::drop_in_place(ptr::slice_from_raw_parts_mut(first, len)) };
 }
 
-impl<A, B> Buffers<A, B> {
-    /// Returns buffers that hold no memory. Their capacity is zero, or
-    /// `usize::MAX` when the items of both slices take no space.
+impl<A, B, L: KeyPiece> Buffers<A, B, L> {
+    /// Returns buffers that hold no memory. Their capacity is zero, or the
+    /// largest value of the length type when the items of both slices take
+    /// no space.
     #[inline]
     const fn new() -> Self {
         Self {
             first: NonNull::dangling(),
             second: NonNull::dangling(),
             capacity: if takes_no_space::<A, B>() {
-                usize::MAX
+                L::MAX
             } else {
-                0
+                L::ZERO
             },
+            len: L::ZERO,
         }
     }
 
     /// Allocates two buffers with room for `capacity` items each.
-    fn with_capacity(capacity: usize) -> Result<Self, PairVecError> {
+    fn with_capacity(capacity: usize) -> Result<Self, ReserveError> {
+        let stored = L::from_usize(capacity).ok_or(ReserveError::CapacityOverflow)?;
         if takes_no_space::<A, B>() {
             return Ok(Self::new());
         }
@@ -155,60 +135,39 @@ impl<A, B> Buffers<A, B> {
         Ok(Self {
             first,
             second,
-            capacity,
+            capacity: stored,
+            len: L::ZERO,
         })
+    }
+
+    /// The number of pairs as a `usize`.
+    #[inline]
+    fn len(&self) -> usize {
+        saturating_usize(self.len)
+    }
+
+    /// How many items each buffer has room for, as a `usize`. A capacity
+    /// larger than the largest `usize` counts as the largest `usize`.
+    #[inline]
+    fn capacity(&self) -> usize {
+        saturating_usize(self.capacity)
     }
 }
 
-impl<A, B> Drop for Buffers<A, B> {
+impl<A, B, L: KeyPiece> Drop for Buffers<A, B, L> {
     fn drop(&mut self) {
+        let capacity = self.capacity();
         // SAFETY: each buffer either came from `allocate` for `capacity`
         // items, or is for `capacity` items that take no space. Nothing uses
         // the buffers after this.
         unsafe {
-            deallocate(self.first, self.capacity);
-            deallocate(self.second, self.capacity);
+            deallocate(self.first, capacity);
+            deallocate(self.second, capacity);
         }
     }
 }
 
-/// Why a [`PairVec`] could not make room for more pairs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PairVecError {
-    /// The room would be for more than `usize::MAX` pairs, or a buffer would
-    /// take more than `isize::MAX` bytes.
-    CapacityOverflow,
-    /// The allocator could not allocate a buffer with this layout.
-    AllocError(Layout),
-}
-
-impl PairVecError {
-    /// Panics for a capacity overflow, and calls `handle_alloc_error` for a
-    /// failed allocation, which aborts the program by default.
-    #[cold]
-    #[inline(never)]
-    fn handle(self) -> ! {
-        match self {
-            Self::CapacityOverflow => panic!("PairVec capacity overflow"),
-            Self::AllocError(layout) => handle_alloc_error(layout),
-        }
-    }
-}
-
-impl fmt::Display for PairVecError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CapacityOverflow => f.write_str("the pair storage cannot hold that many pairs"),
-            Self::AllocError(layout) => write!(
-                f,
-                "the allocator could not allocate {} bytes for a buffer",
-                layout.size()
-            ),
-        }
-    }
-}
-
-impl<A, B> PairVec<A, B> {
+impl<A, B, L: KeyPiece> PairVec<A, B, L> {
     /// Creates a `PairVec` with no pairs. It allocates nothing until a pair
     /// is pushed.
     #[inline]
@@ -216,7 +175,6 @@ impl<A, B> PairVec<A, B> {
     pub const fn new() -> Self {
         Self {
             buffers: Buffers::new(),
-            len: 0,
             _items: PhantomData,
         }
     }
@@ -226,7 +184,8 @@ impl<A, B> PairVec<A, B> {
     ///
     /// # Panics
     ///
-    /// Panics if a buffer with room for `capacity` items would take more than
+    /// Panics if the length type cannot count `capacity` pairs, or if a
+    /// buffer with room for `capacity` items would take more than
     /// `isize::MAX` bytes. If an allocation fails, `with_capacity` calls
     /// `handle_alloc_error`, which aborts the program by default.
     #[inline]
@@ -235,7 +194,6 @@ impl<A, B> PairVec<A, B> {
         match Buffers::with_capacity(capacity) {
             Ok(buffers) => Self {
                 buffers,
-                len: 0,
                 _items: PhantomData,
             },
             Err(error) => error.handle(),
@@ -247,8 +205,8 @@ impl<A, B> PairVec<A, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the `PairVec` would need room for more than `usize::MAX`
-    /// pairs, or a buffer that takes more than `isize::MAX` bytes. If an
+    /// Panics if the `PairVec` would hold more pairs than its length type can
+    /// count, or need a buffer that takes more than `isize::MAX` bytes. If an
     /// allocation fails, `push` calls `handle_alloc_error`, which aborts the
     /// program by default.
     #[inline]
@@ -278,42 +236,30 @@ impl<A, B> PairVec<A, B> {
 
     /// Makes room for at least `additional` more pairs. When the buffers are
     /// too small, it moves the pairs into new buffers with at least twice the
-    /// old capacity, so a long run of pushes allocates only a few times.
-    fn make_room(&mut self, additional: usize) -> Result<(), PairVecError> {
-        let required = self
-            .len
+    /// old capacity.
+    fn make_room(&mut self, additional: usize) -> Result<(), ReserveError> {
+        let len = self.buffers.len();
+        let required = len
             .checked_add(additional)
-            .ok_or(PairVecError::CapacityOverflow)?;
-        if required <= self.buffers.capacity {
+            .ok_or(ReserveError::CapacityOverflow)?;
+        if required <= self.buffers.capacity() {
             return Ok(());
         }
-        // New buffers have room for at least four pairs when the items are
-        // small, which saves allocations, and for at least one pair when they
-        // are large, which saves memory.
-        let smallest = if size_of::<A>().max(size_of::<B>()) <= 1024 {
-            4
-        } else {
-            1
-        };
-        let capacity = required
-            .max(self.buffers.capacity.saturating_mul(2))
-            .max(smallest);
+        let capacity = grown_capacity(
+            self.buffers.capacity(),
+            required,
+            max_len::<L>(),
+            size_of::<A>().max(size_of::<B>()),
+        )?;
         let mut buffers = Buffers::with_capacity(capacity)?;
         // SAFETY: the new buffers have room for more than `len` items each,
         // and they do not overlap the old ones. The pairs move into the new
         // buffers, and the old buffers are freed without dropping the pairs.
         unsafe {
-            ptr::copy_nonoverlapping(
-                self.buffers.first.as_ptr(),
-                buffers.first.as_ptr(),
-                self.len,
-            );
-            ptr::copy_nonoverlapping(
-                self.buffers.second.as_ptr(),
-                buffers.second.as_ptr(),
-                self.len,
-            );
+            ptr::copy_nonoverlapping(self.buffers.first.as_ptr(), buffers.first.as_ptr(), len);
+            ptr::copy_nonoverlapping(self.buffers.second.as_ptr(), buffers.second.as_ptr(), len);
         }
+        buffers.len = self.buffers.len;
         mem::swap(&mut self.buffers, &mut buffers);
         Ok(())
     }
@@ -322,28 +268,31 @@ impl<A, B> PairVec<A, B> {
     ///
     /// # Safety
     ///
-    /// `len` must be below the capacity.
+    /// The length must be below the capacity.
     #[inline]
     unsafe fn push_unchecked(&mut self, first: A, second: B) {
-        debug_assert!(self.len < self.buffers.capacity);
-        // SAFETY: the caller promises that `len` is below the capacity, so
-        // both buffers have room for an item at that position.
+        let len = self.buffers.len();
+        debug_assert!(len < self.buffers.capacity());
+        // SAFETY: the caller promises that the length is below the capacity,
+        // so both buffers have room for an item at position `len`.
         unsafe {
-            self.buffers.first.as_ptr().add(self.len).write(first);
-            self.buffers.second.as_ptr().add(self.len).write(second);
+            self.buffers.first.as_ptr().add(len).write(first);
+            self.buffers.second.as_ptr().add(len).write(second);
         }
-        self.len += 1;
+        // The length is below the capacity, which is a value of the length
+        // type, so adding one does not wrap.
+        self.buffers.len = self.buffers.len.wrapping_add(L::ONE);
     }
 }
 
-impl<A, B> Default for PairVec<A, B> {
+impl<A, B, L: KeyPiece> Default for PairVec<A, B, L> {
     #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<A, B> Drop for PairVec<A, B> {
+impl<A, B, L: KeyPiece> Drop for PairVec<A, B, L> {
     fn drop(&mut self) {
         // SAFETY: the first `len` items of both buffers are initialized, and
         // nothing uses them after this. `buffers` frees the memory afterwards,
@@ -352,7 +301,7 @@ impl<A, B> Drop for PairVec<A, B> {
             drop_items(
                 self.buffers.first.as_ptr(),
                 self.buffers.second.as_ptr(),
-                self.len,
+                self.buffers.len(),
             );
         }
     }
@@ -361,16 +310,16 @@ impl<A, B> Drop for PairVec<A, B> {
 // SAFETY: the first `len` items of both buffers are initialized and belong to
 // the pairs, in the order they were pushed, and both slices hold `len`
 // items, so they always have the same length. `try_push` writes both items
-// only once there is room for them, `pop` and `clear` lower `len` before
+// only once there is room for them, `pop` and `clear` lower the length before
 // they move or drop an item, and growing copies the items into the new
 // buffers without changing them. Once `ensure_room` returns `Ok` for `n`
-// pairs, the capacity is at least `len + n`, so the next `n` pushes fit
-// without growing. The two buffers are separate allocations or hold no
-// memory, so the two mutable slices never overlap.
-unsafe impl<A, B> PairStorage for PairVec<A, B> {
+// pairs, the capacity is at least the length plus `n`, so the next `n`
+// pushes fit without growing. The two buffers are separate allocations or
+// hold no memory, so the two mutable slices never overlap.
+unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     type First = A;
     type Second = B;
-    type Error = PairVecError;
+    type Error = ReserveError;
 
     #[inline]
     fn empty() -> Self {
@@ -384,19 +333,19 @@ unsafe impl<A, B> PairStorage for PairVec<A, B> {
 
     #[inline]
     fn capacity(&self) -> usize {
-        self.buffers.capacity
+        self.buffers.capacity()
     }
 
     #[inline]
     fn first_slice(&self) -> &[A] {
         // SAFETY: the first `len` items of the first buffer are initialized.
-        unsafe { slice::from_raw_parts(self.buffers.first.as_ptr(), self.len) }
+        unsafe { slice::from_raw_parts(self.buffers.first.as_ptr(), self.buffers.len()) }
     }
 
     #[inline]
     fn second_slice(&self) -> &[B] {
         // SAFETY: the first `len` items of the second buffer are initialized.
-        unsafe { slice::from_raw_parts(self.buffers.second.as_ptr(), self.len) }
+        unsafe { slice::from_raw_parts(self.buffers.second.as_ptr(), self.buffers.len()) }
     }
 
     #[inline]
@@ -408,30 +357,31 @@ unsafe impl<A, B> PairStorage for PairVec<A, B> {
     fn first_slice_mut(&mut self) -> &mut [A] {
         // SAFETY: the first `len` items of the first buffer are initialized,
         // and `&mut self` keeps any other reference to them from existing.
-        unsafe { slice::from_raw_parts_mut(self.buffers.first.as_ptr(), self.len) }
+        unsafe { slice::from_raw_parts_mut(self.buffers.first.as_ptr(), self.buffers.len()) }
     }
 
     #[inline]
     fn second_slice_mut(&mut self) -> &mut [B] {
         // SAFETY: the same as in `first_slice_mut`, for the second buffer.
-        unsafe { slice::from_raw_parts_mut(self.buffers.second.as_ptr(), self.len) }
+        unsafe { slice::from_raw_parts_mut(self.buffers.second.as_ptr(), self.buffers.len()) }
     }
 
     #[inline]
     fn slices_mut(&mut self) -> (&mut [A], &mut [B]) {
+        let len = self.buffers.len();
         // SAFETY: the same as in `first_slice_mut`. The two buffers are
         // separate allocations or hold no memory, so the two slices do not
         // overlap.
         unsafe {
             (
-                slice::from_raw_parts_mut(self.buffers.first.as_ptr(), self.len),
-                slice::from_raw_parts_mut(self.buffers.second.as_ptr(), self.len),
+                slice::from_raw_parts_mut(self.buffers.first.as_ptr(), len),
+                slice::from_raw_parts_mut(self.buffers.second.as_ptr(), len),
             )
         }
     }
 
     #[inline]
-    fn ensure_room(&mut self, additional: usize) -> Result<(), PairVecError> {
+    fn ensure_room(&mut self, additional: usize) -> Result<(), ReserveError> {
         self.make_room(additional)
     }
 
@@ -442,23 +392,28 @@ unsafe impl<A, B> PairStorage for PairVec<A, B> {
 
     #[inline]
     fn pop(&mut self) -> Option<(A, B)> {
-        self.len = self.len.checked_sub(1)?;
-        // SAFETY: the items at position `len` were the initialized last pair,
-        // and lowering `len` gave up ownership of them.
+        if self.buffers.len == L::ZERO {
+            return None;
+        }
+        self.buffers.len = self.buffers.len.wrapping_sub(L::ONE);
+        let len = self.buffers.len();
+        // SAFETY: the items at the new length were the initialized last pair,
+        // and lowering the length gave up ownership of them.
         unsafe {
             Some((
-                self.buffers.first.as_ptr().add(self.len).read(),
-                self.buffers.second.as_ptr().add(self.len).read(),
+                self.buffers.first.as_ptr().add(len).read(),
+                self.buffers.second.as_ptr().add(len).read(),
             ))
         }
     }
 
     #[inline]
     fn clear(&mut self) {
-        let len = mem::replace(&mut self.len, 0);
+        let len = self.buffers.len();
+        self.buffers.len = L::ZERO;
         // SAFETY: the first `len` items of both buffers were initialized, and
-        // setting `len` to zero gave up ownership of them, so the storage is
-        // empty even when dropping an item panics.
+        // setting the length to zero gave up ownership of them, so the storage
+        // is empty even when dropping an item panics.
         unsafe {
             drop_items(
                 self.buffers.first.as_ptr(),
@@ -470,28 +425,28 @@ unsafe impl<A, B> PairStorage for PairVec<A, B> {
 
     #[inline]
     fn len(&self) -> usize {
-        self.len
+        self.buffers.len()
     }
 
     #[inline]
     fn is_empty(&self) -> bool {
-        self.len == 0
+        self.buffers.len == L::ZERO
     }
 }
 
-impl<A, B> ReservePairStorage for PairVec<A, B> {}
+impl<A, B, L: KeyPiece> ReservePairStorage for PairVec<A, B, L> {}
 
 // SAFETY: a `PairVec` owns its items the way a `Vec` does, so it can move to
 // another thread when its items can.
-unsafe impl<A: Send, B: Send> Send for PairVec<A, B> {}
+unsafe impl<A: Send, B: Send, L: KeyPiece> Send for PairVec<A, B, L> {}
 
 // SAFETY: a shared `PairVec` only hands out shared references to its items,
 // so it can be shared between threads when its items can.
-unsafe impl<A: Sync, B: Sync> Sync for PairVec<A, B> {}
+unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVec<A, B, L> {}
 
-impl<A: Clone, B: Clone> Clone for PairVec<A, B> {
+impl<A: Clone, B: Clone, L: KeyPiece> Clone for PairVec<A, B, L> {
     fn clone(&self) -> Self {
-        let mut clone = Self::with_capacity(self.len);
+        let mut clone = Self::with_capacity(self.buffers.len());
         for (first, second) in self.first_slice().iter().zip(self.second_slice()) {
             clone.push(first.clone(), second.clone());
         }
@@ -499,7 +454,7 @@ impl<A: Clone, B: Clone> Clone for PairVec<A, B> {
     }
 }
 
-impl<A: fmt::Debug, B: fmt::Debug> fmt::Debug for PairVec<A, B> {
+impl<A: fmt::Debug, B: fmt::Debug, L: KeyPiece> fmt::Debug for PairVec<A, B, L> {
     /// Lists the pairs in the order they were pushed.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
@@ -508,7 +463,7 @@ impl<A: fmt::Debug, B: fmt::Debug> fmt::Debug for PairVec<A, B> {
     }
 }
 
-impl<A, B> FromIterator<(A, B)> for PairVec<A, B> {
+impl<A, B, L: KeyPiece> FromIterator<(A, B)> for PairVec<A, B, L> {
     fn from_iter<I: IntoIterator<Item = (A, B)>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let mut pairs = Self::with_capacity(iter.size_hint().0);
@@ -519,12 +474,12 @@ impl<A, B> FromIterator<(A, B)> for PairVec<A, B> {
     }
 }
 
-impl<A, B> IntoIterator for PairVec<A, B> {
+impl<A, B, L: KeyPiece> IntoIterator for PairVec<A, B, L> {
     type Item = (A, B);
-    type IntoIter = PairVecIntoIter<A, B>;
+    type IntoIter = PairVecIntoIter<A, B, L>;
 
     #[inline]
-    fn into_iter(self) -> PairVecIntoIter<A, B> {
+    fn into_iter(self) -> PairVecIntoIter<A, B, L> {
         let pairs = ManuallyDrop::new(self);
         // SAFETY: `pairs` is never dropped, so the buffers move into the
         // iterator and are only freed once, by the iterator.
@@ -532,7 +487,6 @@ impl<A, B> IntoIterator for PairVec<A, B> {
         PairVecIntoIter {
             buffers,
             start: 0,
-            end: pairs.len,
             _items: PhantomData,
         }
     }
@@ -541,18 +495,18 @@ impl<A, B> IntoIterator for PairVec<A, B> {
 /// Owning iterator over the pairs of a [`PairVec`], in the order they were
 /// pushed. It is created by consuming a `PairVec` with `into_iter`. Dropping
 /// it drops the pairs it has not yielded yet.
-pub struct PairVecIntoIter<A, B> {
-    buffers: Buffers<A, B>,
-    /// The position of the pair that `next` yields. The pairs from `start`
-    /// up to `end` are initialized and not yielded yet.
+pub struct PairVecIntoIter<A, B, L: KeyPiece = usize> {
+    /// The buffers of the `PairVec`. Their length is one past the position of
+    /// the pair that `next_back` yields.
+    buffers: Buffers<A, B, L>,
+    /// The position of the pair that `next` yields. The pairs from `start` up
+    /// to the length of the buffers are initialized and not yielded yet.
     start: usize,
-    /// One past the position of the pair that `next_back` yields.
-    end: usize,
     /// The iterator owns the pairs it has not yielded yet.
     _items: PhantomData<(A, B)>,
 }
 
-impl<A, B> PairVecIntoIter<A, B> {
+impl<A, B, L: KeyPiece> PairVecIntoIter<A, B, L> {
     /// Reads the pair at `position` out of the buffers.
     ///
     /// # Safety
@@ -572,12 +526,12 @@ impl<A, B> PairVecIntoIter<A, B> {
     }
 }
 
-impl<A, B> Iterator for PairVecIntoIter<A, B> {
+impl<A, B, L: KeyPiece> Iterator for PairVecIntoIter<A, B, L> {
     type Item = (A, B);
 
     #[inline]
     fn next(&mut self) -> Option<(A, B)> {
-        if self.start == self.end {
+        if self.start == self.buffers.len() {
             return None;
         }
         let position = self.start;
@@ -589,37 +543,41 @@ impl<A, B> Iterator for PairVecIntoIter<A, B> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.end - self.start;
+        let len = self.buffers.len() - self.start;
         (len, Some(len))
     }
 }
 
-impl<A, B> DoubleEndedIterator for PairVecIntoIter<A, B> {
+impl<A, B, L: KeyPiece> DoubleEndedIterator for PairVecIntoIter<A, B, L> {
     #[inline]
     fn next_back(&mut self) -> Option<(A, B)> {
-        if self.start == self.end {
+        if self.start == self.buffers.len() {
             return None;
         }
-        self.end -= 1;
-        // SAFETY: the pair at `end` was not yielded yet, so it is initialized,
-        // and lowering `end` to it gave up ownership of it.
-        Some(unsafe { self.read(self.end) })
+        self.buffers.len = self.buffers.len.wrapping_sub(L::ONE);
+        // SAFETY: the pair at the new length was not yielded yet, so it is
+        // initialized, and lowering the length to it gave up ownership of it.
+        Some(unsafe { self.read(self.buffers.len()) })
     }
 }
 
-impl<A, B> ExactSizeIterator for PairVecIntoIter<A, B> {}
-impl<A, B> FusedIterator for PairVecIntoIter<A, B> {}
+impl<A, B, L: KeyPiece> ExactSizeIterator for PairVecIntoIter<A, B, L> {}
+impl<A, B, L: KeyPiece> FusedIterator for PairVecIntoIter<A, B, L> {}
 
-impl<A, B> Drop for PairVecIntoIter<A, B> {
+impl<A, B, L: KeyPiece> Drop for PairVecIntoIter<A, B, L> {
     fn drop(&mut self) {
-        // SAFETY: the pairs from `start` up to `end` are initialized and not
-        // yielded yet, and nothing uses them after this. `buffers` frees the
-        // memory afterwards, even when dropping an item panics.
+        let remaining = self.buffers.len() - self.start;
+        // SAFETY: `start` is never more than the length, which is never more
+        // than the capacity, so both pointers stay inside their buffers or one
+        // past their ends. The pairs from `start` up to the length are
+        // initialized and not yielded yet, and nothing uses them after this.
+        // `buffers` frees the memory afterwards, even when dropping an item
+        // panics.
         unsafe {
             drop_items(
                 self.buffers.first.as_ptr().add(self.start),
                 self.buffers.second.as_ptr().add(self.start),
-                self.end - self.start,
+                remaining,
             );
         }
     }
@@ -627,7 +585,7 @@ impl<A, B> Drop for PairVecIntoIter<A, B> {
 
 // SAFETY: the iterator owns the pairs it has not yielded yet, the way a
 // `PairVec` owns its pairs.
-unsafe impl<A: Send, B: Send> Send for PairVecIntoIter<A, B> {}
+unsafe impl<A: Send, B: Send, L: KeyPiece> Send for PairVecIntoIter<A, B, L> {}
 
 // SAFETY: a shared iterator hands out no references to its pairs.
-unsafe impl<A: Sync, B: Sync> Sync for PairVecIntoIter<A, B> {}
+unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVecIntoIter<A, B, L> {}

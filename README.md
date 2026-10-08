@@ -111,8 +111,9 @@ assert_eq!(map.values().copied().collect::<Vec<_>>(), [3, 2]);
 - `std` is on by default, and it turns `alloc` on too. It adds
   `SparseSecondaryMap`, which keeps its values in std's `HashMap`. Turn
   default features off and `alloc` on to run without `std`.
-- `alloc` adds the `Vec` storage and the default config. Turn default
-  features off and use `arrayvec` instead to run without an allocator.
+- `alloc` adds the `LenVec`, `Vec` and `PairVec` storages and the default
+  config. Turn default features off and use `arrayvec` instead to run without
+  an allocator.
 - `arrayvec` adds `ArrayVec` storage for any of the maps. An
   `ArrayVec` has a fixed capacity and never allocates.
 - `smallvec` adds `SmallVec` storage for any of the maps. A

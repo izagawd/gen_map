@@ -85,8 +85,9 @@ type Slots<T, C> = <C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>>;
 type Strategy<C> = <C as SecondaryMapConfig>::ReplaceStrategy;
 
 /// The error the storage of a `SecondaryMap<T, C>` gives when it cannot make
-/// room for a slot. It is `TryReserveError` for a `Vec`, `CapacityError` for
-/// an `ArrayVec` and `SmallVecError` for a `SmallVec`.
+/// room for a slot. It is [`ReserveError`](crate::ReserveError) for a
+/// [`LenVec`](crate::LenVec), `TryReserveError` for a `Vec`, `CapacityError`
+/// for an `ArrayVec` and `SmallVecError` for a `SmallVec`.
 pub type SecondaryStorageError<T, C> = <Slots<T, C> as SliceStorage>::Error;
 
 /// What [`SecondaryMap::insert`] returns.
@@ -1367,7 +1368,9 @@ impl<'a, T, C: SecondaryMapConfig> IntoIterator for &'a mut SecondaryMap<T, C> {
 ///
 /// // Only Bob has an age, so the slot at Alice's index holds no value.
 /// let parts = SecondaryMapRawParts {
-///     slots: vec![Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), 25)],
+///     slots: [Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), 25)]
+///         .into_iter()
+///         .collect(),
 ///     len: 1,
 /// };
 /// // SAFETY: both slots sit at indices that a `GenMap` hands out, the slot

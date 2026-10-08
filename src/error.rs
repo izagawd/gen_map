@@ -1,3 +1,7 @@
+#[cfg(feature = "alloc")]
+use alloc::alloc::handle_alloc_error;
+#[cfg(feature = "alloc")]
+use core::alloc::Layout;
 use core::fmt;
 
 /// Why a [`GenMap`](crate::GenMap) or a [`DenseGenMap`](crate::DenseGenMap)
@@ -11,7 +15,8 @@ pub enum FullError<S> {
 
     /// A storage could not make room for the value. For a `GenMap`, that is
     /// the slot storage, and none of the slots are free. The field says why,
-    /// which for a `Vec` is its `TryReserveError`.
+    /// which for a [`LenVec`](crate::LenVec) is a
+    /// [`ReserveError`](crate::ReserveError).
     StorageFull(S),
 }
 
@@ -190,17 +195,16 @@ impl<E, S> InsertWithError<E, S> {
     /// # Examples
     ///
     /// ```
-    /// use gen_map::{FullError, GenMap};
-    /// use std::collections::TryReserveError;
+    /// use gen_map::{FullError, GenMap, ReserveError};
     ///
     /// #[derive(Debug)]
     /// enum MyError {
-    ///     Full(FullError<TryReserveError>),
+    ///     Full(FullError<ReserveError>),
     ///     Parse,
     /// }
     ///
-    /// impl From<FullError<TryReserveError>> for MyError {
-    ///     fn from(e: FullError<TryReserveError>) -> Self {
+    /// impl From<FullError<ReserveError>> for MyError {
+    ///     fn from(e: FullError<ReserveError>) -> Self {
     ///         MyError::Full(e)
     ///     }
     /// }
@@ -326,6 +330,47 @@ impl<S: fmt::Display, P: fmt::Display> fmt::Display for DenseError<S, P> {
         match self {
             Self::Slots(error) => write!(f, "the slot storage is full: {error}"),
             Self::Pairs(error) => write!(f, "the pair storage is full: {error}"),
+        }
+    }
+}
+
+/// Why a [`LenVec`](crate::LenVec) or a [`PairVec`](crate::PairVec) could not
+/// make room for more items. This error needs the `alloc` feature.
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReserveError {
+    /// The vec would need room for more items than its length type can count,
+    /// or a buffer that takes more than `isize::MAX` bytes.
+    CapacityOverflow,
+    /// The allocator could not allocate a buffer with this layout.
+    AllocError(Layout),
+}
+
+#[cfg(feature = "alloc")]
+impl ReserveError {
+    /// Panics for a capacity overflow, and calls `handle_alloc_error` for a
+    /// failed allocation, which aborts the program by default.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn handle(self) -> ! {
+        match self {
+            Self::CapacityOverflow => panic!("capacity overflow"),
+            Self::AllocError(layout) => handle_alloc_error(layout),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl fmt::Display for ReserveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CapacityOverflow => f.write_str("the vec cannot hold that many items"),
+            Self::AllocError(layout) => write!(
+                f,
+                "the allocator could not allocate {} bytes for a buffer",
+                layout.size()
+            ),
         }
     }
 }

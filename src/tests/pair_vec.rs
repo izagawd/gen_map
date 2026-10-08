@@ -3,7 +3,7 @@
 
 use super::model::Rng;
 use super::{Bomb, DropTracker};
-use crate::{PairStorage, PairVec, PairVecError, PairVecIntoIter};
+use crate::{PairStorage, PairVec, PairVecIntoIter, ReserveError};
 use core::alloc::Layout;
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -12,7 +12,7 @@ use std::vec::Vec;
 
 #[test]
 fn pushes_and_pops_keep_the_two_slices_in_step() {
-    let mut pairs = PairVec::new();
+    let mut pairs = PairVec::<_, _>::new();
     assert!(pairs.is_empty());
     for i in 0..10u32 {
         pairs.push(i, i.to_string());
@@ -42,7 +42,7 @@ fn the_mutable_slices_change_the_pairs_in_place() {
 
 #[test]
 fn growing_moves_every_pair_into_the_new_buffers() {
-    let mut pairs = PairVec::with_capacity(3);
+    let mut pairs = PairVec::<_, _>::with_capacity(3);
     let capacity = pairs.capacity();
     assert!(capacity >= 3);
     // Pushing as many pairs as there is room for needs no new buffers.
@@ -65,7 +65,7 @@ fn growing_moves_every_pair_into_the_new_buffers() {
 
 #[test]
 fn try_push_appends_a_pair_like_push() {
-    let mut pairs = PairVec::new();
+    let mut pairs = PairVec::<_, _>::new();
     for i in 0..10u8 {
         assert_eq!(pairs.try_push(i, char::from(b'a' + i)), Ok(()));
     }
@@ -96,13 +96,13 @@ fn room_that_no_buffer_can_have_is_an_error() {
     pairs.push(1, 2);
     assert_eq!(
         pairs.ensure_room(usize::MAX),
-        Err(PairVecError::CapacityOverflow)
+        Err(ReserveError::CapacityOverflow)
     );
     // A buffer with room for this many `u64`s would take more than
     // `isize::MAX` bytes.
     assert_eq!(
         pairs.ensure_room(usize::MAX / 8),
-        Err(PairVecError::CapacityOverflow)
+        Err(ReserveError::CapacityOverflow)
     );
     assert_eq!(pairs.slices(), (&[1][..], &[2][..]));
 }
@@ -110,13 +110,46 @@ fn room_that_no_buffer_can_have_is_an_error() {
 #[test]
 fn the_error_says_why_there_is_no_room() {
     assert_eq!(
-        format!("{}", PairVecError::CapacityOverflow),
-        "the pair storage cannot hold that many pairs"
+        format!("{}", ReserveError::CapacityOverflow),
+        "the vec cannot hold that many items"
     );
     assert_eq!(
-        format!("{}", PairVecError::AllocError(Layout::new::<u64>())),
+        format!("{}", ReserveError::AllocError(Layout::new::<u64>())),
         "the allocator could not allocate 8 bytes for a buffer"
     );
+}
+
+#[test]
+fn the_length_type_caps_how_many_pairs_fit() {
+    let mut pairs = PairVec::<u32, u32, u8>::new();
+    for i in 0..255 {
+        pairs.push(i, i * 2);
+    }
+    assert_eq!(pairs.capacity(), 255);
+    assert_eq!(pairs.try_push(255, 510), Err((255, 510)));
+    assert_eq!(pairs.ensure_room(1), Err(ReserveError::CapacityOverflow));
+    assert_eq!(pairs.len(), 255);
+    assert_eq!(pairs.pop(), Some((254, 508)));
+    assert!(pairs.try_push(254, 508).is_ok());
+    assert!(pairs.into_iter().eq((0..255).map(|i| (i, i * 2))));
+}
+
+#[test]
+fn a_capacity_the_length_type_cannot_count_panics() {
+    assert_eq!(PairVec::<u8, u8, u8>::with_capacity(255).capacity(), 255);
+    assert!(catch_unwind(|| PairVec::<u8, u8, u8>::with_capacity(256)).is_err());
+    assert!(catch_unwind(|| PairVec::<(), (), u8>::with_capacity(256)).is_err());
+}
+
+#[test]
+fn a_length_type_counts_pairs_whose_items_take_no_space() {
+    let mut units = PairVec::<(), (), u8>::new();
+    assert_eq!(units.capacity(), 255);
+    for _ in 0..255 {
+        units.push((), ());
+    }
+    assert_eq!(units.try_push((), ()), Err(((), ())));
+    assert_eq!(units.into_iter().count(), 255);
 }
 
 #[test]
@@ -131,7 +164,7 @@ fn slices_of_items_that_take_no_space_need_no_buffer() {
     assert!(units.ensure_room(usize::MAX - 1000).is_ok());
     assert_eq!(
         units.ensure_room(usize::MAX - 999),
-        Err(PairVecError::CapacityOverflow)
+        Err(ReserveError::CapacityOverflow)
     );
     assert_eq!(units.pop(), Some(((), ())));
     assert_eq!(units.into_iter().count(), 999);
@@ -157,7 +190,7 @@ fn a_slice_of_items_that_take_no_space_grows_with_the_other_slice() {
 #[test]
 fn every_item_is_dropped_exactly_once() {
     let tracker = DropTracker::new();
-    let mut pairs = PairVec::new();
+    let mut pairs = PairVec::<_, _>::new();
     for _ in 0..10 {
         pairs.push(tracker.make_item(), tracker.make_item());
     }
@@ -175,7 +208,7 @@ fn every_item_is_dropped_exactly_once() {
 #[test]
 fn clear_drops_every_item_and_empties_the_vec_when_a_drop_panics() {
     let tracker = DropTracker::new();
-    let mut pairs = PairVec::new();
+    let mut pairs = PairVec::<_, _>::new();
     // Dropping the third item of the first slice panics. The fifth item of
     // the second slice is armed too, but it is dropped while that panic
     // unwinds, and an armed bomb does not panic then.
@@ -193,7 +226,7 @@ fn clear_drops_every_item_and_empties_the_vec_when_a_drop_panics() {
 #[test]
 fn dropping_the_vec_drops_every_item_when_a_drop_in_the_second_slice_panics() {
     let tracker = DropTracker::new();
-    let mut pairs = PairVec::new();
+    let mut pairs = PairVec::<_, _>::new();
     for i in 0..5 {
         pairs.push(Bomb::new(&tracker, false), Bomb::new(&tracker, i == 1));
     }

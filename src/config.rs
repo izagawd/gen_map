@@ -1,5 +1,9 @@
 use crate::key_layout::Split;
 use crate::key_piece::KeyPiece;
+#[cfg(feature = "alloc")]
+use crate::len_vec::LenVec;
+#[cfg(feature = "alloc")]
+use crate::map::MapIdx;
 use crate::pair_storage::PairStorage;
 #[cfg(feature = "alloc")]
 use crate::pair_vec::PairVec;
@@ -9,8 +13,6 @@ use crate::replace_strategy::NewerWins;
 use crate::replace_strategy::ReplaceStrategy;
 use crate::slot::{GenSlotItem, SecondarySlotItem};
 use crate::storage::SliceStorage;
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
 use core::hash::Hash;
 
 /// Chooses the index and generation types of a [`Key`](crate::Key), and how
@@ -476,10 +478,12 @@ pub type DefaultKeyConfig = Split<u32, u32>;
 /// [`SparseSecondaryMap<T>`](crate::SparseSecondaryMap), which leave out
 /// their config parameter `C`.
 ///
-/// Keys use the [`DefaultKeyConfig`], and slots live in a `Vec`. The dense
-/// maps keep their keys and values in a [`PairVec`](crate::PairVec), and a
-/// `SparseSecondaryMap` keeps its values in a `HashMap`. A slot retires when
-/// its generation runs out. The secondary maps use
+/// Keys use the [`DefaultKeyConfig`]. Every map keeps its slots in a
+/// [`LenVec`](crate::LenVec), and the dense maps keep their keys and values in
+/// a [`PairVec`](crate::PairVec). Both store their length and capacity as a
+/// `u32`, the index type of the keys. A `SparseSecondaryMap` keeps its values
+/// in a `HashMap`. A slot retires when its generation runs out. The secondary
+/// maps use
 /// [`NewerWins`](crate::NewerWins) to decide whether an insert replaces a
 /// value that was inserted under a different generation.
 /// This config needs the `alloc` feature.
@@ -495,26 +499,26 @@ impl MapConfig for DefaultMapConfig {
 
 #[cfg(feature = "alloc")]
 impl GenMapConfig for DefaultMapConfig {
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage<S: GenSlotItem> = LenVec<S, MapIdx<Self>>;
 }
 
 #[cfg(feature = "alloc")]
 impl SecondaryMapConfig for DefaultMapConfig {
     type ReplaceStrategy = NewerWins;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
+    type Storage<S: SecondarySlotItem> = LenVec<S, MapIdx<Self>>;
 }
 
 #[cfg(feature = "alloc")]
 impl DenseGenMapConfig for DefaultMapConfig {
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
+    type SlotStorage<S: GenSlotItem> = LenVec<S, MapIdx<Self>>;
+    type PairStorage<K, V> = PairVec<K, V, MapIdx<Self>>;
 }
 
 #[cfg(feature = "alloc")]
 impl DenseSecondaryMapConfig for DefaultMapConfig {
     type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
+    type SlotStorage<S: GenSlotItem> = LenVec<S, MapIdx<Self>>;
+    type PairStorage<K, V> = PairVec<K, V, MapIdx<Self>>;
 }
 
 #[cfg(feature = "std")]

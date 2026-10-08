@@ -120,7 +120,7 @@ fn flatten_folds_full_into_the_callers_error() {
         .map_err(InsertWithError::flatten);
     assert_eq!(result, Err(MyError::Full(FullError::IndexExhausted)));
 
-    let mut map: GenMap<i32> = GenMap::new();
+    let mut map = GenMap::<i32, Byte>::new_with_config();
     let result = map
         .try_insert_with_key(|_| Err::<i32, _>(MyError::Bad))
         .map_err(InsertWithError::flatten);

@@ -1175,7 +1175,9 @@ impl<T, C: DenseSecondaryMapConfig> Drop for DenseSecondaryDrain<'_, T, C> {
 /// let mut pairs = PairVec::new();
 /// pairs.push(bob, 25);
 /// let parts = DenseSecondaryMapRawParts {
-///     slots: vec![Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), 0)],
+///     slots: [Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), 0)]
+///         .into_iter()
+///         .collect(),
 ///     pairs,
 /// };
 /// // SAFETY: both slots sit at indices that a `GenMap` hands out, and the slot
