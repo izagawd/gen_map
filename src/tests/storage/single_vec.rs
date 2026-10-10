@@ -284,6 +284,43 @@ fn a_vec_can_take_over_the_buffer_of_a_std_vec() {
 }
 
 #[test]
+fn a_std_vec_takes_over_the_buffer_without_copying_the_items() {
+    let tracker = DropTracker::new();
+    let mut items = SingleVec::<_, u16>::with_capacity(8);
+    for _ in 0..5 {
+        items.push(tracker.make_item());
+    }
+    let pointer = items.as_ptr();
+    let mut vec = Vec::from(items);
+    assert_eq!(vec.as_ptr(), pointer);
+    assert_eq!((vec.capacity(), vec.len()), (8, 5));
+    tracker.assert_none_dropped();
+    // Growing reallocates the buffer of the `SingleVec`.
+    for _ in 0..10 {
+        vec.push(tracker.make_item());
+    }
+    drop(vec);
+    tracker.assert_all_dropped_exactly_once(15);
+}
+
+#[test]
+fn an_empty_vec_becomes_an_empty_std_vec() {
+    let mut vec = Vec::from(SingleVec::<u64, u8>::new());
+    assert_eq!((vec.capacity(), vec.len()), (0, 0));
+    vec.push(1);
+    assert_eq!(vec, [1]);
+}
+
+#[test]
+fn a_std_vec_keeps_the_count_of_items_that_take_no_space() {
+    let mut units = SingleVec::<(), u8>::new();
+    for _ in 0..3 {
+        units.push(());
+    }
+    assert_eq!(Vec::from(units).len(), 3);
+}
+
+#[test]
 fn raw_parts_of_items_that_take_no_space_keep_their_count() {
     let mut units = SingleVec::<(), u8>::new();
     for _ in 0..3 {
