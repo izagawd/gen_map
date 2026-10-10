@@ -16,9 +16,7 @@ pub enum FullError<S> {
     IndexExhausted,
 
     /// A storage could not make room for the value. For a `GenMap`, that is
-    /// the slot storage, and none of the slots are free. The field says why,
-    /// which for a [`SingleVec`](crate::SingleVec) is a
-    /// [`ReserveError`](crate::ReserveError).
+    /// the slot storage, and none of the slots are free. The field says why.
     StorageFull(S),
 }
 
