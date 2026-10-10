@@ -262,7 +262,9 @@ where
             0..=29 => match (sparse.try_insert(value), dense.try_insert(value)) {
                 (Ok(a), Ok(b)) => {
                     assert_eq!(a, b, "{context:?}");
-                    known.push(a);
+                    if !known.contains(&a) {
+                        known.push(a);
+                    }
                 }
                 (Err(InsertError::IndexExhausted(a)), Err(InsertError::IndexExhausted(b)))
                 | (Err(InsertError::StorageFull(a, _)), Err(InsertError::StorageFull(b, _))) => {
@@ -276,7 +278,9 @@ where
             ) {
                 (Ok(a), Ok(b)) => {
                     assert_eq!(a, b, "{context:?}");
-                    known.push(a);
+                    if !known.contains(&a) {
+                        known.push(a);
+                    }
                 }
                 (
                     Err(InsertWithError::Full(FullError::IndexExhausted)),
@@ -569,7 +573,9 @@ where
                 };
                 let generation = 1 + 2 * rng.below(5) as u8;
                 let key = key_from_parts::<Split<u8, u8>>(idx, generation);
-                known.push(key);
+                if !known.contains(&key) {
+                    known.push(key);
+                }
                 assert_eq!(
                     Outcome::from(sparse.insert(key, value)),
                     Outcome::from(dense.insert(key, value)),
