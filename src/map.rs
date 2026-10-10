@@ -1394,7 +1394,7 @@ where
     }
 
     /// Clones the slots of `source` with the `clone_from` of this map's
-    /// storage.
+    /// storage. If a value's `clone` panics, this map is left empty.
     fn clone_from(&mut self, source: &Self) {
         self.next_free = no_slot::<C>();
         self.len = Idx::<C>::ZERO;

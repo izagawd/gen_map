@@ -1297,7 +1297,8 @@ where
     }
 
     /// Clones the slots, keys and values of `source` with the `clone_from` of
-    /// this map's storages.
+    /// this map's storages. If a value's `clone` panics, this map is left
+    /// empty.
     fn clone_from(&mut self, source: &Self) {
         self.next_free = no_slot::<C>();
         let slots = ClearOnUnwind(&mut self.slots);
