@@ -73,8 +73,7 @@ configs, storage, and what happens when a generation runs out.
 
 A `SecondaryMap` stores values under the keys a `GenMap` hands out, to add
 data to a `GenMap`'s values without changing their type. Like a `GenMap`, it
-can be configured, and the [documentation](https://docs.rs/gen_map) covers
-how it can be configured.
+can be configured, as the [documentation](https://docs.rs/gen_map) explains.
 
 ```rust
 use gen_map::{GenMap, SecondaryMap};

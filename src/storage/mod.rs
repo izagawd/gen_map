@@ -24,10 +24,7 @@ use core::fmt;
 /// implements the [`ReserveStorage`] marker. A storage that can be created
 /// with room for a number of items chosen at runtime implements
 /// [`WithCapacity`]. A storage that implements `IntoIterator` gives a map an
-/// owning `into_iter`. The iterator that `into_iter` returns implements
-/// `DoubleEndedIterator` when the storage's iterator implements both
-/// `DoubleEndedIterator` and `ExactSizeIterator`. A map implements `Clone`
-/// when its storages do.
+/// owning `into_iter`, and a map implements `Clone` when its storages do.
 ///
 /// # Safety
 ///
@@ -49,10 +46,11 @@ use core::fmt;
 ///   in the order they were pushed, and no others. [`len`](Self::len) and
 ///   [`is_empty`](Self::is_empty) must agree with them, as the provided
 ///   methods do.
-/// - Apart from `pop` and `clear`, and dropping the storage itself, no method/function
-///   implemented in this trait may remove, drop, replace or change an item.
-///   An item only mutates through the slice methods. Growing
-///   may move the items in memory, but must keep them in the same order and indices.
+/// - Apart from `pop` and `clear`, and dropping the storage itself, no method
+///   of this trait may remove, drop, replace or change an item. An item may
+///   only be changed through the slices that the slice methods return. Growing
+///   may move the items in memory, but it must keep them in the same order and
+///   at the same positions.
 /// - `pop` must take out the last item of the slice and return it, or return
 ///   `None` and leave the storage as it was if it has no items.
 /// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n`
@@ -63,10 +61,10 @@ use core::fmt;
 ///   at the end.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
-/// - Only [`with_capacity`](WithCapacity::with_capacity), `ensure_room` and
-///   `clear` may panic, and `clear` only when dropping an item panics. The
-///   maps call the other methods partway through changes that a panic would
-///   leave half done.
+/// - Only [`with_capacity`](WithCapacity::with_capacity), `ensure_room`,
+///   `clear`, `clone` and `clone_from` may panic. `clear` may only panic when
+///   dropping an item panics. The maps call the other methods partway through
+///   changes that a panic would leave half done.
 /// - [`empty`](Self::empty) must return a storage with no items, and so must
 ///   `with_capacity` if the storage implements [`WithCapacity`].
 /// - If the storage implements `IntoIterator<Item = Self::Item>`,
@@ -145,9 +143,7 @@ pub unsafe trait SliceStorage {
 /// with. [`ensure_room`](SliceStorage::ensure_room) grows such a storage when
 /// it needs more room. A map has `reserve` and `try_reserve` only when its
 /// slot storage implements this trait. A dense map also needs
-/// [`ReservePairStorage`](crate::ReservePairStorage) on its pair storage,
-/// which a [`SplitPair`](crate::SplitPair) implements when both of its
-/// storages implement this trait.
+/// [`ReservePairStorage`](crate::ReservePairStorage) on its pair storage.
 pub trait ReserveStorage: SliceStorage {}
 
 /// A storage implements `WithCapacity` when it can be created with room for a
@@ -254,20 +250,8 @@ impl<S> WithCapacity for Vec<S> {
 }
 
 /// Storage from the `arrayvec` crate that keeps up to `CAP` items inline and
-/// never allocates. It needs the `arrayvec` feature.
-///
-/// The storage cannot grow. When it holds the slots of a
-/// [`GenMap`](crate::GenMap), inserting fails with
-/// [`FullError::StorageFull`](crate::FullError::StorageFull) once all `CAP`
-/// slots exist and none of them are free. If the map's keys run out of
-/// indices for new slots first, or at the same time, inserting fails with
-/// [`FullError::IndexExhausted`](crate::FullError::IndexExhausted) instead.
-/// When it holds the slots of a
-/// [`SecondaryMap`](crate::SecondaryMap), inserting under a key whose index
-/// is `CAP` or more fails with
-/// [`SecondaryInsertError::StorageFull`](crate::SecondaryInsertError::StorageFull),
-/// unless the index is the largest value of the index type, which fails with
-/// [`SecondaryInsertError::IndexReserved`](crate::SecondaryInsertError::IndexReserved).
+/// never allocates. It needs the `arrayvec` feature. The storage cannot grow,
+/// so an insert fails once a map needs more than `CAP` items in it.
 ///
 /// ```
 /// use arrayvec::ArrayVec;
@@ -353,9 +337,8 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
 
 /// Storage from the `smallvec` crate that keeps up to `N` items inline and
 /// moves them to the heap once there are more. It needs the `smallvec`
-/// feature, which uses the 2.0 beta of `smallvec`.
-/// Until smallvec 2.0 is released, a newer smallvec beta or a new release of
-/// `gen_map` may break this feature, so it is not covered by semver.
+/// feature, which uses the 2.0 beta of `smallvec`, so the feature is not
+/// covered by semver.
 ///
 /// ```
 /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};

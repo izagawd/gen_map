@@ -29,9 +29,7 @@ use core::slice;
 /// items of only one slice take no space, that slice sits at the start
 /// instead, where its alignment adds no padding to the buffer.
 ///
-/// With [`DefaultMapConfig`](crate::DefaultMapConfig), the dense maps keep
-/// their keys and values in a `PairVec` whose length type is the index type
-/// of the keys. A `PairVec` needs the `alloc` feature.
+/// A `PairVec` needs the `alloc` feature.
 ///
 /// Items that take no space need no room in the buffer. When the items of
 /// both slices take no space, a `PairVec` never allocates, and its capacity
@@ -60,8 +58,8 @@ pub struct PairVec<A, B, L: KeyPiece = usize> {
 }
 
 /// A `Buffer` is the buffer of a [`PairVec`] or a [`PairVecIntoIter`],
-/// together with its capacity and how many of its pairs are initialized.
-/// Dropping a `Buffer` frees the memory without dropping any item in it.
+/// together with its capacity and length. Dropping a `Buffer` frees the
+/// memory without dropping any item in it.
 ///
 /// [`buffer_layout`] gives the layout of the buffer for its capacity, and the
 /// position in it where the slice at the end starts. [`second_at_start`]
@@ -76,9 +74,9 @@ struct Buffer<A, B, L: KeyPiece> {
     /// of both slices take no space, it is the largest value of the length
     /// type.
     capacity: L,
-    /// `len` is the number of pairs. The first `len` items of each slice are
-    /// initialized, and the rest are not. It is never more than the capacity
-    /// or the largest `usize`.
+    /// `len` is the number of pairs in a `PairVec`. In a `PairVecIntoIter`,
+    /// the pairs from `start` up to `len` are the ones it has not yielded yet.
+    /// It is never more than the capacity or the largest `usize`.
     len: L,
 }
 
@@ -330,11 +328,10 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
         self.grow(required)
     }
 
-    /// Grows the buffer so it has room for at least `required` pairs, which
-    /// must be more than its capacity. The new capacity is at least twice the
-    /// old one, unless the length type cannot count that many pairs. The items
-    /// of the slice at the start stay at the start of the grown buffer, and
-    /// this method moves the items of the slice at the end to where that slice
+    /// Grows the buffer to the capacity that `grown_capacity` picks for
+    /// `required` pairs, which must be more than its capacity. The items of the
+    /// slice at the start stay at the start of the grown buffer, and this
+    /// method moves the items of the slice at the end to where that slice
     /// starts in it.
     #[inline(never)]
     fn grow(&mut self, required: usize) -> Result<(), ReserveError> {
@@ -880,11 +877,9 @@ unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVecIntoIter<A, B, L> {}
 /// ```
 pub struct PairVecRawParts<A, B, L: KeyPiece = usize> {
     // These fields are in the same order as the fields of the buffer of a
-    // `PairVec` on purpose, so that the two structs can be read side by side.
-    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
-    // so the compiler catches a field that only one of them has, but nothing
-    // catches a change in order. Think twice before removing this comment,
-    // because it is the only thing that keeps the two orders the same.
+    // `PairVec`, so the two structs can be read side by side. `into_raw_parts`
+    // and `from_raw_parts` list every field of both, so the compiler catches a
+    // field that only one struct has, but not a change in order.
     /// `first` points at the first slice.
     pub first: NonNull<A>,
     /// `second` points at the second slice.

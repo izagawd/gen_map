@@ -24,9 +24,7 @@ use core::slice;
 /// A [`SecondaryMap`] keeps one [`Slot`] of this type for each index. While
 /// the slot holds a value, its generation is the generation of the value's
 /// key, which is odd, and it stores that value. While it holds no value, its
-/// generation is zero, which is even, and it stores nothing in place of a
-/// value. [`Slot::as_parity`] checks the parity of the generation and returns
-/// either the value in [`ParityRef::Odd`] or `()` in [`ParityRef::Even`].
+/// generation is zero, which is even, and it stores `()` in place of a value.
 pub type SecondaryMapSlot<T, C> = Slot<MapGen<C>, T, ()>;
 
 /// Returns the generation and a reference to the value of `slot` if it holds
@@ -197,13 +195,9 @@ pub(crate) unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// whether such an insert replaces the value.
 ///
 /// The map keeps a slot at every index up to the highest index that an insert
-/// has used, in the [`SliceStorage`] its [`SecondaryMapConfig`] picks, the
-/// same kind of storage a `GenMap` uses.
+/// has used, in the [`SliceStorage`] its [`SecondaryMapConfig`] picks.
 ///
-/// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`]. A map
-/// with that config keeps its slots in a [`SingleVec`](crate::SingleVec) and
-/// uses [`NewerWins`](crate::NewerWins) to decide whether an insert replaces
-/// a value that was inserted under a different generation.
+/// With the `alloc` feature, `C` defaults to [`DefaultMapConfig`].
 ///
 /// # Examples
 ///
@@ -241,9 +235,7 @@ impl<T> SecondaryMap<T> {
     /// Creates an empty map with the [`DefaultMapConfig`].
     ///
     /// This method only exists for the default config, so that
-    /// `SecondaryMap::new()` compiles without a type annotation. Rust does not
-    /// fall back to a default type parameter when it infers types, so a `new`
-    /// for every config would leave the config unknown. Use
+    /// `SecondaryMap::new()` compiles without a type annotation. Use
     /// [`new_with_config`](Self::new_with_config) for any other config.
     #[inline]
     #[must_use]
@@ -1225,9 +1217,9 @@ impl<T, C: SecondaryMapConfig> Drop for SecondaryDrain<'_, T, C> {
 
 /// Owning iterator over `(key, value)` pairs, in index order. It is created
 /// by consuming a map with `into_iter`, which a map only has when its storage
-/// implements `IntoIterator`. It implements `DoubleEndedIterator`, which
-/// gives it `next_back` and `rev`, only when the storage's iterator
-/// implements both `DoubleEndedIterator` and `ExactSizeIterator`.
+/// implements `IntoIterator`. It implements `DoubleEndedIterator` only when
+/// the storage's iterator implements both `DoubleEndedIterator` and
+/// `ExactSizeIterator`.
 pub struct SecondaryIntoIter<T, C: SecondaryMapConfig>
 where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,
@@ -1262,9 +1254,8 @@ where
     }
 }
 
-// `next_back` calls `Enumerate::next_back`, which works out the position of
-// the last slot from the storage iterator's length, so that iterator has to
-// implement `ExactSizeIterator` as well as `DoubleEndedIterator`.
+// `next_back` calls `Enumerate::next_back`, which needs the storage's iterator
+// to implement `ExactSizeIterator` as well as `DoubleEndedIterator`.
 impl<T, C: SecondaryMapConfig> DoubleEndedIterator for SecondaryIntoIter<T, C>
 where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,
@@ -1338,9 +1329,8 @@ impl<'a, T, C: SecondaryMapConfig> IntoIterator for &'a mut SecondaryMap<T, C> {
 /// The parts given to `from_raw_parts` must follow every rule below, and the
 /// parts that `into_raw_parts` returns always do.
 ///
-/// The values are the data that the map stores under its keys, and each one
-/// sits in a slot. Editing or replacing a value in its slot never breaks a
-/// rule, and neither does changing the capacity of `slots`.
+/// Editing or replacing a value in its slot never breaks a rule, and neither
+/// does changing the capacity of `slots`.
 ///
 /// # Rules
 ///
@@ -1379,12 +1369,10 @@ pub struct SecondaryMapRawParts<
     #[cfg(feature = "alloc")] C: SecondaryMapConfig = DefaultMapConfig,
     #[cfg(not(feature = "alloc"))] C: SecondaryMapConfig,
 > {
-    // These fields are in the same order as the fields of `SecondaryMap` on
-    // purpose, so that the two structs can be read side by side.
-    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
-    // so the compiler catches a field that only one of them has, but nothing
-    // catches a change in order. Think twice before removing this comment,
-    // because it is the only thing that keeps the two orders the same.
+    // These fields are in the same order as the fields of `SecondaryMap`, so
+    // the two structs can be read side by side. `into_raw_parts` and
+    // `from_raw_parts` list every field of both, so the compiler catches a
+    // field that only one struct has, but not a change in order.
     /// The map keeps its slots in this storage, which the map's config picks.
     /// A slot's index is its position in the storage.
     pub slots: <C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>>,

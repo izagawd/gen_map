@@ -13,19 +13,15 @@ use core::iter::FusedIterator;
 /// the second slice, and the key of each value at the same position in the
 /// first slice.
 ///
-/// [`PairVec`](crate::PairVec) keeps the two slices in one buffer, with one
-/// length and one capacity for both. [`SplitPair`] keeps each slice in a
-/// [`SliceStorage`] of its own, so it works with any slice storage, such as an
-/// `ArrayVec`.
+/// The built-in pair storages are [`PairVec`](crate::PairVec) and
+/// [`SplitPair`].
 ///
 /// A pair storage whose capacity can grow past what it was created with also
 /// implements the [`ReservePairStorage`] marker. A pair storage that can be
 /// created with room for a number of pairs chosen at runtime implements
 /// [`WithCapacity`]. A pair storage that implements `IntoIterator` gives a
-/// dense map an owning `into_iter`. The iterator that `into_iter` returns
-/// implements `DoubleEndedIterator` when the storage's iterator implements
-/// both `DoubleEndedIterator` and `ExactSizeIterator`. A dense map implements
-/// `Clone` when its slot storage and its pair storage do.
+/// dense map an owning `into_iter`, and a dense map implements `Clone` when
+/// its slot storage and its pair storage do.
 ///
 /// # Safety
 ///
@@ -43,10 +39,11 @@ use core::iter::FusedIterator;
 ///   the same position in the second slice. The other slice methods, as
 ///   well as [`len`](Self::len) and [`is_empty`](Self::is_empty), must agree
 ///   with them, as the provided methods do.
-/// - Apart from `pop` and `clear`, and dropping the storage itself, no method/function
-///   implemented in this trait may remove, drop, replace or change an item.
-///   An item only mutates through the slice methods.
-///   Growing may move the items in memory, but must keep them in the same order and indices.
+/// - Apart from `pop` and `clear`, and dropping the storage itself, no method
+///   of this trait may remove, drop, replace or change an item. An item may
+///   only be changed through the slices that the slice methods return. Growing
+///   may move the items in memory, but it must keep them in the same order and
+///   at the same positions.
 /// - `pop` must take out the last pair and return it, or return `None` and
 ///   leave the storage as it was if it has no pairs.
 /// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n` pairs,
@@ -56,10 +53,10 @@ use core::iter::FusedIterator;
 ///   items.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
-/// - Only [`with_capacity`](WithCapacity::with_capacity), `ensure_room` and
-///   `clear` may panic, and `clear` only when dropping an item panics. A dense
-///   map calls the other methods partway through changes that a panic would
-///   leave half done.
+/// - Only [`with_capacity`](WithCapacity::with_capacity), `ensure_room`,
+///   `clear`, `clone` and `clone_from` may panic. `clear` may only panic when
+///   dropping an item panics. A dense map calls the other methods partway
+///   through changes that a panic would leave half done.
 /// - [`empty`](Self::empty) must return a storage with no pairs, and so must
 ///   `with_capacity` if the storage implements [`WithCapacity`].
 /// - If the storage implements `IntoIterator<Item = (Self::First,
@@ -188,15 +185,13 @@ impl<P: PairStorage> Drop for ClearPairsOnUnwind<'_, P> {
 }
 
 /// A [`PairStorage`] that keeps each slice in a [`SliceStorage`] of its own.
-/// The first storage holds the first slice, and the second storage holds the
-/// second slice. It lets a dense map keep its keys and values in any slice
-/// storage, such as an `ArrayVec` that never allocates.
+/// It lets a dense map keep its keys and values in any slice storage, such as
+/// an `ArrayVec`.
 ///
-/// Each of the two storages keeps a length and a capacity of its own. The
-/// capacity of a `SplitPair` is the smaller of the two capacities. A
-/// `SplitPair` implements [`ReservePairStorage`] when both storages implement
-/// [`ReserveStorage`], [`WithCapacity`] when both storages implement
-/// `WithCapacity`, and `Clone` when both storages implement `Clone`.
+/// The capacity of a `SplitPair` is the smaller of the capacities of its two
+/// storages. A `SplitPair` implements [`ReservePairStorage`] when both
+/// storages implement [`ReserveStorage`], [`WithCapacity`] when both storages
+/// implement `WithCapacity`, and `Clone` when both storages implement `Clone`.
 ///
 /// # Examples
 ///
@@ -269,17 +264,18 @@ impl<A: SliceStorage + Clone, B: SliceStorage + Clone> Clone for SplitPair<A, B>
 // `from_parts` only accepts two storages of the same length. `with_capacity`
 // creates each storage with its own `with_capacity`, which the rules of
 // `SliceStorage` require to return a storage with no items. Neither storage
-// panics outside `with_capacity`, `ensure_room` and `clear`, so
-// `push_unchecked` and `pop` never stop after changing only one storage, and
-// no other method panics either. `ensure_room` returns `Ok` only when both
-// storages do. `push_unchecked` pushes into both storages without a check,
-// and the rules only promise room for a pair when they promise room in both
-// storages. `clear` empties the second storage even when dropping an item of
-// the first one panics. `clone` clones both storages, and the rules of
-// `SliceStorage` require each of those clones to hold a clone of each item in
-// the same order, so the clone holds a clone of each pair in the same order.
-// `clone_from` clones each storage with its own `clone_from`, which the same
-// rules cover, and it empties both storages if either one panics.
+// panics outside `with_capacity`, `ensure_room`, `clear`, `clone` and
+// `clone_from`. So a `SplitPair` only panics in those same five methods, and
+// its `push_unchecked` and `pop` never stop after changing only one storage.
+// `ensure_room` returns `Ok` only when both storages do. `push_unchecked`
+// pushes into both storages without a check, and the rules only promise room
+// for a pair when they promise room in both storages. `clear` empties the
+// second storage even when dropping an item of the first one panics. `clone`
+// clones both storages, and the rules of `SliceStorage` require each of those
+// clones to hold a clone of each item in the same order, so the clone holds a
+// clone of each pair in the same order. `clone_from` clones each storage with
+// its own `clone_from`, which the same rules cover, and it empties both
+// storages if either one panics.
 unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
     type First = A::Item;
     type Second = B::Item;

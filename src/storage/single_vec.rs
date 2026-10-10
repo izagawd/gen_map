@@ -13,18 +13,13 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::{self, NonNull};
 use core::slice;
 
-/// A `SingleVec` keeps one slice of items in a buffer on the heap, where a
-/// [`PairVec`](crate::PairVec) keeps two slices in one buffer. It is a
+/// A `SingleVec` keeps one slice of items in a buffer on the heap. It is a
 /// [`SliceStorage`] that works like a `Vec`, but it stores its length and
 /// capacity as its length type, the second type parameter. The length type
 /// can be `u8`, `u16`, `u32`, `u64`, `u128` or `usize`, which is the default.
 /// A `SingleVec` never holds more items than its length type can count, and
 /// with a `u32` length type it takes 16 bytes on a 64-bit target, where a
-/// `Vec` takes 24.
-///
-/// With [`DefaultMapConfig`](crate::DefaultMapConfig), every map except a
-/// `SparseSecondaryMap` keeps its slots in a `SingleVec` whose length type is
-/// the index type of the map's keys. A `SingleVec` needs the `alloc` feature.
+/// `Vec` takes 24. A `SingleVec` needs the `alloc` feature.
 ///
 /// A `SingleVec` derefs to a slice of its items. When its items take no space,
 /// it never allocates, and its capacity is the most items its length type can
@@ -50,14 +45,16 @@ pub struct SingleVec<T, L: KeyPiece = usize> {
     _items: PhantomData<T>,
 }
 
-/// The buffer of a [`SingleVec`] or a [`SingleVecIntoIter`], together with its
-/// capacity and how many of its items are initialized. Dropping a `Buffer`
-/// frees the memory without dropping any item in it.
+/// A `Buffer` is the buffer of a [`SingleVec`] or a [`SingleVecIntoIter`],
+/// together with its capacity and length. Dropping a `Buffer` frees the
+/// memory without dropping any item in it.
 struct Buffer<T, L: KeyPiece> {
     pointer: NonNull<T>,
     /// How many items the buffer has room for.
     capacity: L,
-    /// The number of live items.
+    /// `len` is the number of items in a `SingleVec`. In a
+    /// `SingleVecIntoIter`, the items from `start` up to `len` are the ones it
+    /// has not yielded yet.
     len: L,
 }
 
@@ -190,10 +187,9 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
         self.grow(required)
     }
 
-    /// Grows the buffer so it has room for at least `required` items, which
-    /// must be more than its capacity. The new capacity is at least twice the
-    /// old one, unless the length type cannot count that many items. The grown
-    /// buffer keeps the items.
+    /// Grows the buffer to the capacity that `grown_capacity` picks for
+    /// `required` items, which must be more than its capacity. The grown buffer
+    /// keeps the items.
     #[inline(never)]
     fn grow(&mut self, required: usize) -> Result<(), ReserveError> {
         let old_capacity = self.buffer.capacity();
@@ -594,12 +590,10 @@ unsafe impl<T: Sync, L: KeyPiece> Sync for SingleVecIntoIter<T, L> {}
 /// ```
 pub struct SingleVecRawParts<T, L: KeyPiece = usize> {
     // These fields are in the same order as the fields of the buffer of a
-    // `SingleVec` on purpose, so that the two structs can be read side by
-    // side. `into_raw_parts` and `from_raw_parts` list every field of both
-    // structs, so the compiler catches a field that only one of them has, but
-    // nothing catches a change in order. Think twice before removing this
-    // comment, because it is the only thing that keeps the two orders the
-    // same.
+    // `SingleVec`, so the two structs can be read side by side.
+    // `into_raw_parts` and `from_raw_parts` list every field of both, so the
+    // compiler catches a field that only one struct has, but not a change in
+    // order.
     /// `pointer` points at the buffer, which has room for `capacity` items.
     pub pointer: NonNull<T>,
     /// `capacity` is how many items the buffer has room for.

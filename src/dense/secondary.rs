@@ -35,9 +35,7 @@ type Pairs<T, C> = <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<
 /// While the slot holds a value, its generation is the generation of the
 /// value's key, which is odd, and it stores the position of that value in the
 /// pair storage. While it holds no value, its generation is zero, which is
-/// even, and it stores nothing in place of a position. [`Slot::as_parity`]
-/// checks the parity of the generation and returns either the position in
-/// [`ParityRef::Odd`] or `()` in [`ParityRef::Even`].
+/// even, and it stores `()` in place of a position.
 pub type DenseSecondaryMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, ()>;
 
 /// Returns the generation and the stored position of `slot` if it holds a
@@ -1116,10 +1114,8 @@ impl<T, C: DenseSecondaryMapConfig> Drop for DenseSecondaryDrain<'_, T, C> {
 /// The parts given to `from_raw_parts` must follow every rule below, and the
 /// parts that `into_raw_parts` returns always do.
 ///
-/// The values are the data that the map stores under its keys, and the second
-/// slice of `pairs` holds them. Editing or replacing an item in that slice
-/// never breaks a rule, and neither does changing the capacity of `slots` or
-/// `pairs`.
+/// Editing or replacing a value in the second slice of `pairs` never breaks a
+/// rule, and neither does changing the capacity of `slots` or `pairs`.
 ///
 /// # Rules
 ///
@@ -1167,12 +1163,10 @@ pub struct DenseSecondaryMapRawParts<
     #[cfg(feature = "alloc")] C: DenseSecondaryMapConfig = DefaultMapConfig,
     #[cfg(not(feature = "alloc"))] C: DenseSecondaryMapConfig,
 > {
-    // These fields are in the same order as the fields of `DenseSecondaryMap`
-    // on purpose, so that the two structs can be read side by side.
-    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
-    // so the compiler catches a field that only one of them has, but nothing
-    // catches a change in order. Think twice before removing this comment,
-    // because it is the only thing that keeps the two orders the same.
+    // These fields are in the same order as the fields of `DenseSecondaryMap`,
+    // so the two structs can be read side by side. `into_raw_parts` and
+    // `from_raw_parts` list every field of both, so the compiler catches a
+    // field that only one struct has, but not a change in order.
     /// The map keeps its slots in this storage, which the map's config picks.
     /// A slot's index is its position in the storage, and a slot that holds a
     /// value stores the position of that value in `pairs`.

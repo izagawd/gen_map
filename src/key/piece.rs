@@ -22,9 +22,7 @@ use core::num::NonZero;
 pub trait KeyPiece:
     sealed::Sealed + Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static
 {
-    /// The `NonZero` form of this integer. [`Odd`](crate::Odd) stores its
-    /// number in this form, and [`Packed`](crate::Packed) stores its whole
-    /// integer this way, which makes `Option<Key>` the same size as `Key`.
+    /// The `NonZero` form of this integer.
     type NonZero: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static;
 
     /// The value zero.

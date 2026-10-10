@@ -36,8 +36,6 @@ pub(crate) type Gen<C> = MapGen<C>;
 /// index, which is how [`GenMap::reattach`] tells a detached slot apart from a
 /// free or retired one. When the map retires a slot, it stores the largest
 /// value of the index type there, so the slot never looks detached.
-/// [`Slot::as_parity`] checks the parity of the generation and returns either
-/// the value in [`ParityRef::Odd`] or the index in [`ParityRef::Even`].
 pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 
 /// Returns the key of the value in the slot at `idx`, given the slot's current
@@ -162,10 +160,7 @@ fn next_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Option<Even<Gen<C>>
 /// The generation a slot has while it is detached, for a key whose generation
 /// is `generation`. It is one more than `generation`, or zero if `generation`
 /// is the largest value of the generation type. It is even, so no key matches
-/// the slot. [`GenMap::detach`] and
-/// [`DenseGenMap::detach`](crate::DenseGenMap::detach) give the slot this
-/// generation, and [`detached_slot`] calls this function with the key's
-/// generation to check that the slot is still detached under that key.
+/// the slot.
 ///
 /// With a [`Packed`](crate::Packed) key config, this generation can be one
 /// past the largest generation a key can hold. That does no harm, because a
@@ -203,8 +198,7 @@ pub(crate) fn detached_slot<V, C: MapConfig>(
 /// value it held under `generation` is gone. Unless the slot retires, the link
 /// is the old head of the free list, and `next_free` becomes `idx`. A slot
 /// whose generation has run out starts over at zero if `wrap` is `true`, and
-/// otherwise retires, which keeps it off the free list for good. A map passes
-/// the `WRAP_ON_OVERFLOW` of its config as `wrap`.
+/// otherwise retires, which keeps it off the free list for good.
 #[inline]
 pub(crate) fn freed_parts<C: MapConfig>(
     next_free: &mut Idx<C>,
@@ -328,10 +322,8 @@ impl<T> GenMap<T> {
     /// Creates an empty map with the [`DefaultMapConfig`].
     ///
     /// This method only exists for the default config, so that `GenMap::new()`
-    /// compiles without a type annotation. Rust does not fall back to a default
-    /// type parameter when it infers types, so a `new` for every config would
-    /// leave the config unknown. Use [`new_with_config`](Self::new_with_config)
-    /// for any other config.
+    /// compiles without a type annotation. Use
+    /// [`new_with_config`](Self::new_with_config) for any other config.
     #[inline]
     #[must_use]
     pub fn new() -> Self {
@@ -1169,9 +1161,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         slot.get_odd(key.generation())?;
         decrement_len(&mut self.len);
         let detached = detached_generation::<C>(key.generation());
-        // A detached slot has its own index in its `U`. A slot on the free
-        // list has another slot's index or `no_slot` in its `U`, and a
-        // retired slot has `no_slot`, so neither looks detached.
+        // A detached slot stores its own index, which `detached_slot` checks.
         // SAFETY: the slot's generation matched the key's, which is odd.
         Some(unsafe { slot.replace_odd_unchecked(detached, key.idx()) })
     }
@@ -1633,10 +1623,8 @@ impl<T, C: MapConfig> FusedIterator for ValuesMut<'_, T, C> {}
 
 /// Owning iterator over `(key, value)` pairs. It is created by consuming a map
 /// with `into_iter`, which a map only has when its storage implements
-/// `IntoIterator`. It implements `DoubleEndedIterator`, only when the storage's iterator
-/// implements both `DoubleEndedIterator` and `ExactSizeIterator`, because it needs the
-/// length of the storage's iterator to work out the position of a slot taken from the
-/// back.
+/// `IntoIterator`. It implements `DoubleEndedIterator` only when the storage's
+/// iterator implements both `DoubleEndedIterator` and `ExactSizeIterator`.
 pub struct IntoIter<T, C: GenMapConfig>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,
@@ -1674,9 +1662,6 @@ where
 
 // `next_back` calls `Enumerate::next_back`, which needs the storage's iterator
 // to implement `ExactSizeIterator` as well as `DoubleEndedIterator`.
-// `Enumerate::next_back` takes the last slot and works out its position as the
-// number of slots already taken from the front plus `len()`, which is the
-// number of slots still left once that slot is taken.
 impl<T, C: GenMapConfig> DoubleEndedIterator for IntoIter<T, C>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,
@@ -1799,9 +1784,8 @@ impl<T, C: GenMapConfig> Drop for Drain<'_, T, C> {
 /// The parts given to `from_raw_parts` must follow every rule below, and the
 /// parts that `into_raw_parts` returns always do.
 ///
-/// The values are the data that the map stores under its keys, and each one
-/// sits in a slot. Editing or replacing a value in its slot never breaks a
-/// rule, and neither does changing the capacity of `slots`.
+/// Editing or replacing a value in its slot never breaks a rule, and neither
+/// does changing the capacity of `slots`.
 ///
 /// # Rules
 ///
@@ -1842,12 +1826,10 @@ pub struct GenMapRawParts<
     #[cfg(feature = "alloc")] C: GenMapConfig = DefaultMapConfig,
     #[cfg(not(feature = "alloc"))] C: GenMapConfig,
 > {
-    // These fields are in the same order as the fields of `GenMap` on
-    // purpose, so that the two structs can be read side by side.
-    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
-    // so the compiler catches a field that only one of them has, but nothing
-    // catches a change in order. Think twice before removing this comment,
-    // because it is the only thing that keeps the two orders the same.
+    // These fields are in the same order as the fields of `GenMap`, so the two
+    // structs can be read side by side. `into_raw_parts` and `from_raw_parts`
+    // list every field of both, so the compiler catches a field that only one
+    // struct has, but not a change in order.
     /// The map keeps its slots in this storage, which the map's config picks.
     /// A slot's index is its position in the storage.
     pub slots: <C as GenMapConfig>::Storage<MapSlot<T, C>>,

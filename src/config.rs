@@ -49,15 +49,15 @@ use core::hash::Hash;
 /// parts every time they are called on the same value, because the maps check
 /// a key's parts once and then read them again.
 ///
-/// [`Key`](crate::Key) compares and hashes keys with this value's `PartialEq` and `Hash`
-/// implementations, so those must only look at the index and the generation,
-/// and compare/hash them correctly.
+/// [`Key`](crate::Key) compares and hashes keys with the `PartialEq` and
+/// `Hash` implementations of the key config. Those must only look at the
+/// index and the generation, and two values with the same index and
+/// generation must be equal and hash the same.
 ///
-/// None of the implemented methods/functions of this trait should trigger a panic,
-/// as it could cause a panic when a map is in the middle of doing something important,
-/// which may cause undefined behavior, and the [`Clone`](core::clone::Clone)
-/// implementation of the implementor should function identical to copy,
-/// meaning it should also not panic.
+/// None of the methods of this trait may panic. The maps call them partway
+/// through changes that a panic would leave half done, which can lead to
+/// undefined behavior. The [`Clone`](core::clone::Clone) implementation of
+/// the key config must behave like a copy, so it must not panic either.
 ///
 /// Safe code can make a key from any value of the key config it can build,
 /// with [`Key::from_repr`](crate::Key::from_repr), and read the key's parts
@@ -163,8 +163,9 @@ pub trait MapConfig {
 /// the keys the map hands out. The [`MapConfig`] example shows a config that
 /// implements this trait.
 pub trait GenMapConfig: MapConfig {
-    /// What happens when a slot's generation runs out, meaning it reaches
-    /// the largest one its key config can hold.
+    /// This decides what happens when a slot's generation runs out, which is
+    /// when the map removes a value whose key has the largest generation its
+    /// key config can hold.
     ///
     /// When it is `false`, the default, the map retires the slot and does not
     /// use it again until the map is reset, so no old key to the slot can
@@ -230,10 +231,7 @@ pub trait SecondaryMapConfig: MapConfig {
     /// The collection the map keeps its slots in. `S` is the slot type, which
     /// is [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot) for a
     /// `SecondaryMap<T, C>`. The map keeps a slot at every index up to the
-    /// highest index that an insert has used. With
-    /// `type Storage<S: SecondarySlotItem> = Vec<S>;`, the map keeps them in a
-    /// `Vec`, and any other [`SliceStorage`] works too, such as the `ArrayVec`
-    /// and `SmallVec` a [`GenMapConfig`] can use.
+    /// highest index that an insert has used.
     type Storage<S: SecondarySlotItem>: SliceStorage<Item = S>;
 }
 
@@ -287,9 +285,7 @@ pub trait DenseGenMapConfig: MapConfig {
     ///     DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, PairVec, Split, SplitPair,
     /// };
     ///
-    /// /// Maps with this config keep their keys and values in a `PairVec`. A
-    /// /// `PairVec` keeps the keys and the values in one buffer, with one
-    /// /// length and one capacity for both, which saves some memory.
+    /// /// Maps with this config keep their keys and values in a `PairVec`.
     /// struct Paired;
     ///
     /// impl MapConfig for Paired {
@@ -387,9 +383,7 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     ///     MapConfig, NewerWins, PairVec, SplitPair,
     /// };
     ///
-    /// /// Maps with this config keep their keys and values in a `PairVec`. A
-    /// /// `PairVec` keeps the keys and the values in one buffer, with one
-    /// /// length and one capacity for both, which saves some memory.
+    /// /// Maps with this config keep their keys and values in a `PairVec`.
     /// struct Paired;
     ///
     /// impl MapConfig for Paired {
@@ -493,12 +487,10 @@ pub type DefaultKeyConfig = Split<u32, u32>;
 /// Keys use the [`DefaultKeyConfig`]. Every map except a `SparseSecondaryMap`
 /// keeps its slots in a [`SingleVec`](crate::SingleVec), and the dense maps
 /// keep their keys and values in a [`PairVec`](crate::PairVec). Both store
-/// their length and capacity as a `u32`, the index type of the keys. A
-/// `SparseSecondaryMap` keeps its values in a `HashMap`. A slot retires when
-/// its generation runs out. The secondary maps use
-/// [`NewerWins`](crate::NewerWins) to decide whether an insert replaces a
-/// value that was inserted under a different generation.
-/// This config needs the `alloc` feature.
+/// their length and capacity as a `u32`, the index type of the keys. Maps
+/// with this config retire a slot whose generation runs out, and the
+/// secondary maps use [`NewerWins`](crate::NewerWins). This config needs the
+/// `alloc` feature.
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]

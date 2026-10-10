@@ -70,10 +70,8 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// lookup hashes the key's index, so it takes longer than a lookup in a
 /// `SecondaryMap`.
 ///
-/// `C` defaults to [`DefaultMapConfig`], whose
-/// [`NewerWins`](crate::NewerWins) strategy lets an insert under a larger
-/// generation replace a value stored under a smaller one. `S` defaults to
-/// std's `RandomState`. The map needs the `std` feature.
+/// `C` defaults to [`DefaultMapConfig`], and `S` defaults to std's
+/// `RandomState`. The map needs the `std` feature.
 ///
 /// # Examples
 ///
@@ -1021,8 +1019,7 @@ impl<G: KeyPiece, T: fmt::Debug> fmt::Debug for SparseSlot<G, T> {
 /// this type. The map's `HashMap` holds each slot under the index of its
 /// value's key, and the slot stores the value together with the generation of
 /// that key. The map removes a slot when it removes the slot's value, so every
-/// slot holds a value. A key's generation is always odd, so the slot's
-/// generation is too.
+/// slot holds a value.
 pub type SparseSecondaryMapSlot<T, C> = SparseSlot<MapGen<C>, T>;
 
 /// `SparseSecondaryMapRawParts` holds the fields of a [`SparseSecondaryMap`].
@@ -1034,9 +1031,8 @@ pub type SparseSecondaryMapSlot<T, C> = SparseSlot<MapGen<C>, T>;
 /// The parts given to `from_raw_parts` must follow every rule below, and the
 /// parts that `into_raw_parts` returns always do.
 ///
-/// The values are the data that the map stores under its keys, and each one
-/// sits in a slot. Editing or replacing a value in its slot never breaks a
-/// rule, and neither does changing the capacity of `slots`.
+/// Editing or replacing a value in its slot never breaks a rule, and neither
+/// does changing the capacity of `slots`.
 ///
 /// # Rules
 ///
@@ -1067,12 +1063,10 @@ pub struct SparseSecondaryMapRawParts<
     C: SparseSecondaryMapConfig = DefaultMapConfig,
     S = RandomState,
 > {
-    // These fields are in the same order as the fields of `SparseSecondaryMap`
-    // on purpose, so that the two structs can be read side by side.
-    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
-    // so the compiler catches a field that only one of them has, but nothing
-    // catches a change in order. Think twice before removing this comment,
-    // because it is the only thing that keeps the two orders the same.
+    // These fields are in the same order as the fields of `SparseSecondaryMap`,
+    // so the two structs can be read side by side. `into_raw_parts` and
+    // `from_raw_parts` list every field of both, so the compiler catches a
+    // field that only one struct has, but not a change in order.
     /// The map keeps its values in this `HashMap`. It holds each value in a
     /// slot under the index of the value's key, and the slot holds the
     /// generation of that key.
