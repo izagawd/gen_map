@@ -75,10 +75,12 @@ use core::hash::Hash;
 )]
 pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
     /// The integer type that represents the index of a slot. No map gives a
-    /// slot the largest value of this type.
+    /// slot the largest value of this type. It can be `u8`, `u16`, `u32`,
+    /// `u64`, `u128` or `usize`.
     type Idx: KeyPiece;
 
-    /// The integer type that represents the generation of a slot.
+    /// The integer type that represents the generation of a slot. It can be
+    /// `u8`, `u16`, `u32`, `u64`, `u128` or `usize`.
     type Gen: KeyPiece;
 
     /// The largest index a key can hold.
@@ -152,7 +154,8 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
 /// ```
 pub trait MapConfig {
     /// The key config of the keys the map works with. Maps whose configs use
-    /// the same key config share a key type.
+    /// the same key config share a key type. The built-in key configs are
+    /// [`Split`] and [`Packed`](crate::Packed).
     type KeyConfig: KeyConfig;
 }
 
@@ -176,7 +179,9 @@ pub trait GenMapConfig: MapConfig {
     const WRAP_ON_OVERFLOW: bool = false;
 
     /// The collection the map keeps its slots in. `S` is the slot type, which
-    /// is [`MapSlot<T, C>`](crate::MapSlot) for a `GenMap<T, C>`.
+    /// is [`MapSlot<T, C>`](crate::MapSlot) for a `GenMap<T, C>`. The built-in
+    /// storages are [`SingleVec`](crate::SingleVec), `Vec`, `ArrayVec` and
+    /// `SmallVec`.
     type Storage<S: GenSlotItem>: SliceStorage<Item = S>;
 }
 
@@ -231,7 +236,8 @@ pub trait SecondaryMapConfig: MapConfig {
     /// The collection the map keeps its slots in. `S` is the slot type, which
     /// is [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot) for a
     /// `SecondaryMap<T, C>`. The map keeps a slot at every index up to the
-    /// highest index that an insert has used.
+    /// highest index that an insert has used. The built-in storages are
+    /// [`SingleVec`](crate::SingleVec), `Vec`, `ArrayVec` and `SmallVec`.
     type Storage<S: SecondarySlotItem>: SliceStorage<Item = S>;
 }
 
@@ -273,10 +279,14 @@ pub trait DenseGenMapConfig: MapConfig {
 
     /// The collection the map keeps its slots in. `S` is the slot type, which
     /// is [`DenseMapSlot<C>`](crate::DenseMapSlot) for a `DenseGenMap<T, C>`.
+    /// The built-in storages are [`SingleVec`](crate::SingleVec), `Vec`,
+    /// `ArrayVec` and `SmallVec`.
     type SlotStorage<S: GenSlotItem>: SliceStorage<Item = S>;
 
     /// The collection the map keeps its keys and values in. The first
-    /// parameter is the key type, and the second is the value type.
+    /// parameter is the key type, and the second is the value type. The
+    /// built-in pair storages are [`PairVec`](crate::PairVec) and
+    /// [`SplitPair`](crate::SplitPair).
     ///
     /// # Examples
     ///
@@ -363,17 +373,22 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     /// Decides whether a value inserted under a key replaces the value
     /// already stored at the key's index, when that value was inserted under a
     /// different generation. It works the same way as
-    /// [`SecondaryMapConfig::ReplaceStrategy`].
+    /// [`SecondaryMapConfig::ReplaceStrategy`]. The built-in strategies are
+    /// [`NewerWins`](crate::NewerWins) and
+    /// [`ExistingWins`](crate::ExistingWins).
     type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
 
     /// The collection the map keeps its slots in. `S` is the slot type, which
     /// is [`DenseSecondaryMapSlot<C>`](crate::DenseSecondaryMapSlot) for a
     /// `DenseSecondaryMap<T, C>`. The map keeps a slot at every index up to the
-    /// highest index that an insert has used.
+    /// highest index that an insert has used. The built-in storages are
+    /// [`SingleVec`](crate::SingleVec), `Vec`, `ArrayVec` and `SmallVec`.
     type SlotStorage<S: GenSlotItem>: SliceStorage<Item = S>;
 
     /// The collection the map keeps its keys and values in. The first
-    /// parameter is the key type, and the second is the value type.
+    /// parameter is the key type, and the second is the value type. The
+    /// built-in pair storages are [`PairVec`](crate::PairVec) and
+    /// [`SplitPair`](crate::SplitPair).
     ///
     /// # Examples
     ///
@@ -467,7 +482,9 @@ pub trait SparseSecondaryMapConfig: MapConfig {
     /// Decides whether a value inserted under a key replaces the value
     /// already stored at the key's index, when that value was inserted under a
     /// different generation. It works the same way as
-    /// [`SecondaryMapConfig::ReplaceStrategy`].
+    /// [`SecondaryMapConfig::ReplaceStrategy`]. The built-in strategies are
+    /// [`NewerWins`](crate::NewerWins) and
+    /// [`ExistingWins`](crate::ExistingWins).
     type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
 }
 
