@@ -369,7 +369,12 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
         // When the items of the slice at the start take no space, the slice at
         // the end starts at the beginning of the old buffer and of the grown
         // one, so it stays where it is.
-        if offset != old_offset {
+        let start_takes_space = if second_at_start::<A, B>() {
+            size_of::<B>() != 0
+        } else {
+            size_of::<A>() != 0
+        };
+        if start_takes_space {
             // SAFETY: `reallocate_layout` kept the bytes of the old buffer at
             // the start of the grown one, so the first `len` items of the slice
             // at the end take the `len * item_size` bytes that start
