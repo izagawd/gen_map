@@ -665,8 +665,6 @@ impl<A: Clone, B: Clone, L: KeyPiece> Clone for PairVec<A, B, L> {
     /// pairs written before it.
     fn clone_from(&mut self, source: &Self) {
         PairStorage::clear(self);
-        // SAFETY: `clear` just set the length to zero.
-        unsafe { core::hint::assert_unchecked(self.buffer.len == L::ZERO) };
         if self.buffer.capacity() < source.buffer.len() {
             *self = Self::with_capacity(source.buffer.len());
         }
