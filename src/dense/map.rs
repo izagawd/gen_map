@@ -13,8 +13,8 @@ use crate::map::{
     no_slot, position_of as slot_index_of, slot_key, MapGen, MapIdx, MapKeyConfig,
 };
 use crate::slot::{ParityRef, Slot};
-use crate::storage::pair::{PairStorage, ReservePairStorage};
-use crate::storage::{clone_storage, ReserveStorage, SliceStorage};
+use crate::storage::pair::{ClearPairsOnUnwind, PairStorage, ReservePairStorage};
+use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
@@ -224,12 +224,12 @@ impl<T> DenseGenMap<T> {
     }
 }
 
-/// These methods need slot and pair storages that can grow on request, so a
-/// map whose storages have a fixed capacity does not have them.
+/// A map has this method only when its slot storage and its pair storage
+/// implement [`WithCapacity`].
 impl<T, C: DenseGenMapConfig> DenseGenMap<T, C>
 where
-    <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>: ReserveStorage,
-    Pairs<T, C>: ReservePairStorage,
+    <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>: WithCapacity,
+    Pairs<T, C>: WithCapacity,
 {
     /// Creates an empty map with config `C` and room for `capacity` values,
     /// slots and keys.
@@ -237,12 +237,20 @@ where
     #[must_use]
     pub fn with_capacity_and_config(capacity: usize) -> Self {
         Self {
-            slots: <Slots<C> as SliceStorage>::with_capacity(capacity),
+            slots: <Slots<C> as WithCapacity>::with_capacity(capacity),
             next_free: no_slot::<C>(),
-            pairs: <Pairs<T, C> as PairStorage>::with_capacity(capacity),
+            pairs: <Pairs<T, C> as WithCapacity>::with_capacity(capacity),
         }
     }
+}
 
+/// These methods need slot and pair storages that can grow on request, so a
+/// map whose storages have a fixed capacity does not have them.
+impl<T, C: DenseGenMapConfig> DenseGenMap<T, C>
+where
+    <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>: ReserveStorage,
+    Pairs<T, C>: ReservePairStorage,
+{
     /// Reserves room for at least `additional` more values, and for as many
     /// more slots and keys.
     ///
@@ -1280,38 +1288,35 @@ impl<T: fmt::Debug, C: DenseGenMapConfig> fmt::Debug for DenseGenMap<T, C> {
     }
 }
 
-impl<T: Clone, C: DenseGenMapConfig> Clone for DenseGenMap<T, C> {
+impl<T, C: DenseGenMapConfig> Clone for DenseGenMap<T, C>
+where
+    Slots<C>: Clone,
+    Pairs<T, C>: Clone,
+{
     /// The clone has the same slots, values and keys, so every key of the
     /// original works on it.
     fn clone(&self) -> Self {
-        let pairs = clone_pairs(&self.pairs);
+        let pairs = self.pairs.clone();
         Self {
-            slots: clone_storage(&self.slots),
+            slots: self.slots.clone(),
             next_free: self.next_free,
             pairs,
         }
     }
-}
 
-/// Returns a new pair storage of the same type as `pairs` that holds a clone
-/// of each of its pairs, in the same order.
-#[inline]
-pub(crate) fn clone_pairs<P>(pairs: &P) -> P
-where
-    P: PairStorage,
-    P::First: Clone,
-    P::Second: Clone,
-{
-    let mut clone = P::with_capacity(pairs.len());
-    let (firsts, seconds) = pairs.slices();
-    for (first, second) in firsts.iter().zip(seconds) {
-        // SAFETY: `pairs` has the same type as `clone` and holds the pairs
-        // being pushed, and only these pushes have run on `clone` since
-        // `with_capacity` made it, so `PairStorage` promises room for each
-        // push.
-        unsafe { clone.push_unchecked(first.clone(), second.clone()) };
+    /// Clones the slots, keys and values of `source` with the `clone_from` of
+    /// this map's storages. If a value's `clone` panics, this map is left
+    /// empty.
+    fn clone_from(&mut self, source: &Self) {
+        self.next_free = no_slot::<C>();
+        let slots = ClearOnUnwind(&mut self.slots);
+        let pairs = ClearPairsOnUnwind(&mut self.pairs);
+        pairs.0.clone_from(&source.pairs);
+        slots.0.clone_from(&source.slots);
+        core::mem::forget(pairs);
+        core::mem::forget(slots);
+        self.next_free = source.next_free;
     }
-    clone
 }
 
 impl<T, C: DenseGenMapConfig> IntoIterator for DenseGenMap<T, C>

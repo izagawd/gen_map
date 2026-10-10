@@ -3,7 +3,7 @@
 //! cannot, such as the order of the values, the iterators, drops, panics and
 //! storage errors.
 
-use crate::tests::{Bomb, Cfg, DropTracker};
+use crate::tests::{Bomb, Cfg, CloneBomb, DropTracker};
 use crate::{
     DenseError, DenseGenMap, DenseGenMapConfig, GenSlotItem, InsertError, InsertWithError, Key,
     MapConfig, Packed, PairVec,
@@ -321,6 +321,45 @@ fn a_clone_is_independent_of_the_original() {
     assert_eq!((map[a], map[b]), (1, 2));
     assert_eq!(copy.get(a), None);
     assert_eq!(copy[b], 20);
+}
+
+#[test]
+fn clone_from_matches_clone_and_reuses_the_allocation() {
+    let mut source = DenseGenMap::new();
+    let keys: Vec<_> = (0..6).map(|i| source.insert(i)).collect();
+    source.remove(keys[1]);
+    source.remove(keys[4]);
+    let mut target = DenseGenMap::with_capacity(16);
+    target.insert(100);
+    let capacity = target.capacity();
+
+    target.clone_from(&source);
+    assert_eq!(target.capacity(), capacity);
+    assert!(target.iter().eq(source.iter()));
+    // The clone has the same slots and free list, so both maps hand out the
+    // same key next.
+    assert_eq!(target.insert(7), source.insert(7));
+}
+
+#[test]
+fn clone_from_leaves_an_empty_map_if_a_value_panics_while_cloning() {
+    let tracker = DropTracker::new();
+    let mut source = DenseGenMap::new();
+    for i in 0..4 {
+        source.insert(CloneBomb::new(&tracker, i == 2));
+    }
+    let mut target = DenseGenMap::new();
+    target.insert(CloneBomb::new(&tracker, false));
+
+    assert!(catch_unwind(AssertUnwindSafe(|| target.clone_from(&source))).is_err());
+    assert!(target.is_empty());
+    assert_eq!(target.slots_len(), 0);
+    // The emptied map hands out keys like a new map.
+    let key = target.insert(CloneBomb::new(&tracker, false));
+    assert_eq!(key.idx(), 0);
+    drop(source);
+    drop(target);
+    tracker.assert_all_dropped_exactly_once(tracker.total_made());
 }
 
 #[test]

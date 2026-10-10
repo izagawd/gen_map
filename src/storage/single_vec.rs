@@ -1,9 +1,9 @@
 use crate::error::ReserveError;
 use crate::key::piece::KeyPiece;
 use crate::storage::buffer::{
-    allocate, deallocate, grown_capacity, max_len, reallocate, saturating_usize,
+    allocate, deallocate, grown_capacity, max_len, reallocate, saturating_usize, SetLenOnDrop,
 };
-use crate::storage::{ReserveStorage, SliceStorage};
+use crate::storage::{ReserveStorage, SliceStorage, WithCapacity};
 use alloc::vec::Vec;
 use core::fmt;
 use core::iter::FusedIterator;
@@ -225,6 +225,35 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
         // type, so adding one does not wrap.
         self.buffer.len = self.buffer.len.wrapping_add(L::ONE);
     }
+
+    /// Puts a clone of each item of `source` into the `SingleVec`. It writes
+    /// each clone at its position and sets the length once at the end, so the
+    /// compiler can copy many items at a time when cloning an item only copies
+    /// it. If cloning an item panics, the `SingleVec` keeps the clones written
+    /// before it.
+    ///
+    /// # Safety
+    ///
+    /// The `SingleVec` must have no items and room for every item of
+    /// `source`.
+    #[inline]
+    unsafe fn fill_with_clones(&mut self, source: &Self)
+    where
+        T: Clone,
+    {
+        debug_assert!(self.buffer.len == L::ZERO);
+        debug_assert!(source.buffer.len() <= self.buffer.capacity());
+        let pointer = self.buffer.pointer.as_ptr();
+        let mut set_len = SetLenOnDrop::new(&mut self.buffer.len);
+        for (position, item) in source.iter().enumerate() {
+            // SAFETY: the caller promises room for every item of `source`, so
+            // the buffer has room for an item at `position`.
+            unsafe { pointer.add(position).write(item.clone()) };
+            // The count is below the capacity, which is a value of the length
+            // type, so adding one does not wrap.
+            set_len.count = set_len.count.wrapping_add(L::ONE);
+        }
+    }
 }
 
 impl<T, L: KeyPiece> Default for SingleVec<T, L> {
@@ -268,12 +297,13 @@ impl<T, L: KeyPiece> DerefMut for SingleVec<T, L> {
 // pushed. `pop` and `clear` lower the length before they move or drop an item,
 // and growing moves the items with the buffer without changing them. Once
 // `ensure_room` returns `Ok` for `n` items, the capacity is at least the
-// length plus `n`, so the next `n` pushes fit without growing. The
-// `SingleVec` that `with_capacity` returns has room for at least `capacity`
-// items, so its first `capacity` pushes fit too. `push_unchecked` writes the
-// item without a check, and the rules only promise room while the length is
-// below the capacity. Only `with_capacity` panics on its own, and `clear` only
-// panics when dropping an item does.
+// length plus `n`, so the next `n` pushes fit without growing.
+// `push_unchecked` writes the item without a check, and the rules only promise
+// room while the length is below the capacity. `clone` and `clone_from` write
+// a clone of each item at the position of the item and then set the length to
+// the number of items, so the clone holds the same items in the same order.
+// Only `with_capacity` panics on its own, and `clear` only panics when
+// dropping an item does.
 unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     type Item = T;
     type Error = ReserveError;
@@ -281,11 +311,6 @@ unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     #[inline]
     fn empty() -> Self {
         Self::new()
-    }
-
-    #[inline]
-    fn with_capacity(capacity: usize) -> Self {
-        SingleVec::with_capacity(capacity)
     }
 
     #[inline]
@@ -350,6 +375,13 @@ unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
 
 impl<T, L: KeyPiece> ReserveStorage for SingleVec<T, L> {}
 
+impl<T, L: KeyPiece> WithCapacity for SingleVec<T, L> {
+    #[inline]
+    fn with_capacity(capacity: usize) -> Self {
+        SingleVec::with_capacity(capacity)
+    }
+}
+
 // SAFETY: a `SingleVec` owns its items the way a `Vec` does, so it can move to
 // another thread when its items can.
 unsafe impl<T: Send, L: KeyPiece> Send for SingleVec<T, L> {}
@@ -361,10 +393,26 @@ unsafe impl<T: Sync, L: KeyPiece> Sync for SingleVec<T, L> {}
 impl<T: Clone, L: KeyPiece> Clone for SingleVec<T, L> {
     fn clone(&self) -> Self {
         let mut clone = Self::with_capacity(self.buffer.len());
-        for item in self.iter() {
-            clone.push(item.clone());
-        }
+        // SAFETY: `with_capacity` just made `clone` with no items and room
+        // for every item of `self`.
+        unsafe { clone.fill_with_clones(self) };
         clone
+    }
+
+    /// Reuses the buffer of `self` when it has room for every item of
+    /// `source`, and otherwise makes a buffer of the right size before it
+    /// clones any item. If cloning an item panics, `self` keeps the clones
+    /// written before it.
+    fn clone_from(&mut self, source: &Self) {
+        SliceStorage::clear(self);
+        // SAFETY: `clear` just set the length to zero.
+        unsafe { core::hint::assert_unchecked(self.buffer.len == L::ZERO) };
+        if self.buffer.capacity() < source.buffer.len() {
+            *self = Self::with_capacity(source.buffer.len());
+        }
+        // SAFETY: `clear` left `self` with no items, and its buffer has room
+        // for every item of `source`.
+        unsafe { self.fill_with_clones(source) };
     }
 }
 

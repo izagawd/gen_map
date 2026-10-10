@@ -17,6 +17,35 @@ pub(crate) fn max_len<L: KeyPiece>() -> usize {
     saturating_usize(L::MAX)
 }
 
+/// Writes `count` into the length it borrows when it is dropped. While a
+/// [`SingleVec`](crate::SingleVec) or a [`PairVec`](crate::PairVec) clones
+/// items into its buffer, it counts them with a `SetLenOnDrop`, so when a
+/// `clone` panics, the `SetLenOnDrop` sets its length to the number of clones
+/// written before the panic.
+pub(crate) struct SetLenOnDrop<'a, L: KeyPiece> {
+    len: &'a mut L,
+    /// `count` is the number of items written so far.
+    pub(crate) count: L,
+}
+
+impl<'a, L: KeyPiece> SetLenOnDrop<'a, L> {
+    /// Returns a `SetLenOnDrop` for `len` whose count starts at zero.
+    #[inline]
+    pub(crate) fn new(len: &'a mut L) -> Self {
+        Self {
+            len,
+            count: L::ZERO,
+        }
+    }
+}
+
+impl<L: KeyPiece> Drop for SetLenOnDrop<'_, L> {
+    #[inline]
+    fn drop(&mut self) {
+        *self.len = self.count;
+    }
+}
+
 /// Returns the capacity that a vec with room for `capacity` items grows to
 /// when it needs room for `required` items. The new capacity is at least
 /// twice the old one, so a long run of pushes allocates only a few times, but

@@ -2,8 +2,8 @@
 use crate::config::DefaultMapConfig;
 use crate::config::DenseSecondaryMapConfig;
 use crate::dense::map::{
-    clone_pairs, to_position, to_stored, DenseIntoIter, DenseIter, DenseIterMut, DenseKeys,
-    DenseValues, DenseValuesMut,
+    to_position, to_stored, DenseIntoIter, DenseIter, DenseIterMut, DenseKeys, DenseValues,
+    DenseValuesMut,
 };
 use crate::error::{
     check_disjoint_idxs, check_disjoint_keys, DenseError, GetDisjointMutAtError,
@@ -16,8 +16,8 @@ use crate::map::{MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::secondary::{get_or_grow_slot, key_from_parts_unchecked};
 use crate::slot::{ParityRef, Slot};
-use crate::storage::pair::{PairStorage, ReservePairStorage};
-use crate::storage::{clone_storage, ReserveStorage, SliceStorage};
+use crate::storage::pair::{ClearPairsOnUnwind, PairStorage, ReservePairStorage};
+use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
@@ -139,12 +139,12 @@ impl<T> DenseSecondaryMap<T> {
     }
 }
 
-/// These methods need slot and pair storages that can grow on request, so a
-/// map whose storages have a fixed capacity does not have them.
+/// A map has this method only when its slot storage and its pair storage
+/// implement [`WithCapacity`].
 impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C>
 where
-    <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>: ReserveStorage,
-    Pairs<T, C>: ReservePairStorage,
+    <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>: WithCapacity,
+    Pairs<T, C>: WithCapacity,
 {
     /// Creates an empty map with config `C` and room for `capacity` values,
     /// slots and keys.
@@ -152,11 +152,19 @@ where
     #[must_use]
     pub fn with_capacity_and_config(capacity: usize) -> Self {
         Self {
-            slots: <Slots<C> as SliceStorage>::with_capacity(capacity),
-            pairs: <Pairs<T, C> as PairStorage>::with_capacity(capacity),
+            slots: <Slots<C> as WithCapacity>::with_capacity(capacity),
+            pairs: <Pairs<T, C> as WithCapacity>::with_capacity(capacity),
         }
     }
+}
 
+/// These methods need slot and pair storages that can grow on request, so a
+/// map whose storages have a fixed capacity does not have them.
+impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C>
+where
+    <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>: ReserveStorage,
+    Pairs<T, C>: ReservePairStorage,
+{
     /// Reserves room for at least `additional` more values, and for as many
     /// more slots and keys.
     ///
@@ -943,15 +951,31 @@ impl<T, C: DenseSecondaryMapConfig> Default for DenseSecondaryMap<T, C> {
     }
 }
 
-impl<T: Clone, C: DenseSecondaryMapConfig> Clone for DenseSecondaryMap<T, C> {
+impl<T, C: DenseSecondaryMapConfig> Clone for DenseSecondaryMap<T, C>
+where
+    Slots<C>: Clone,
+    Pairs<T, C>: Clone,
+{
     /// The clone has the same slots, values and keys, so every key of the
     /// original works on it.
     fn clone(&self) -> Self {
-        let pairs = clone_pairs(&self.pairs);
+        let pairs = self.pairs.clone();
         Self {
-            slots: clone_storage(&self.slots),
+            slots: self.slots.clone(),
             pairs,
         }
+    }
+
+    /// Clones the slots, keys and values of `source` with the `clone_from` of
+    /// this map's storages. If a value's `clone` panics, this map is left
+    /// empty.
+    fn clone_from(&mut self, source: &Self) {
+        let slots = ClearOnUnwind(&mut self.slots);
+        let pairs = ClearPairsOnUnwind(&mut self.pairs);
+        pairs.0.clone_from(&source.pairs);
+        slots.0.clone_from(&source.slots);
+        core::mem::forget(pairs);
+        core::mem::forget(slots);
     }
 }
 

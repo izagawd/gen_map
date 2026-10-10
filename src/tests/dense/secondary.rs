@@ -3,7 +3,7 @@
 //! what that check cannot, such as the order of the values, drops, panics and
 //! storage errors.
 
-use crate::tests::{key_from_parts, Bomb, Cfg, DropTracker};
+use crate::tests::{key_from_parts, Bomb, Cfg, CloneBomb, DropTracker};
 use crate::{DenseError, DenseSecondaryMap, GenMap, Key, SecondaryInsertError, Split};
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -291,4 +291,43 @@ fn a_panicking_drop_in_clear_leaves_an_empty_map() {
     assert!(map.get(all[3]).is_some());
     drop(map);
     tracker.assert_all_dropped_exactly_once(4);
+}
+
+#[test]
+fn clone_from_matches_clone_and_reuses_the_allocation() {
+    let k = keys(6);
+    let mut source = DenseSecondaryMap::new();
+    for &i in &[0, 2, 5] {
+        source.insert(k[i], i as u32).unwrap();
+    }
+    let mut target = DenseSecondaryMap::with_capacity(16);
+    target.insert(k[1], 100).unwrap();
+    let capacity = target.capacity();
+
+    target.clone_from(&source);
+    assert_eq!(target.capacity(), capacity);
+    assert!(target.iter().eq(source.iter()));
+}
+
+#[test]
+fn clone_from_leaves_an_empty_map_if_a_value_panics_while_cloning() {
+    let tracker = DropTracker::new();
+    let k = keys(5);
+    let mut source = DenseSecondaryMap::new();
+    for (i, &key) in k[..4].iter().enumerate() {
+        source
+            .insert(key, CloneBomb::new(&tracker, i == 2))
+            .unwrap();
+    }
+    let mut target = DenseSecondaryMap::new();
+    target
+        .insert(k[4], CloneBomb::new(&tracker, false))
+        .unwrap();
+
+    assert!(catch_unwind(AssertUnwindSafe(|| target.clone_from(&source))).is_err());
+    assert!(target.is_empty());
+    assert_eq!(target.slots_len(), 0);
+    drop(source);
+    drop(target);
+    tracker.assert_all_dropped_exactly_once(tracker.total_made());
 }

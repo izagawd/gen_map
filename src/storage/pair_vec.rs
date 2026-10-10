@@ -2,9 +2,10 @@ use crate::error::ReserveError;
 use crate::key::piece::KeyPiece;
 use crate::storage::buffer::{
     allocate_layout, deallocate_layout, grown_capacity, max_len, reallocate_layout,
-    saturating_usize,
+    saturating_usize, SetLenOnDrop,
 };
 use crate::storage::pair::{PairStorage, ReservePairStorage};
+use crate::storage::WithCapacity;
 use core::alloc::Layout;
 use core::fmt;
 use core::iter::FusedIterator;
@@ -417,6 +418,73 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
         // type, so adding one does not wrap.
         self.buffer.len = self.buffer.len.wrapping_add(L::ONE);
     }
+
+    /// Puts a clone of each pair of `source` into the `PairVec`. It clones the
+    /// first slice of `source` and then its second slice, writes each clone at
+    /// its position and sets the length once at the end, so the compiler can
+    /// copy many items at a time when cloning an item only copies it. If
+    /// cloning an item panics, it drops the first items whose second item was
+    /// not written yet, and the `PairVec` keeps the whole pairs.
+    ///
+    /// # Safety
+    ///
+    /// The `PairVec` must have no pairs and room for every pair of `source`.
+    #[inline]
+    unsafe fn fill_with_clones(&mut self, source: &Self)
+    where
+        A: Clone,
+        B: Clone,
+    {
+        /// Drops the first items that have no second item yet when it is
+        /// dropped. Its `set_len` then sets the length to the number of whole
+        /// pairs.
+        struct DropUnpaired<'a, A, L: KeyPiece> {
+            /// The count of `set_len` is the number of second items written,
+            /// which is the number of whole pairs.
+            set_len: SetLenOnDrop<'a, L>,
+            firsts: *mut A,
+            /// `first_count` is the number of first items written.
+            first_count: usize,
+        }
+
+        impl<A, L: KeyPiece> Drop for DropUnpaired<'_, A, L> {
+            fn drop(&mut self) {
+                let pairs = saturating_usize(self.set_len.count);
+                let unpaired = ptr::slice_from_raw_parts_mut(
+                    self.firsts.wrapping_add(pairs),
+                    self.first_count - pairs,
+                );
+                // SAFETY: the first items from position `pairs` up to
+                // `first_count` were written and belong to no pair, and
+                // nothing uses them after this.
+                unsafe { ptr::drop_in_place(unpaired) };
+            }
+        }
+
+        debug_assert!(self.buffer.len == L::ZERO);
+        debug_assert!(source.buffer.len() <= self.buffer.capacity());
+        let firsts = self.buffer.first.as_ptr();
+        let seconds = self.buffer.second.as_ptr();
+        let mut guard = DropUnpaired {
+            set_len: SetLenOnDrop::new(&mut self.buffer.len),
+            firsts,
+            first_count: 0,
+        };
+        for (position, first) in source.first_slice().iter().enumerate() {
+            // SAFETY: the caller promises room for every pair of `source`, so
+            // the first slice has room for an item at `position`.
+            unsafe { firsts.add(position).write(first.clone()) };
+            guard.first_count = position + 1;
+        }
+        for (position, second) in source.second_slice().iter().enumerate() {
+            // SAFETY: the caller promises room for every pair of `source`, so
+            // the second slice has room for an item at `position`.
+            unsafe { seconds.add(position).write(second.clone()) };
+            // The count is below the capacity, which is a value of the length
+            // type, so adding one does not wrap.
+            guard.set_len.count = guard.set_len.count.wrapping_add(L::ONE);
+        }
+    }
 }
 
 impl<A, B, L: KeyPiece> Default for PairVec<A, B, L> {
@@ -447,12 +515,14 @@ impl<A, B, L: KeyPiece> Drop for PairVec<A, B, L> {
 // length before they move or drop an item, and growing moves the items
 // without changing them. Once `ensure_room` returns `Ok` for `n` pairs, the
 // capacity is at least the length plus `n`, so the next `n` pushes fit without
-// growing. The `PairVec` that `with_capacity` returns has room for at least
-// `capacity` pairs, so its first `capacity` pushes fit too. `push_unchecked`
-// writes both items without a check, and the rules only promise room while the
-// length is below the capacity. The two slices sit in separate parts of the
-// buffer, so the two mutable slices never overlap. Only `with_capacity` panics
-// on its own, and `clear` only panics when dropping an item does.
+// growing. `push_unchecked` writes both items without a check, and the rules
+// only promise room while the length is below the capacity. The two slices sit
+// in separate parts of the buffer, so the two mutable slices never overlap.
+// `clone` writes a clone of each pair at the position of the pair and then sets
+// the length to the number of pairs, so the clone holds the same pairs in the
+// same order. `clone_from` clears the `PairVec` and then does the same, in a
+// new buffer when the old one is too small. Only `with_capacity` panics on its
+// own, and `clear` only panics when dropping an item does.
 unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     type First = A;
     type Second = B;
@@ -461,11 +531,6 @@ unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     #[inline]
     fn empty() -> Self {
         Self::new()
-    }
-
-    #[inline]
-    fn with_capacity(capacity: usize) -> Self {
-        PairVec::with_capacity(capacity)
     }
 
     #[inline]
@@ -573,6 +638,13 @@ unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
 
 impl<A, B, L: KeyPiece> ReservePairStorage for PairVec<A, B, L> {}
 
+impl<A, B, L: KeyPiece> WithCapacity for PairVec<A, B, L> {
+    #[inline]
+    fn with_capacity(capacity: usize) -> Self {
+        PairVec::with_capacity(capacity)
+    }
+}
+
 // SAFETY: a `PairVec` owns its items the way a `Vec` does, so it can move to
 // another thread when its items can.
 unsafe impl<A: Send, B: Send, L: KeyPiece> Send for PairVec<A, B, L> {}
@@ -584,10 +656,26 @@ unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVec<A, B, L> {}
 impl<A: Clone, B: Clone, L: KeyPiece> Clone for PairVec<A, B, L> {
     fn clone(&self) -> Self {
         let mut clone = Self::with_capacity(self.buffer.len());
-        for (first, second) in self.first_slice().iter().zip(self.second_slice()) {
-            clone.push(first.clone(), second.clone());
-        }
+        // SAFETY: `with_capacity` just made `clone` with no pairs and room for
+        // every pair of `self`.
+        unsafe { clone.fill_with_clones(self) };
         clone
+    }
+
+    /// Reuses the buffer of `self` when it has room for every pair of
+    /// `source`, and otherwise makes a buffer of the right size before it
+    /// clones any item. If cloning an item panics, `self` keeps the whole
+    /// pairs written before it.
+    fn clone_from(&mut self, source: &Self) {
+        PairStorage::clear(self);
+        // SAFETY: `clear` just set the length to zero.
+        unsafe { core::hint::assert_unchecked(self.buffer.len == L::ZERO) };
+        if self.buffer.capacity() < source.buffer.len() {
+            *self = Self::with_capacity(source.buffer.len());
+        }
+        // SAFETY: `clear` left `self` with no pairs, and its buffer has room
+        // for every pair of `source`.
+        unsafe { self.fill_with_clones(source) };
     }
 }
 

@@ -2,7 +2,7 @@
 //! of the default config, so the dense map tests cover it as well.
 
 use crate::tests::model::Rng;
-use crate::tests::{Bomb, DropItem, DropTracker};
+use crate::tests::{Bomb, CloneBomb, DropItem, DropTracker};
 use crate::{PairStorage, PairVec, PairVecIntoIter, PairVecRawParts, ReserveError};
 use core::alloc::Layout;
 use core::fmt::Debug;
@@ -342,6 +342,82 @@ fn clone_and_debug_show_the_same_pairs() {
     assert_eq!(copy.slices(), pairs.slices());
     assert_eq!(format!("{pairs:?}"), r#"[(1, "a"), (2, "b")]"#);
     assert!(PairVec::<u8, u8>::default().is_empty());
+}
+
+#[test]
+fn a_panic_in_clone_drops_the_clones_written_before_it() {
+    // In one run, cloning the first item of the third pair panics, and in the
+    // other, cloning its second item panics.
+    for second_panics in [false, true] {
+        let tracker = DropTracker::new();
+        let pairs: PairVec<_, _, u8> = (0..4)
+            .map(|i| {
+                let first = CloneBomb::new(&tracker, i == 2 && !second_panics);
+                let second = CloneBomb::new(&tracker, i == 2 && second_panics);
+                (first, second)
+            })
+            .collect();
+        assert!(catch_unwind(AssertUnwindSafe(|| pairs.clone())).is_err());
+        // `clone` clones every first item before any second item. So it had
+        // cloned two first items when cloning the third first item panicked,
+        // or all four first items and two second items when cloning the third
+        // second item panicked. Unwinding dropped every one of those clones.
+        let clones = if second_panics { 6 } else { 2 };
+        assert_eq!(tracker.total_made(), 8 + clones);
+        assert_eq!(tracker.total_dropped(), clones as usize);
+        drop(pairs);
+        tracker.assert_all_dropped_exactly_once(8 + clones);
+    }
+}
+
+#[test]
+fn clone_from_keeps_the_whole_pairs_written_before_a_panic() {
+    let tracker = DropTracker::new();
+    let source: PairVec<_, _, u8> = (0..4)
+        .map(|i| {
+            (
+                CloneBomb::new(&tracker, false),
+                CloneBomb::new(&tracker, i == 2),
+            )
+        })
+        .collect();
+    let mut target: PairVec<_, _, u8> = (0..2)
+        .map(|_| {
+            (
+                CloneBomb::new(&tracker, false),
+                CloneBomb::new(&tracker, false),
+            )
+        })
+        .collect();
+    assert!(catch_unwind(AssertUnwindSafe(|| target.clone_from(&source))).is_err());
+    // `clone_from` dropped the four old items, cloned all four first items
+    // and two second items, and dropped the two first items that had no second
+    // item when cloning the third second item panicked.
+    assert_eq!(target.len(), 2);
+    assert_eq!(tracker.total_made(), 18);
+    assert_eq!(tracker.total_dropped(), 6);
+    drop(source);
+    drop(target);
+    tracker.assert_all_dropped_exactly_once(18);
+}
+
+#[test]
+fn clone_from_reuses_the_buffer_when_it_has_room() {
+    let source: PairVec<u32, u8, u8> = (0..3).map(|i| (i, i as u8)).collect();
+
+    let mut roomy = PairVec::<u32, u8, u8>::with_capacity(10);
+    roomy.push(9, 9);
+    let pointer = roomy.first_slice().as_ptr();
+    roomy.clone_from(&source);
+    assert_eq!(roomy.slices(), source.slices());
+    assert_eq!(roomy.first_slice().as_ptr(), pointer);
+    assert!(PairStorage::capacity(&roomy) >= 10);
+
+    let mut cramped = PairVec::<u32, u8, u8>::with_capacity(1);
+    cramped.push(9, 9);
+    cramped.clone_from(&source);
+    assert_eq!(cramped.slices(), source.slices());
+    assert!(PairStorage::capacity(&cramped) >= 3);
 }
 
 #[test]

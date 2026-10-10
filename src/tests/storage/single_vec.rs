@@ -2,7 +2,7 @@
 //! default config, so the map tests cover it as well.
 
 use crate::tests::model::Rng;
-use crate::tests::{Bomb, DropTracker};
+use crate::tests::{Bomb, CloneBomb, DropTracker};
 use crate::{ReserveError, SingleVec, SingleVecIntoIter, SingleVecRawParts, SliceStorage};
 use core::mem::ManuallyDrop;
 use core::ptr::NonNull;
@@ -203,6 +203,54 @@ fn clone_and_debug_show_the_same_items() {
     assert_eq!(copy[..], items[..]);
     assert_eq!(format!("{items:?}"), r#"["a", "b"]"#);
     assert!(SingleVec::<u8>::default().is_empty());
+}
+
+#[test]
+fn a_panic_in_clone_drops_the_clones_written_before_it() {
+    let tracker = DropTracker::new();
+    let items: SingleVec<_, u8> = (0..5).map(|i| CloneBomb::new(&tracker, i == 3)).collect();
+    assert!(catch_unwind(AssertUnwindSafe(|| items.clone())).is_err());
+    // `clone` cloned the first three items before the clone of the fourth one
+    // panicked, and unwinding dropped those three clones.
+    assert_eq!(tracker.total_made(), 8);
+    assert_eq!(tracker.total_dropped(), 3);
+    drop(items);
+    tracker.assert_all_dropped_exactly_once(8);
+}
+
+#[test]
+fn clone_from_keeps_the_clones_written_before_a_panic() {
+    let tracker = DropTracker::new();
+    let source: SingleVec<_, u8> = (0..5).map(|i| CloneBomb::new(&tracker, i == 3)).collect();
+    let mut target: SingleVec<_, u8> = (0..2).map(|_| CloneBomb::new(&tracker, false)).collect();
+    assert!(catch_unwind(AssertUnwindSafe(|| target.clone_from(&source))).is_err());
+    // `clone_from` dropped the two old items and cloned three before the
+    // panic.
+    assert_eq!(target.len(), 3);
+    assert_eq!(tracker.total_made(), 10);
+    assert_eq!(tracker.total_dropped(), 2);
+    drop(source);
+    drop(target);
+    tracker.assert_all_dropped_exactly_once(10);
+}
+
+#[test]
+fn clone_from_reuses_the_buffer_when_it_has_room() {
+    let source: SingleVec<u32, u8> = (0..3).collect();
+
+    let mut roomy = SingleVec::<u32, u8>::with_capacity(10);
+    roomy.push(9);
+    let pointer = roomy.as_ptr();
+    roomy.clone_from(&source);
+    assert_eq!(roomy[..], [0, 1, 2]);
+    assert_eq!(roomy.as_ptr(), pointer);
+    assert!(SliceStorage::capacity(&roomy) >= 10);
+
+    let mut cramped = SingleVec::<u32, u8>::with_capacity(1);
+    cramped.push(9);
+    cramped.clone_from(&source);
+    assert_eq!(cramped[..], [0, 1, 2]);
+    assert!(SliceStorage::capacity(&cramped) >= 3);
 }
 
 #[test]

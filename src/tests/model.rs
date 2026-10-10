@@ -135,7 +135,10 @@ fn a_small_vec_agrees_with_the_model() {
 
 /// Runs every seed for `C`. Miri is far slower than a normal run, so it gets
 /// fewer and shorter runs.
-fn run_seeds<C: GenMapConfig>() {
+fn run_seeds<C: GenMapConfig>()
+where
+    GenMap<u32, C>: Clone,
+{
     let (seeds, steps) = if cfg!(miri) { (2, 300) } else { (48, 2000) };
     for seed in 0..seeds {
         run::<C>(seed, steps);
@@ -218,7 +221,10 @@ impl Drop for Context {
     }
 }
 
-fn run<C: GenMapConfig>(seed: u64, steps: usize) {
+fn run<C: GenMapConfig>(seed: u64, steps: usize)
+where
+    GenMap<u32, C>: Clone,
+{
     let mut rng = Rng(seed);
     let mut map = GenMap::<u32, C>::new_with_config();
     let mut model = Model::<C> {
@@ -547,7 +553,10 @@ fn look_up_by_index<C: GenMapConfig>(map: &GenMap<u32, C>, model: &Model<C>, rng
 
 /// A clone, and a map that took the contents with `clone_from`, must hold
 /// the same values and hand out the same key next.
-fn compare_clones<C: GenMapConfig>(map: &GenMap<u32, C>) {
+fn compare_clones<C: GenMapConfig>(map: &GenMap<u32, C>)
+where
+    GenMap<u32, C>: Clone,
+{
     let mut copy = map.clone();
     let mut target = GenMap::<u32, C>::new_with_config();
     target.insert(0);
