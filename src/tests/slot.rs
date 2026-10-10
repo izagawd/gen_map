@@ -49,7 +49,6 @@ fn as_parity_mut_changes_the_value_in_place() {
     assert_eq!(slot.into_parity(), Parity::Even(even(2), 25));
 }
 
-
 #[test]
 fn get_odd_only_matches_the_slots_own_generation() {
     let mut slot = Slot::<u32, i32, ()>::new(Parity::Odd(odd(5), 1));

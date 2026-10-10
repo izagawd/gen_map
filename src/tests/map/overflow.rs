@@ -116,7 +116,6 @@ fn retired_slots_survive_clear_and_clone() {
     assert_eq!(next.idx(), 1, "clear must not revive a retired slot");
 }
 
-
 #[test]
 #[should_panic(expected = "GenMap is full")]
 fn inserting_into_a_full_map_panics() {
