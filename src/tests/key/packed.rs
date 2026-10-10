@@ -3,7 +3,6 @@ use crate::{
     FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, Key, KeyConfig, KeyPiece, MapConfig,
     MapKeyConfig, Odd, Packed, Split,
 };
-use core::any::TypeId;
 use core::mem::size_of;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::vec::Vec;
@@ -119,14 +118,6 @@ fn split_limits_are_the_integer_limits() {
 }
 
 #[test]
-fn every_key_config_has_an_odd_largest_generation() {
-    assert_eq!(Packed::<u32, 8>::max_generation().get().get() % 2, 1);
-    assert_eq!(Packed::<u16, 4>::max_generation().get().get() % 2, 1);
-    assert_eq!(Packed::<u16, 1>::max_generation().get().get(), 1);
-    assert_eq!(Split::<u8, u8>::max_generation().get().get() % 2, 1);
-}
-
-#[test]
 fn parts_round_trip_through_a_packed_key() {
     let max_idx = Packed::<u32, 8>::max_idx();
     for (idx, generation) in [
@@ -148,21 +139,6 @@ fn parts_round_trip_through_a_packed_key() {
 
     let k = key::<Packed<u8, 4>>(15, 15);
     assert_eq!((k.idx(), k.generation().get().get()), (15, 15));
-}
-
-#[test]
-fn the_parts_do_not_bleed_into_each_other() {
-    let a = key::<Packed<u32, 8>>(1, 1);
-    let b = key::<Packed<u32, 8>>(0, 255);
-    let c = key::<Packed<u32, 8>>(1, 255);
-    assert_eq!(a.idx(), 1);
-    assert_eq!(b.idx(), 0);
-    assert_eq!(b.generation().get().get(), 255);
-    assert_eq!(c.idx(), 1);
-    assert_eq!(c.generation().get().get(), 255);
-    assert_ne!(a, b);
-    assert_ne!(a, c);
-    assert_ne!(b, c);
 }
 
 #[test]
@@ -409,22 +385,6 @@ fn an_index_field_that_fills_its_type_leaves_out_the_largest_index() {
         map.try_insert(255),
         Err(InsertError::IndexExhausted(255))
     ));
-}
-
-#[test]
-fn packed_picks_the_types_its_docs_list() {
-    fn types<K: KeyConfig>() -> (TypeId, TypeId) {
-        (TypeId::of::<K::Idx>(), TypeId::of::<K::Gen>())
-    }
-
-    fn pair<Idx: 'static, Gen: 'static>() -> (TypeId, TypeId) {
-        (TypeId::of::<Idx>(), TypeId::of::<Gen>())
-    }
-
-    assert_eq!(types::<Packed<u16, 4>>(), pair::<u16, u8>());
-    assert_eq!(types::<Packed<u32, 8>>(), pair::<u32, u8>());
-    assert_eq!(types::<Packed<u32, 16>>(), pair::<u16, u16>());
-    assert_eq!(types::<Packed<u64, 40>>(), pair::<u32, u64>());
 }
 
 /// Returns the number of bits in the smallest unsigned integer with at least

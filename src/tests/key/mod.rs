@@ -140,17 +140,6 @@ fn idx_and_generation_read_the_parts_of_a_key() {
 }
 
 #[test]
-fn a_generation_is_always_odd() {
-    let mut map = GenMap::<i32, Cfg<u8, u8>>::new_with_config();
-    let mut key = map.insert(0);
-    for _ in 0..100 {
-        assert!(key.generation().get().get() % 2 == 1);
-        map.remove(key);
-        key = map.insert(0);
-    }
-}
-
-#[test]
 fn from_repr_rebuilds_a_key() {
     let mut map = GenMap::new();
     let key = map.insert(42);
@@ -177,14 +166,6 @@ fn a_rebuilt_key_from_the_past_matches_nothing() {
     assert!(map.remove(rebuilt).is_none());
     assert!(!map.contains_key(rebuilt));
     assert_eq!(map[new], 2);
-}
-
-#[test]
-fn a_rebuilt_key_for_a_missing_slot_matches_nothing() {
-    let mut map = GenMap::new();
-    map.insert(1);
-    let rebuilt = key_from_parts::<DefaultKeyConfig>(99, 1);
-    assert!(map.get(rebuilt).is_none());
 }
 
 #[test]

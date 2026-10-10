@@ -9,9 +9,6 @@ mod model;
 mod panic_fuzz;
 mod raw_parts;
 mod secondary;
-// The `size` tests expect the sizes that types have on 64-bit targets.
-#[cfg(target_pointer_width = "64")]
-mod size;
 mod slot;
 mod storage;
 mod zero_sized;

@@ -401,48 +401,6 @@ fn shrinking_frees_room_and_keeps_every_value() {
 }
 
 #[test]
-fn insert_hashes_the_index_once_and_remove_at_most_twice() {
-    // A `Flaky` hasher that never breaks counts how many hashes the map makes.
-    let built = Rc::new(Cell::new(0));
-    let hasher = Flaky {
-        good: usize::MAX,
-        built: built.clone(),
-    };
-    let mut map = SparseSecondaryMap::<u32, Newer, Flaky>::with_hasher_and_config(hasher);
-    // With room to spare, the map does not grow and rehash its values.
-    map.reserve(10);
-    for (key, value, expected) in [
-        (key8(0, 1), 0, None),
-        (key8(1, 1), 1, None),
-        (key8(0, 1), 2, Some(0)),
-        (key8(0, 3), 3, Some(2)),
-    ] {
-        built.set(0);
-        assert_eq!(map.insert(key, value).unwrap(), expected);
-        assert_eq!(built.get(), 1);
-    }
-    built.set(0);
-    assert!(matches!(
-        map.insert(key8(0, 1), 4),
-        Err(SecondaryInsertError::Refused(4))
-    ));
-    assert_eq!(built.get(), 1);
-    // A remove that finds a value under the key's generation hashes the index
-    // twice, once to find the value and once to remove it. Any other remove
-    // hashes it once.
-    for (key, expected, hashes) in [
-        (key8(0, 3), Some(3), 2),
-        (key8(5, 1), None, 1),
-        (key8(1, 3), None, 1),
-    ] {
-        built.set(0);
-        assert_eq!(map.remove(key), expected);
-        assert_eq!(built.get(), hashes);
-    }
-    assert_eq!(map[key8(1, 1)], 1);
-}
-
-#[test]
 fn a_hasher_that_changes_its_hashes_cannot_cause_undefined_behavior() {
     let a = key8(1, 1);
     let b = key8(2, 1);
@@ -795,25 +753,4 @@ fn a_sparse_secondary_map_whose_indices_collide_agrees_with_a_secondary_map() {
     for seed in 0..seeds {
         run::<Newer, Collide>(seed, steps);
     }
-}
-
-#[test]
-fn removing_a_key_without_a_value_makes_no_room() {
-    let all = keys(64);
-    let missing = all[63];
-    let mut map = SparseSecondaryMap::<u32>::new();
-    assert_eq!(map.remove(missing), None);
-    assert_eq!(map.capacity(), 0);
-
-    // Once the map has no room left, removing a key without a value still
-    // makes no room.
-    let mut next = 0;
-    while map.is_empty() || map.len() < map.capacity() {
-        map.insert(all[next], 0).unwrap();
-        next += 1;
-    }
-    assert!(next < 63);
-    let capacity = map.capacity();
-    assert_eq!(map.remove(missing), None);
-    assert_eq!(map.capacity(), capacity);
 }

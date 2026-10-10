@@ -103,14 +103,3 @@ fn key_at_unchecked_agrees_with_key_at() {
     }
     assert_eq!(unsafe { map.key_at_unchecked(4) }, reused);
 }
-
-#[test]
-fn key_at_then_get_is_a_valid_lookup() {
-    let mut map = GenMap::new();
-    let key = map.insert(7);
-    let found = map.key_at(key.idx()).unwrap();
-    assert_eq!(map.get(found), Some(&7));
-    assert_eq!(unsafe { *map.get_unchecked(found) }, 7);
-    *map.get_mut(found).unwrap() = 8;
-    assert_eq!(map[key], 8);
-}

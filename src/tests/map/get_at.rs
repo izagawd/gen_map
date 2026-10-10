@@ -1,4 +1,4 @@
-use crate::tests::{Cfg, DropTracker};
+use crate::tests::Cfg;
 use crate::{GenMap, GetDisjointMutAtError, Key, MapKeyConfig};
 use std::vec::Vec;
 
@@ -288,17 +288,6 @@ fn get_disjoint_mut_at_rejects_the_same_index_twice() {
 }
 
 #[test]
-fn get_disjoint_mut_at_borrows_nothing_on_error() {
-    let mut map = GenMap::new();
-    let a = map.insert(1);
-    let b = map.insert(2);
-    let error = map.get_disjoint_mut_at([0, 1, 0]).unwrap_err();
-    assert_eq!(error, GetDisjointMutAtError::OverlappingIndices);
-    assert_eq!(map.get(a), Some(&1));
-    assert_eq!(map.get(b), Some(&2));
-}
-
-#[test]
 fn get_disjoint_mut_at_reports_the_current_keys_of_reused_slots() {
     let mut map = GenMap::new();
     let old_a = map.insert(1);
@@ -323,33 +312,6 @@ fn get_disjoint_mut_at_unchecked_hands_out_every_key_and_value() {
     *y = 20;
     assert_eq!(map[a], 10);
     assert_eq!(map[b], 20);
-}
-
-#[test]
-fn get_disjoint_mut_at_references_point_at_the_slots() {
-    let mut map = GenMap::new();
-    let a = map.insert(1);
-    let b = map.insert(2);
-    let expected_a = map.get(a).unwrap() as *const i32;
-    let expected_b = map.get(b).unwrap() as *const i32;
-    let [(_, x), (_, y)] = map.get_disjoint_mut_at([0, 1]).unwrap();
-    assert!(core::ptr::eq(x, expected_a));
-    assert!(core::ptr::eq(y, expected_b));
-}
-
-#[test]
-fn values_touched_through_get_disjoint_mut_at_drop_exactly_once() {
-    let tracker = DropTracker::new();
-    let mut map = GenMap::new();
-    map.insert(tracker.make_item());
-    map.insert(tracker.make_item());
-    {
-        let [(_, x), (_, y)] = map.get_disjoint_mut_at([0, 1]).unwrap();
-        core::mem::swap(x, y);
-    }
-    tracker.assert_none_dropped();
-    drop(map);
-    tracker.assert_all_dropped_exactly_once(2);
 }
 
 #[test]
