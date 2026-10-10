@@ -6,6 +6,7 @@ use crate::tests::{Bomb, DropItem, DropTracker};
 use crate::{PairStorage, PairVec, PairVecIntoIter, PairVecRawParts, ReserveError};
 use core::alloc::Layout;
 use core::fmt::Debug;
+use core::mem::size_of;
 use core::ptr::NonNull;
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -67,6 +68,11 @@ fn growing_moves_every_pair_into_the_new_buffer() {
 
 #[test]
 fn growing_keeps_both_slices_whatever_the_sizes_and_alignments_of_their_items() {
+    /// `Aligned` takes no space but needs a large alignment.
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    #[repr(align(64))]
+    struct Aligned;
+
     fn check<A, B>(make: impl Fn(u8) -> (A, B))
     where
         A: Copy + PartialEq + Debug,
@@ -82,8 +88,8 @@ fn growing_keeps_both_slices_whatever_the_sizes_and_alignments_of_their_items() 
             seconds.push(second);
             assert_eq!(pairs.slices(), (firsts.as_slice(), seconds.as_slice()));
         }
-        // Making room for many more pairs moves the second slice far from
-        // where it was.
+        // Making room for many more pairs moves the slice at the end of the
+        // buffer far from where it was.
         pairs.ensure_room(1000).unwrap();
         assert_eq!(pairs.slices(), (firsts.as_slice(), seconds.as_slice()));
     }
@@ -94,6 +100,43 @@ fn growing_keeps_both_slices_whatever_the_sizes_and_alignments_of_their_items() 
     check(|i| (u16::from(i), [i; 3]));
     check(|i| (u128::from(i), ()));
     check(|i| ((), u128::from(i)));
+    check(|i| (i, Aligned));
+    check(|i| (Aligned, i));
+}
+
+#[test]
+fn the_slice_whose_items_take_more_space_starts_the_buffer() {
+    let mut pairs = PairVec::<u8, u64>::with_capacity(4);
+    let (firsts, seconds) = pairs.slices();
+    assert_eq!(firsts.as_ptr() as usize, seconds.as_ptr() as usize + 4 * 8);
+    let flipped = PairVec::<u64, u8>::with_capacity(4);
+    let (firsts, seconds) = flipped.slices();
+    assert_eq!(seconds.as_ptr() as usize, firsts.as_ptr() as usize + 4 * 8);
+
+    // The `u64`s stay at the start after the buffer grows.
+    for i in 0..100 {
+        pairs.push(i, u64::from(i));
+    }
+    let capacity = pairs.capacity();
+    let (firsts, seconds) = pairs.slices();
+    assert_eq!(
+        firsts.as_ptr() as usize,
+        seconds.as_ptr() as usize + capacity * 8
+    );
+}
+
+#[test]
+fn the_first_slice_starts_the_buffer_when_the_items_take_the_same_space() {
+    let pairs = PairVec::<u32, char>::with_capacity(4);
+    let (firsts, seconds) = pairs.slices();
+    assert_eq!(seconds.as_ptr() as usize, firsts.as_ptr() as usize + 4 * 4);
+}
+
+#[test]
+fn a_slice_whose_items_take_no_space_starts_the_buffer() {
+    let pairs = PairVec::<u64, ()>::with_capacity(4);
+    let (firsts, seconds) = pairs.slices();
+    assert_eq!(firsts.as_ptr() as usize, seconds.as_ptr() as usize);
 }
 
 #[test]
@@ -389,13 +432,14 @@ fn raw_parts_of_pairs_that_take_no_space_keep_their_count() {
 #[test]
 fn a_vec_can_take_over_a_buffer_allocated_by_hand() {
     let tracker = DropTracker::new();
-    let (layout, offset) = Layout::array::<u32>(4)
+    assert!(size_of::<DropItem>() > size_of::<u32>());
+    let (layout, offset) = Layout::array::<DropItem>(4)
         .unwrap()
-        .extend(Layout::array::<DropItem>(4).unwrap())
+        .extend(Layout::array::<u32>(4).unwrap())
         .unwrap();
     let buffer = NonNull::new(unsafe { std::alloc::alloc(layout) }).unwrap();
-    let first = buffer.cast::<u32>();
-    let second = unsafe { buffer.add(offset) }.cast::<DropItem>();
+    let second = buffer.cast::<DropItem>();
+    let first = unsafe { buffer.add(offset) }.cast::<u32>();
     for i in 0..3u32 {
         unsafe {
             first.add(i as usize).write(i);

@@ -14,12 +14,19 @@ use core::ptr::{self, NonNull};
 use core::slice;
 
 /// A `PairVec` is a [`PairStorage`] that keeps its two slices in one buffer
-/// on the heap. The buffer holds the items of the first slice, followed by
-/// the items of the second slice. Both slices always have room for the same
-/// number of items, so a `PairVec` stores one length and one capacity for
-/// both. It stores them as its length type, the third type parameter, which
-/// works the same way as the length type of a [`SingleVec`](crate::SingleVec).
-/// The length type is `usize` when it is left out.
+/// on the heap. Both slices always have room for the same number of items,
+/// so a `PairVec` stores one length and one capacity for both. It stores them
+/// as its length type, the third type parameter, which works the same way as
+/// the length type of a [`SingleVec`](crate::SingleVec). The length type is
+/// `usize` when it is left out.
+///
+/// The slice whose items take more space sits at the start of the buffer,
+/// and the other slice sits at the end. When the buffer grows, the `PairVec`
+/// moves the slice at the end to make room for the slice at the start, so the
+/// items that take less space are the ones that move. When the items of both
+/// slices take the same space, the first slice sits at the start. When the
+/// items of only one slice take no space, that slice sits at the start
+/// instead, where its alignment adds no padding to the buffer.
 ///
 /// With [`DefaultMapConfig`](crate::DefaultMapConfig), the dense maps keep
 /// their keys and values in a `PairVec` whose length type is the index type
@@ -56,13 +63,13 @@ pub struct PairVec<A, B, L: KeyPiece = usize> {
 /// Dropping a `Buffer` frees the memory without dropping any item in it.
 ///
 /// [`buffer_layout`] gives the layout of the buffer for its capacity, and the
-/// position in it where the second slice starts. When the buffer holds no
-/// memory, both pointers are dangling.
+/// position in it where the slice at the end starts. [`second_at_start`]
+/// tells which slice sits at the start. When the buffer holds no memory, both
+/// pointers are dangling.
 struct Buffer<A, B, L: KeyPiece> {
-    /// `first` points at the first slice, at the start of the buffer.
+    /// `first` points at the first slice.
     first: NonNull<A>,
-    /// `second` points at the second slice, which starts after the room for
-    /// the first slice.
+    /// `second` points at the second slice.
     second: NonNull<B>,
     /// `capacity` is how many items each slice has room for. When the items
     /// of both slices take no space, it is the largest value of the length
@@ -79,6 +86,20 @@ struct Buffer<A, B, L: KeyPiece> {
 #[inline]
 const fn takes_no_space<A, B>() -> bool {
     size_of::<A>() == 0 && size_of::<B>() == 0
+}
+
+/// Returns `true` if the second slice sits at the start of the buffer.
+#[inline]
+const fn second_at_start<A, B>() -> bool {
+    const {
+        if size_of::<A>() == 0 {
+            false
+        } else if size_of::<B>() == 0 {
+            true
+        } else {
+            size_of::<B>() > size_of::<A>()
+        }
+    }
 }
 
 /// Drops the first `len` items of both slices. If dropping an item of the
@@ -112,8 +133,7 @@ unsafe fn drop_items<A, B>(first: *mut A, second: *mut B, len: usize) {
 }
 
 /// Returns the layout of a buffer with room for `capacity` items in each
-/// slice, and how many bytes into the buffer the second slice starts. The
-/// first slice starts at the beginning of the buffer.
+/// slice, and how many bytes into the buffer the slice at the end starts.
 ///
 /// # Errors
 ///
@@ -123,9 +143,33 @@ unsafe fn drop_items<A, B>(first: *mut A, second: *mut B, len: usize) {
 fn buffer_layout<A, B>(capacity: usize) -> Result<(Layout, usize), ReserveError> {
     let first = Layout::array::<A>(capacity).map_err(|_| ReserveError::CapacityOverflow)?;
     let second = Layout::array::<B>(capacity).map_err(|_| ReserveError::CapacityOverflow)?;
-    first
-        .extend(second)
+    let (start, end) = if second_at_start::<A, B>() {
+        (second, first)
+    } else {
+        (first, second)
+    };
+    start
+        .extend(end)
         .map_err(|_| ReserveError::CapacityOverflow)
+}
+
+/// Returns the pointers to the first slice and to the second slice of a
+/// buffer that begins at `start`, when the slice at the end starts `offset`
+/// bytes into it.
+///
+/// # Safety
+///
+/// `offset` must be no further than the end of the buffer.
+#[inline]
+unsafe fn slice_pointers<A, B>(start: NonNull<u8>, offset: usize) -> (NonNull<A>, NonNull<B>) {
+    // SAFETY: the caller promises that `offset` is no further than the end of
+    // the buffer.
+    let at_end = unsafe { start.add(offset) };
+    if second_at_start::<A, B>() {
+        (at_end.cast(), start.cast())
+    } else {
+        (start.cast(), at_end.cast())
+    }
 }
 
 impl<A, B, L: KeyPiece> Buffer<A, B, L> {
@@ -155,14 +199,25 @@ impl<A, B, L: KeyPiece> Buffer<A, B, L> {
         }
         // SAFETY: the layout takes space.
         let start = unsafe { allocate_layout(layout)? };
+        // SAFETY: the slice at the end starts `offset` bytes into the buffer,
+        // and that position is no further than the end of the buffer.
+        let (first, second) = unsafe { slice_pointers(start, offset) };
         Ok(Self {
-            first: start.cast(),
-            // SAFETY: the second slice starts `offset` bytes into the buffer,
-            // and that position is no further than the end of the buffer.
-            second: unsafe { start.add(offset) }.cast(),
+            first,
+            second,
             capacity: stored,
             len: L::ZERO,
         })
+    }
+
+    /// Returns a pointer to the start of the buffer.
+    #[inline]
+    fn start(&self) -> NonNull<u8> {
+        if second_at_start::<A, B>() {
+            self.second.cast()
+        } else {
+            self.first.cast()
+        }
     }
 
     /// The number of pairs as a `usize`.
@@ -186,9 +241,9 @@ impl<A, B, L: KeyPiece> Drop for Buffer<A, B, L> {
         let (layout, _) = unsafe { buffer_layout::<A, B>(self.capacity()).unwrap_unchecked() };
         // SAFETY: if the layout takes space, the global allocator allocated the
         // buffer with it, by `allocate_layout`, by `reallocate_layout` or as the
-        // rules of `PairVecRawParts` require, and `first` points at the start
-        // of the buffer. Nothing uses the buffer after this.
-        unsafe { deallocate_layout(self.first.cast(), layout) };
+        // rules of `PairVecRawParts` require, and `start` returns the start of
+        // the buffer. Nothing uses the buffer after this.
+        unsafe { deallocate_layout(self.start(), layout) };
     }
 }
 
@@ -277,8 +332,8 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
     /// Grows the buffer so it has room for at least `required` pairs, which
     /// must be more than its capacity. The new capacity is at least twice the
     /// old one, unless the length type cannot count that many pairs. The items
-    /// of the first slice stay at the start of the grown buffer, and this
-    /// method moves the items of the second slice to where the second slice
+    /// of the slice at the start stay at the start of the grown buffer, and
+    /// this method moves the items of the slice at the end to where that slice
     /// starts in it.
     #[inline(never)]
     fn grow(&mut self, required: usize) -> Result<(), ReserveError> {
@@ -297,29 +352,42 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
             unsafe { buffer_layout::<A, B>(old_capacity).unwrap_unchecked() };
         // SAFETY: if `old_layout` takes space, the global allocator allocated
         // the buffer with it, by `allocate_layout`, by `reallocate_layout` or
-        // as the rules of `PairVecRawParts` require, and `first` points at the
+        // as the rules of `PairVecRawParts` require, and `start` returns the
         // start of the buffer. Both layouts have the larger alignment of the
         // two item types. `grown_capacity` returns at least `required`, which
         // is more than `old_capacity`, and a `PairVec` whose items all take no
-        // space never grows, so `layout` takes more space than `old_layout`.
-        // The old pointers are overwritten below, so nothing uses them
-        // afterwards.
-        let start = unsafe { reallocate_layout(self.buffer.first.cast(), old_layout, layout)? };
-        // SAFETY: `reallocate_layout` kept the bytes of the old buffer at the
-        // start of the grown one, so the first `len` items of the second slice
-        // start `old_offset` bytes into it. The second slice of the grown
-        // buffer starts `offset` bytes into it and has room for `capacity`
-        // items. `ptr::copy` moves the items even when the two ranges overlap.
-        let second = unsafe {
-            let second = start.add(offset).cast::<B>();
-            ptr::copy(
-                start.add(old_offset).cast::<B>().as_ptr(),
-                second.as_ptr(),
-                self.buffer.len(),
-            );
-            second
+        // space never grows. Otherwise the items of the slice at the end take
+        // space, so `layout` takes more space than `old_layout`. The old
+        // pointers are overwritten below, so nothing uses them afterwards.
+        let start = unsafe { reallocate_layout(self.buffer.start(), old_layout, layout)? };
+        // Each item of the slice at the end takes `item_size` bytes.
+        let item_size = if second_at_start::<A, B>() {
+            size_of::<A>()
+        } else {
+            size_of::<B>()
         };
-        self.buffer.first = start.cast();
+        // When the items of the slice at the start take no space, the slice at
+        // the end starts at the beginning of the old buffer and of the grown
+        // one, so it stays where it is.
+        if offset != old_offset {
+            // SAFETY: `reallocate_layout` kept the bytes of the old buffer at
+            // the start of the grown one, so the first `len` items of the slice
+            // at the end take the `len * item_size` bytes that start
+            // `old_offset` bytes into it. That slice starts `offset` bytes into
+            // the grown buffer and has room for `capacity` items there.
+            // `ptr::copy` moves the bytes even when the two ranges overlap.
+            unsafe {
+                ptr::copy(
+                    start.add(old_offset).as_ptr(),
+                    start.add(offset).as_ptr(),
+                    self.buffer.len() * item_size,
+                );
+            }
+        }
+        // SAFETY: the slice at the end starts `offset` bytes into the grown
+        // buffer, and that position is no further than the end of the buffer.
+        let (first, second) = unsafe { slice_pointers(start, offset) };
+        self.buffer.first = first;
         self.buffer.second = second;
         self.buffer.capacity = stored;
         Ok(())
@@ -377,10 +445,9 @@ impl<A, B, L: KeyPiece> Drop for PairVec<A, B, L> {
 // growing. The `PairVec` that `with_capacity` returns has room for at least
 // `capacity` pairs, so its first `capacity` pushes fit too. `push_unchecked`
 // writes both items without a check, and the rules only promise room while the
-// length is below the capacity. The first slice ends before the second slice
-// starts in the buffer, so the two mutable slices never overlap. Only
-// `with_capacity` panics on its own, and `clear` only panics when dropping an
-// item does.
+// length is below the capacity. The two slices sit in separate parts of the
+// buffer, so the two mutable slices never overlap. Only `with_capacity` panics
+// on its own, and `clear` only panics when dropping an item does.
 unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     type First = A;
     type Second = B;
@@ -436,9 +503,8 @@ unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     fn slices_mut(&mut self) -> (&mut [A], &mut [B]) {
         let len = self.buffer.len();
         // SAFETY: the first `len` items of both slices are initialized, and
-        // `&mut self` keeps any other reference to them from existing. The
-        // first slice ends before the second slice starts in the buffer, so the
-        // two slices do not overlap.
+        // `&mut self` keeps any other reference to them from existing. The two
+        // slices sit in separate parts of the buffer, so they do not overlap.
         unsafe {
             (
                 slice::from_raw_parts_mut(self.buffer.first.as_ptr(), len),
@@ -667,12 +733,16 @@ unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVecIntoIter<A, B, L> {}
 ///
 /// # Rules
 ///
-/// The layout of the buffer is `Layout::array::<A>(capacity)` extended by
-/// `Layout::array::<B>(capacity)` with `Layout::extend`.
+/// The docs of [`PairVec`] say which slice sits at the start of the buffer.
+/// The layout of the buffer is `Layout::array::<S>(capacity)` extended by
+/// `Layout::array::<E>(capacity)` with `Layout::extend`, where `S` is the
+/// item type of the slice at the start and `E` is the item type of the slice
+/// at the end.
 ///
-/// - If that layout takes space, `first` points at a buffer that the global
-///   allocator allocated with it, and `second` points at the offset that
-///   `Layout::extend` returns, counted in bytes from `first`. Otherwise both
+/// - If that layout takes space, the pointer to the slice at the start points
+///   at a buffer that the global allocator allocated with it, and the pointer
+///   to the slice at the end points at the offset that `Layout::extend`
+///   returns, counted in bytes from the start of the buffer. Otherwise both
 ///   pointers only have to be aligned for their items, as dangling pointers
 ///   are.
 /// - `len` is not more than `capacity` or the largest `usize`.
@@ -722,10 +792,9 @@ pub struct PairVecRawParts<A, B, L: KeyPiece = usize> {
     // so the compiler catches a field that only one of them has, but nothing
     // catches a change in order. Think twice before removing this comment,
     // because it is the only thing that keeps the two orders the same.
-    /// `first` points at the first slice, at the start of the buffer.
+    /// `first` points at the first slice.
     pub first: NonNull<A>,
-    /// `second` points at the second slice, which starts after the room for
-    /// the first slice.
+    /// `second` points at the second slice.
     pub second: NonNull<B>,
     /// `capacity` is how many items each slice has room for.
     pub capacity: L,

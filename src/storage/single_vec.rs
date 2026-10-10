@@ -4,6 +4,7 @@ use crate::storage::buffer::{
     allocate, deallocate, grown_capacity, max_len, reallocate, saturating_usize,
 };
 use crate::storage::{ReserveStorage, SliceStorage};
+use alloc::vec::Vec;
 use core::fmt;
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
@@ -382,6 +383,35 @@ impl<T, L: KeyPiece> FromIterator<T> for SingleVec<T, L> {
             items.push(item);
         }
         items
+    }
+}
+
+impl<T, L: KeyPiece> From<SingleVec<T, L>> for Vec<T> {
+    /// Hands the buffer of the `SingleVec` to the `Vec`, without copying the
+    /// items.
+    #[inline]
+    fn from(items: SingleVec<T, L>) -> Self {
+        let SingleVecRawParts {
+            pointer,
+            capacity,
+            len,
+        } = items.into_raw_parts();
+        // SAFETY: the parts follow the rules of `SingleVecRawParts`. So when
+        // the items take space and `capacity` is above zero, the global
+        // allocator allocated the buffer with the layout that `Layout::array`
+        // gives for `capacity` items, as a `Vec` with that capacity needs. That
+        // `capacity` fits in a `usize`, because the buffer takes at most
+        // `isize::MAX` bytes. Otherwise a `Vec` only needs the pointer to be
+        // aligned, and it is. The first `len` items are initialized, and `len`
+        // is not more than `capacity`. Nothing uses the parts afterwards, so
+        // the `Vec` is the only owner of the buffer and its items.
+        unsafe {
+            Vec::from_raw_parts(
+                pointer.as_ptr(),
+                saturating_usize(len),
+                saturating_usize(capacity),
+            )
+        }
     }
 }
 
