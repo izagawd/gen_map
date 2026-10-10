@@ -13,19 +13,15 @@ use core::iter::FusedIterator;
 /// the second slice, and the key of each value at the same position in the
 /// first slice.
 ///
-/// [`PairVec`](crate::PairVec) keeps the two slices in one buffer, with one
-/// length and one capacity for both. [`SplitPair`] keeps each slice in a
-/// [`SliceStorage`] of its own, so it works with any slice storage, such as an
-/// `ArrayVec`.
+/// The built-in pair storages are [`PairVec`](crate::PairVec) and
+/// [`SplitPair`].
 ///
 /// A pair storage whose capacity can grow past what it was created with also
 /// implements the [`ReservePairStorage`] marker. A pair storage that can be
 /// created with room for a number of pairs chosen at runtime implements
 /// [`WithCapacity`]. A pair storage that implements `IntoIterator` gives a
-/// dense map an owning `into_iter`. The iterator that `into_iter` returns
-/// implements `DoubleEndedIterator` when the storage's iterator implements
-/// both `DoubleEndedIterator` and `ExactSizeIterator`. A dense map implements
-/// `Clone` when its slot storage and its pair storage do.
+/// dense map an owning `into_iter`, and a dense map implements `Clone` when
+/// its slot storage and its pair storage do.
 ///
 /// # Safety
 ///
@@ -189,15 +185,13 @@ impl<P: PairStorage> Drop for ClearPairsOnUnwind<'_, P> {
 }
 
 /// A [`PairStorage`] that keeps each slice in a [`SliceStorage`] of its own.
-/// The first storage holds the first slice, and the second storage holds the
-/// second slice. It lets a dense map keep its keys and values in any slice
-/// storage, such as an `ArrayVec` that never allocates.
+/// It lets a dense map keep its keys and values in any slice storage, such as
+/// an `ArrayVec`.
 ///
-/// Each of the two storages keeps a length and a capacity of its own. The
-/// capacity of a `SplitPair` is the smaller of the two capacities. A
-/// `SplitPair` implements [`ReservePairStorage`] when both storages implement
-/// [`ReserveStorage`], [`WithCapacity`] when both storages implement
-/// `WithCapacity`, and `Clone` when both storages implement `Clone`.
+/// The capacity of a `SplitPair` is the smaller of the capacities of its two
+/// storages. A `SplitPair` implements [`ReservePairStorage`] when both
+/// storages implement [`ReserveStorage`], [`WithCapacity`] when both storages
+/// implement `WithCapacity`, and `Clone` when both storages implement `Clone`.
 ///
 /// # Examples
 ///

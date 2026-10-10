@@ -2,8 +2,7 @@ use crate::key::piece::KeyPiece;
 use core::hint::unreachable_unchecked;
 
 /// An odd number of type `G`. It is never zero, so it is stored as a `NonZero`,
-/// which lets `Option` use zero to represent `None` and makes `Option<Odd<G>>`
-/// the same size as `G`.
+/// which makes `Option<Odd<G>>` the same size as `G`.
 // `repr(transparent)` gives an `Odd` the layout of its `NonZero`. `KeyPiece` is
 // sealed and only uses the standard `NonZero`, which has the layout of the
 // plain integer. `Slot::as_parity` and `Slot::as_parity_mut` rely on this to

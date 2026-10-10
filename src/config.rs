@@ -231,10 +231,7 @@ pub trait SecondaryMapConfig: MapConfig {
     /// The collection the map keeps its slots in. `S` is the slot type, which
     /// is [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot) for a
     /// `SecondaryMap<T, C>`. The map keeps a slot at every index up to the
-    /// highest index that an insert has used. With
-    /// `type Storage<S: SecondarySlotItem> = Vec<S>;`, the map keeps them in a
-    /// `Vec`, and any other [`SliceStorage`] works too, such as the `ArrayVec`
-    /// and `SmallVec` a [`GenMapConfig`] can use.
+    /// highest index that an insert has used.
     type Storage<S: SecondarySlotItem>: SliceStorage<Item = S>;
 }
 
@@ -288,9 +285,7 @@ pub trait DenseGenMapConfig: MapConfig {
     ///     DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, PairVec, Split, SplitPair,
     /// };
     ///
-    /// /// Maps with this config keep their keys and values in a `PairVec`. A
-    /// /// `PairVec` keeps the keys and the values in one buffer, with one
-    /// /// length and one capacity for both, which saves some memory.
+    /// /// Maps with this config keep their keys and values in a `PairVec`.
     /// struct Paired;
     ///
     /// impl MapConfig for Paired {
@@ -388,9 +383,7 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     ///     MapConfig, NewerWins, PairVec, SplitPair,
     /// };
     ///
-    /// /// Maps with this config keep their keys and values in a `PairVec`. A
-    /// /// `PairVec` keeps the keys and the values in one buffer, with one
-    /// /// length and one capacity for both, which saves some memory.
+    /// /// Maps with this config keep their keys and values in a `PairVec`.
     /// struct Paired;
     ///
     /// impl MapConfig for Paired {
@@ -494,12 +487,10 @@ pub type DefaultKeyConfig = Split<u32, u32>;
 /// Keys use the [`DefaultKeyConfig`]. Every map except a `SparseSecondaryMap`
 /// keeps its slots in a [`SingleVec`](crate::SingleVec), and the dense maps
 /// keep their keys and values in a [`PairVec`](crate::PairVec). Both store
-/// their length and capacity as a `u32`, the index type of the keys. A
-/// `SparseSecondaryMap` keeps its values in a `HashMap`. A slot retires when
-/// its generation runs out. The secondary maps use
-/// [`NewerWins`](crate::NewerWins) to decide whether an insert replaces a
-/// value that was inserted under a different generation.
-/// This config needs the `alloc` feature.
+/// their length and capacity as a `u32`, the index type of the keys. Maps
+/// with this config retire a slot whose generation runs out, and the
+/// secondary maps use [`NewerWins`](crate::NewerWins). This config needs the
+/// `alloc` feature.
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]

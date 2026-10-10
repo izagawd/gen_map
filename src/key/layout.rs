@@ -7,8 +7,7 @@ use crate::key::piece::KeyPiece;
 /// can hold any index of type `Idx` and any odd generation of type `Gen`.
 ///
 /// `Idx` and `Gen` can each be any unsigned integer from `u8` to `u128`, or
-/// `usize`. Both default to `u32`, so `Split` on its own is the same type as
-/// `Split<u32, u32>`.
+/// `usize`. Both default to `u32`.
 ///
 /// # Examples
 ///
@@ -22,8 +21,7 @@ use crate::key::piece::KeyPiece;
 pub struct Split<Idx = u32, Gen: KeyPiece = u32> {
     idx: Idx,
     /// An odd generation is never zero, and an [`Odd`] stores it as a
-    /// `NonZero`, which lets `Option` use zero to represent `None` and gives
-    /// `Option<Key>` the size of `Key`.
+    /// `NonZero`, which gives `Option<Key>` the size of `Key`.
     generation: Odd<Gen>,
 }
 
@@ -72,7 +70,7 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// get keys the size of a pointer, pick `u32` or `u64` for `R` with
 /// `cfg(target_pointer_width)`. `GEN_BITS` must be at least one and less than
 /// the bits of `R`. A `Packed` that breaks these rules does not implement
-/// [`KeyConfig`], so a map config cannot use it.
+/// [`KeyConfig`].
 ///
 /// The index type is the smallest unsigned integer with at least
 /// `R::BITS - GEN_BITS` bits, and the generation type is the smallest one

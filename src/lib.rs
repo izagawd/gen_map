@@ -175,8 +175,7 @@
 //! the removed one. The map reads the moved value's key to point that value's
 //! slot at its new position, so a dense map also keeps the key of each value.
 //! It keeps the keys and values in a [`PairStorage`], which its config picks.
-//! The default config picks a [`PairVec`], which keeps the keys and the
-//! values in one buffer, with one length and one capacity for both.
+//! The default config picks a [`PairVec`].
 //!
 //! ```
 //! use gen_map::DenseGenMap;
@@ -199,9 +198,8 @@
 //!   `ArrayVec` has a fixed capacity and never allocates.
 //! - `smallvec` lets a config use `smallvec::SmallVec` as a storage. A
 //!   `SmallVec` keeps its first items inline and allocates when it needs room
-//!   for more. This feature uses the 2.0 beta of `smallvec`. Until `smallvec`
-//!   2.0 is released, a newer beta or a new release of `gen_map` may break
-//!   this feature, so it is not covered by semver.
+//!   for more. This feature uses the 2.0 beta of `smallvec`, so it is not
+//!   covered by semver.
 //!
 //! To use the crate without `std`, turn default features off and `alloc` on.
 //! The crate only needs an allocator when `alloc` or `smallvec` is on, so to

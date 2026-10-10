@@ -1109,9 +1109,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
         slot.get_odd(key.generation())?;
         let detached = detached_generation::<C>(key.generation());
-        // A detached slot has its own index in its `U`. A slot on the free list
-        // has another slot's index or `no_slot` in its `U`, and a retired slot
-        // has `no_slot`, so neither looks detached.
+        // A detached slot stores its own index, which `detached_slot` checks.
         // SAFETY: the slot's generation matched the key's, which is odd.
         let stored_position = unsafe { slot.replace_odd_unchecked(detached, key.idx()) };
         // SAFETY: `stored_position` is the position the key's slot stored,
@@ -1631,10 +1629,8 @@ impl<P: IntoIterator> FusedIterator for DenseIntoIter<P> {}
 /// The parts given to `from_raw_parts` must follow every rule below, and the
 /// parts that `into_raw_parts` returns always do.
 ///
-/// The values are the data that the map stores under its keys, and the second
-/// slice of `pairs` holds them. Editing or replacing an item in that slice
-/// never breaks a rule, and neither does changing the capacity of `slots` or
-/// `pairs`.
+/// Editing or replacing a value in the second slice of `pairs` never breaks a
+/// rule, and neither does changing the capacity of `slots` or `pairs`.
 ///
 /// # Rules
 ///
@@ -1688,12 +1684,10 @@ pub struct DenseGenMapRawParts<
     #[cfg(feature = "alloc")] C: DenseGenMapConfig = DefaultMapConfig,
     #[cfg(not(feature = "alloc"))] C: DenseGenMapConfig,
 > {
-    // These fields are in the same order as the fields of `DenseGenMap` on
-    // purpose, so that the two structs can be read side by side.
-    // `into_raw_parts` and `from_raw_parts` list every field of both structs,
-    // so the compiler catches a field that only one of them has, but nothing
-    // catches a change in order. Think twice before removing this comment,
-    // because it is the only thing that keeps the two orders the same.
+    // These fields are in the same order as the fields of `DenseGenMap`, so
+    // the two structs can be read side by side. `into_raw_parts` and
+    // `from_raw_parts` list every field of both, so the compiler catches a
+    // field that only one struct has, but not a change in order.
     /// The map keeps its slots in this storage, which the map's config picks.
     /// A slot's index is its position in the storage, and a slot that holds a
     /// value stores the position of that value in `pairs`.

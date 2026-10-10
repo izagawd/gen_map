@@ -17,10 +17,6 @@ use crate::key::parity::Odd;
 /// [`max_generation`](KeyConfig::max_generation). A strategy can also be
 /// implemented only for the key configs it supports.
 ///
-/// A strategy is a type, and [`replaces`](Self::replaces) takes no `self`,
-/// so the strategy a map uses is picked at compile time and the call can be
-/// inlined.
-///
 /// # Examples
 ///
 /// The strategy below replaces a value only when the key's generation is at
@@ -46,11 +42,7 @@ pub trait ReplaceStrategy<K: KeyConfig> {
 }
 
 /// Replaces the stored value when the key's generation is larger than the
-/// generation the value was stored under. It is the strategy
-/// [`DefaultMapConfig`](crate::DefaultMapConfig) picks for a
-/// [`SecondaryMap`](crate::SecondaryMap), a
-/// [`DenseSecondaryMap`](crate::DenseSecondaryMap) and a
-/// [`SparseSecondaryMap`](crate::SparseSecondaryMap).
+/// generation the value was stored under.
 ///
 /// A larger generation only means a newer key while the map that hands out
 /// the keys never starts a slot's generation over. A `GenMap` or a

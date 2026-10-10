@@ -48,8 +48,7 @@ impl<L: KeyPiece> Drop for SetLenOnDrop<'_, L> {
 
 /// Returns the capacity that a vec with room for `capacity` items grows to
 /// when it needs room for `required` items. The new capacity is at least
-/// twice the old one, so a long run of pushes allocates only a few times, but
-/// it is never more than `max`.
+/// twice the old one, but it is never more than `max`.
 ///
 /// # Errors
 ///
@@ -93,9 +92,8 @@ pub(crate) unsafe fn allocate_layout(layout: Layout) -> Result<NonNull<u8>, Rese
 
 /// Grows a buffer with the layout `old` into a buffer with the layout `new`,
 /// and returns the new buffer. The new buffer starts with the bytes of the
-/// old one. The allocator can often grow the buffer where it is, without
-/// copying the bytes. When `old` takes no space, the old buffer holds no
-/// memory, so this allocates the new buffer instead.
+/// old one. When `old` takes no space, the old buffer holds no memory, so
+/// this allocates the new buffer instead.
 ///
 /// # Errors
 ///
