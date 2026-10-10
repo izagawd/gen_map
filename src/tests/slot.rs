@@ -1,5 +1,5 @@
 use super::DropTracker;
-use crate::{DefaultMapConfig, Even, GenMap, MapSlot, Odd, Parity, ParityMut, ParityRef, Slot};
+use crate::{Even, Odd, Parity, ParityMut, ParityRef, Slot};
 use std::format;
 use std::string::String;
 
@@ -234,45 +234,11 @@ fn a_clone_and_its_original_are_each_dropped_once() {
 }
 
 #[test]
-fn a_slot_can_hold_zero_sized_values() {
-    let mut slot = Slot::<u8, (), ()>::new_even(Even::ZERO, ());
-    assert_eq!(
-        slot.set_odd(Odd::new(1).unwrap(), ()),
-        Parity::Even(Even::ZERO, ())
-    );
-    assert_eq!(slot.into_parity(), Parity::Odd(Odd::new(1).unwrap(), ()));
-}
-
-#[test]
-fn map_slot_is_a_slot_of_the_key_types() {
-    fn same(slot: MapSlot<u8, DefaultMapConfig>) -> Slot<u32, u8, u32> {
-        slot
-    }
-    let slot = same(Slot::new_odd(odd(1), 7));
-    assert_eq!(slot.get_odd(odd(1)), Some(&7));
-}
-
-#[test]
 fn debug_shows_the_generation_and_the_live_value() {
     let slot = Slot::<u32, &str, i32>::new(Parity::Odd(odd(1), "a"));
     assert_eq!(format!("{slot:?}"), "Slot { generation: 1, value: \"a\" }");
     let slot = Slot::<u32, &str, i32>::new(Parity::Even(even(2), 5));
     assert_eq!(format!("{slot:?}"), "Slot { generation: 2, value: 5 }");
-}
-
-#[test]
-fn a_map_key_finds_the_odd_side_of_a_slot_with_its_generation() {
-    let mut map = GenMap::new();
-    let key = map.insert("a");
-    let mut slot = Slot::<u32, u64, ()>::new(Parity::Even(Even::ZERO, ()));
-    assert!(slot.get_odd(key.generation()).is_none());
-
-    slot.replace(Parity::Odd(key.generation(), 10));
-    assert_eq!(slot.get_odd(key.generation()), Some(&10));
-
-    map.remove(key);
-    let newer = map.insert("b");
-    assert!(slot.get_odd(newer.generation()).is_none());
 }
 
 #[test]

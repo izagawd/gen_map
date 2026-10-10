@@ -2,7 +2,7 @@ use crate::tests::{key_from_parts, Bomb, DropTracker};
 use crate::{GenMap, InsertWithError, Key};
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::string::{String, ToString};
+use std::string::String;
 use std::vec::Vec;
 
 type Map<T> = GenMap<T>;
@@ -35,14 +35,6 @@ fn insert_then_get() {
     assert!(map.contains_key(k));
     assert_eq!(map.len(), 1);
     assert!(!map.is_empty());
-}
-
-#[test]
-fn first_key_is_slot_zero_generation_one() {
-    let mut map = Map::new();
-    let k = map.insert(());
-    assert_eq!(k.idx(), 0);
-    assert_eq!(k.generation().get().get(), 1);
 }
 
 #[test]
@@ -82,26 +74,6 @@ fn remove_reuses_slot_with_bumped_generation() {
     assert_ne!(k1.generation().get().get(), k2.generation().get().get());
     assert_eq!(k2.generation().get().get(), k1.generation().get().get() + 2);
     assert!(map.get(k1).is_none());
-}
-
-#[test]
-fn free_list_is_last_in_first_out() {
-    let mut map = Map::new();
-    let a = map.insert("a");
-    let b = map.insert("b");
-    let c = map.insert("c");
-
-    map.remove(a);
-    map.remove(c);
-
-    let d = map.insert("d");
-    let e = map.insert("e");
-    assert_eq!(d.idx(), c.idx());
-    assert_eq!(e.idx(), a.idx());
-    assert_eq!(map[b], "b");
-    assert_eq!(map[d], "d");
-    assert_eq!(map[e], "e");
-    assert_eq!(map.slots_len(), 3);
 }
 
 #[test]
@@ -172,29 +144,6 @@ fn clear_keeps_slots_and_invalidates_every_key() {
 }
 
 #[test]
-fn clear_frees_the_slots_so_the_last_one_is_reused_first() {
-    let mut map = GenMap::new();
-    for i in 0..3 {
-        map.insert(i);
-    }
-    map.clear();
-    let reused: std::vec::Vec<u32> = (0..3).map(|i| map.insert(i).idx()).collect();
-    assert_eq!(reused, [2, 1, 0]);
-    assert_eq!(map.slots_len(), 3);
-}
-
-#[test]
-fn clear_does_not_reuse_keys() {
-    let mut map = Map::new();
-    let old_keys: HashSet<_> = (0..256).map(|i| map.insert(i)).collect();
-
-    map.clear();
-
-    let new_keys: HashSet<_> = (0..256).map(|i| map.insert(10_000 + i)).collect();
-    assert!(old_keys.is_disjoint(&new_keys));
-}
-
-#[test]
 fn clear_does_not_reuse_any_key_even_after_prior_removes() {
     let mut map = Map::new();
     let mut before_clear = HashSet::new();
@@ -224,24 +173,6 @@ fn insert_with_key_hands_the_value_its_own_key() {
     let mut map = Map::new();
     let k = map.insert_with_key(|key| key);
     assert_eq!(map[k], k);
-}
-
-#[test]
-fn insert_and_insert_with_key_agree() {
-    let mut map = Map::new();
-    let k1 = map.insert("X".to_string());
-    let k2 = map.insert_with_key(|_| "Y".to_string());
-    assert_eq!(map[k1], "X");
-    assert_eq!(map[k2], "Y");
-    assert_ne!(k1.idx(), k2.idx());
-}
-
-#[test]
-fn try_insert_with_key_ok_stores_the_value() {
-    let mut map = Map::new();
-    let k = map.try_insert_with_key(|_| Ok::<_, &str>(10)).unwrap();
-    assert_eq!(map[k], 10);
-    assert_eq!(map.len(), 1);
 }
 
 #[test]

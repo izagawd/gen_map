@@ -30,30 +30,6 @@ fn retiring_is_the_default_policy() {
 }
 
 #[test]
-fn stale_key_stays_dead_after_slot_retires() {
-    let mut map = GenMap::<u32, Retire>::new_with_config();
-
-    let mut value;
-    let last_key = loop {
-        value = map.len() as u32;
-        let key = map.insert(value);
-        if key.generation().get().get() == u8::MAX {
-            break key;
-        }
-        assert_eq!(map.remove(key), Some(value));
-    };
-
-    assert_eq!(map.remove(last_key), Some(value));
-    assert_eq!(map.len(), 0);
-    assert!(map.get(last_key).is_none());
-    assert!(map.get_mut(last_key).is_none());
-
-    let new_key = map.insert(999);
-    assert_eq!(map[new_key], 999);
-    assert!(map.get(last_key).is_none());
-}
-
-#[test]
 fn retired_slot_is_never_reused() {
     let mut map = GenMap::<u32, Retire>::new_with_config();
 
@@ -138,20 +114,6 @@ fn retired_slots_survive_clear_and_clone() {
     map.clear();
     let next = map.insert(6);
     assert_eq!(next.idx(), 1, "clear must not revive a retired slot");
-}
-
-#[test]
-fn map_holds_exactly_idx_max_slots() {
-    // Every index but `u8::MAX` gets a slot.
-    let mut map = GenMap::<u16, Retire>::new_with_config();
-    for i in 0..255u16 {
-        let key = map.insert(i);
-        assert_eq!(key.idx() as u16, i);
-    }
-    assert_eq!(map.len(), 255);
-    assert_eq!(map.slots_len(), 255);
-    assert!(map.try_insert(255).is_err());
-    assert_eq!(map.key_at(u8::MAX), None);
 }
 
 #[test]

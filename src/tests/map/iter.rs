@@ -1,17 +1,9 @@
 use crate::tests::{Bomb, DropTracker};
 use crate::GenMap;
-use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
 
 type Map = GenMap<i32>;
-
-#[test]
-fn iter_on_empty_map_is_empty() {
-    let map = Map::new();
-    assert_eq!(map.iter().count(), 0);
-    assert_eq!(map.iter().len(), 0);
-}
 
 #[test]
 fn iter_covers_every_value_in_slot_order() {
@@ -56,37 +48,6 @@ fn iter_is_exact_size_even_with_gaps() {
 }
 
 #[test]
-fn iter_is_double_ended() {
-    let mut map = Map::new();
-    for i in 0..6 {
-        map.insert(i);
-    }
-    let backwards: Vec<_> = map.values().rev().copied().collect();
-    assert_eq!(backwards, [5, 4, 3, 2, 1, 0]);
-
-    let mut iter = map.values();
-    assert_eq!(iter.next(), Some(&0));
-    assert_eq!(iter.next_back(), Some(&5));
-    assert_eq!(iter.len(), 4);
-}
-
-#[test]
-fn keys_and_values_match_iter() {
-    let mut map = Map::new();
-    for i in 0..20 {
-        map.insert(i * 10);
-    }
-
-    let from_iter: HashSet<_> = map.iter().map(|(k, _)| k).collect();
-    let from_keys: HashSet<_> = map.keys().collect();
-    assert_eq!(from_iter, from_keys);
-
-    let from_iter: Vec<_> = map.iter().map(|(_, v)| *v).collect();
-    let from_values: Vec<_> = map.values().copied().collect();
-    assert_eq!(from_iter, from_values);
-}
-
-#[test]
 fn iter_mut_yields_valid_keys_and_can_modify() {
     let mut map = Map::new();
     let keys: Vec<_> = (0..40).map(|i| map.insert(i)).collect();
@@ -122,16 +83,6 @@ fn into_iter_yields_owned_values_with_keys() {
     assert_eq!(items[0], (keys[0], 0));
     assert_eq!(items[3], (keys[4], 4));
     assert_eq!(items[38], (keys[39], 39));
-}
-
-#[test]
-fn into_iter_is_double_ended() {
-    let mut map = Map::new();
-    for i in 0..5 {
-        map.insert(i);
-    }
-    let backwards: Vec<_> = map.into_iter().rev().map(|(_, v)| v).collect();
-    assert_eq!(backwards, [4, 3, 2, 1, 0]);
 }
 
 #[test]

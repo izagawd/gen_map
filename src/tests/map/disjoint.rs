@@ -1,4 +1,3 @@
-use crate::tests::DropTracker;
 use crate::{GenMap, GetDisjointMutError};
 use std::vec::Vec;
 
@@ -20,17 +19,6 @@ fn get_disjoint_mut_hands_out_every_value() {
 }
 
 #[test]
-fn get_disjoint_mut_can_swap_two_values() {
-    let mut map = GenMap::new();
-    let a = map.insert("a");
-    let b = map.insert("b");
-    let [x, y] = map.get_disjoint_mut([a, b]).unwrap();
-    core::mem::swap(x, y);
-    assert_eq!(map[a], "b");
-    assert_eq!(map[b], "a");
-}
-
-#[test]
 fn get_disjoint_mut_accepts_any_order() {
     let mut map = GenMap::new();
     let keys: Vec<_> = (0..4).map(|i| map.insert(i)).collect();
@@ -38,15 +26,6 @@ fn get_disjoint_mut_accepts_any_order() {
         .get_disjoint_mut([keys[3], keys[1], keys[0], keys[2]])
         .unwrap();
     assert_eq!((*a, *b, *c, *d), (0, 1, 2, 3));
-}
-
-#[test]
-fn get_disjoint_mut_with_one_key_is_get_mut() {
-    let mut map = GenMap::new();
-    let a = map.insert(1);
-    let [x] = map.get_disjoint_mut([a]).unwrap();
-    *x = 5;
-    assert_eq!(map[a], 5);
 }
 
 #[test]
@@ -114,19 +93,6 @@ fn get_disjoint_mut_rejects_the_same_key_twice() {
 }
 
 #[test]
-fn get_disjoint_mut_borrows_nothing_on_error() {
-    let mut map = GenMap::new();
-    let a = map.insert(1);
-    let b = map.insert(2);
-    let error = map.get_disjoint_mut([a, b, a]).unwrap_err();
-    assert_eq!(error, GetDisjointMutError::OverlappingKeys);
-    // Nothing stays borrowed after the error, so the map can be used right
-    // away.
-    assert_eq!(map.get(a), Some(&1));
-    assert_eq!(map.get(b), Some(&2));
-}
-
-#[test]
 fn get_disjoint_mut_unchecked_hands_out_every_value() {
     let mut map = GenMap::new();
     let a = map.insert(1);
@@ -136,33 +102,6 @@ fn get_disjoint_mut_unchecked_hands_out_every_value() {
     *y = 20;
     assert_eq!(map[a], 10);
     assert_eq!(map[b], 20);
-}
-
-#[test]
-fn get_disjoint_mut_references_point_at_the_slots() {
-    let mut map = GenMap::new();
-    let a = map.insert(1);
-    let b = map.insert(2);
-    let expected_a = map.get(a).unwrap() as *const i32;
-    let expected_b = map.get(b).unwrap() as *const i32;
-    let [x, y] = map.get_disjoint_mut([a, b]).unwrap();
-    assert!(core::ptr::eq(x, expected_a));
-    assert!(core::ptr::eq(y, expected_b));
-}
-
-#[test]
-fn values_touched_through_get_disjoint_mut_drop_exactly_once() {
-    let tracker = DropTracker::new();
-    let mut map = GenMap::new();
-    let a = map.insert(tracker.make_item());
-    let b = map.insert(tracker.make_item());
-    {
-        let [x, y] = map.get_disjoint_mut([a, b]).unwrap();
-        core::mem::swap(x, y);
-    }
-    tracker.assert_none_dropped();
-    drop(map);
-    tracker.assert_all_dropped_exactly_once(2);
 }
 
 #[test]

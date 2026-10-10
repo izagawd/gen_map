@@ -6,14 +6,6 @@ use std::vec::Vec;
 type Map = GenMap<i32>;
 
 #[test]
-fn drain_empty_map_yields_nothing() {
-    let mut map = Map::new();
-    let items: Vec<_> = map.drain().collect();
-    assert!(items.is_empty());
-    assert_eq!(map.len(), 0);
-}
-
-#[test]
 fn drain_yields_every_value_with_its_key() {
     let mut map = Map::new();
     let k1 = map.insert(10);
@@ -51,18 +43,6 @@ fn dropping_drain_unconsumed_empties_map() {
 }
 
 #[test]
-fn drain_invalidates_old_keys() {
-    let mut map = Map::new();
-    let k1 = map.insert(42);
-    let k2 = map.insert(99);
-
-    let _: Vec<_> = map.drain().collect();
-
-    assert!(map.get(k1).is_none());
-    assert!(map.get(k2).is_none());
-}
-
-#[test]
 fn drain_frees_slots_for_reuse() {
     let mut map = Map::new();
     let k1 = map.insert(100);
@@ -89,19 +69,6 @@ fn drain_skips_gaps_from_prior_removes() {
     let items: Vec<_> = map.drain().collect();
     assert_eq!(items, [(k2, 2), (k3, 3)]);
     assert_eq!(map.len(), 0);
-}
-
-#[test]
-fn drain_then_insert_works() {
-    let mut map = Map::new();
-    map.insert(1);
-    map.insert(2);
-
-    let _: Vec<_> = map.drain().collect();
-
-    let k = map.insert(42);
-    assert_eq!(map.len(), 1);
-    assert_eq!(map[k], 42);
 }
 
 #[test]

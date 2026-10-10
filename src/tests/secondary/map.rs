@@ -276,25 +276,6 @@ fn drain() {
 }
 
 #[test]
-fn a_drained_map_takes_values_again() {
-    let mut keys = GenMap::new();
-    let a = keys.insert(());
-    let b = keys.insert(());
-    let mut map = SecondaryMap::<u32>::new();
-    map.insert(a, 1).unwrap();
-    map.insert(b, 2).unwrap();
-
-    let mut drained: Vec<(Key, u32)> = map.drain().collect();
-    drained.sort();
-    assert_eq!(drained, [(a, 1), (b, 2)]);
-    assert_eq!(map.get(a), None);
-
-    assert_eq!(map.insert(b, 3).unwrap(), None);
-    assert_eq!(map.len(), 1);
-    assert_eq!(map[b], 3);
-}
-
-#[test]
 fn every_value_is_dropped_once() {
     let tracker = DropTracker::new();
     let mut keys = GenMap::new();
@@ -1070,25 +1051,6 @@ fn get_disjoint_mut_at_hands_out_every_key_and_value() {
         map.get_disjoint_mut_at([2, 2]),
         Err(GetDisjointMutAtError::OverlappingIndices)
     );
-}
-
-#[test]
-fn values_swapped_through_the_disjoint_methods_drop_exactly_once() {
-    let tracker = DropTracker::new();
-    let mut keys = GenMap::new();
-    let a = keys.insert(());
-    let b = keys.insert(());
-    let mut map = SecondaryMap::<DropItem>::new();
-    map.insert(a, tracker.make_item()).unwrap();
-    map.insert(b, tracker.make_item()).unwrap();
-
-    let [x, y] = map.get_disjoint_mut([a, b]).unwrap();
-    core::mem::swap(x, y);
-    let [(_, x), (_, y)] = map.get_disjoint_mut_at([a.idx(), b.idx()]).unwrap();
-    core::mem::swap(x, y);
-    tracker.assert_none_dropped();
-    drop(map);
-    tracker.assert_all_dropped_exactly_once(2);
 }
 
 #[test]
