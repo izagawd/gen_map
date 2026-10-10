@@ -569,7 +569,9 @@ where
                 };
                 let generation = 1 + 2 * rng.below(5) as u8;
                 let key = key_from_parts::<Split<u8, u8>>(idx, generation);
-                known.push(key);
+                if !known.contains(&key) {
+                    known.push(key);
+                }
                 assert_eq!(
                     Outcome::from(sparse.insert(key, value)),
                     Outcome::from(dense.insert(key, value)),
