@@ -35,9 +35,7 @@ type Pairs<T, C> = <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<
 /// While the slot holds a value, its generation is the generation of the
 /// value's key, which is odd, and it stores the position of that value in the
 /// pair storage. While it holds no value, its generation is zero, which is
-/// even, and it stores nothing in place of a position. [`Slot::as_parity`]
-/// checks the parity of the generation and returns either the position in
-/// [`ParityRef::Odd`] or `()` in [`ParityRef::Even`].
+/// even, and it stores `()` in place of a position.
 pub type DenseSecondaryMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, ()>;
 
 /// Returns the generation and the stored position of `slot` if it holds a

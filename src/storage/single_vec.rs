@@ -50,14 +50,16 @@ pub struct SingleVec<T, L: KeyPiece = usize> {
     _items: PhantomData<T>,
 }
 
-/// The buffer of a [`SingleVec`] or a [`SingleVecIntoIter`], together with its
-/// capacity and how many of its items are initialized. Dropping a `Buffer`
-/// frees the memory without dropping any item in it.
+/// A `Buffer` is the buffer of a [`SingleVec`] or a [`SingleVecIntoIter`],
+/// together with its capacity and length. Dropping a `Buffer` frees the
+/// memory without dropping any item in it.
 struct Buffer<T, L: KeyPiece> {
     pointer: NonNull<T>,
     /// How many items the buffer has room for.
     capacity: L,
-    /// The number of live items.
+    /// `len` is the number of items in a `SingleVec`. In a
+    /// `SingleVecIntoIter`, the items from `start` up to `len` are the ones it
+    /// has not yielded yet.
     len: L,
 }
 

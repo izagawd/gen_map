@@ -49,15 +49,15 @@ use core::hash::Hash;
 /// parts every time they are called on the same value, because the maps check
 /// a key's parts once and then read them again.
 ///
-/// [`Key`](crate::Key) compares and hashes keys with this value's `PartialEq` and `Hash`
-/// implementations, so those must only look at the index and the generation,
-/// and compare/hash them correctly.
+/// [`Key`](crate::Key) compares and hashes keys with the `PartialEq` and
+/// `Hash` implementations of the key config. Those must only look at the
+/// index and the generation, and two values with the same index and
+/// generation must be equal and hash the same.
 ///
-/// None of the implemented methods/functions of this trait should trigger a panic,
-/// as it could cause a panic when a map is in the middle of doing something important,
-/// which may cause undefined behavior, and the [`Clone`](core::clone::Clone)
-/// implementation of the implementor should function identical to copy,
-/// meaning it should also not panic.
+/// None of the methods of this trait may panic. The maps call them partway
+/// through changes that a panic would leave half done, which can lead to
+/// undefined behavior. The [`Clone`](core::clone::Clone) implementation of
+/// the key config must behave like a copy, so it must not panic either.
 ///
 /// Safe code can make a key from any value of the key config it can build,
 /// with [`Key::from_repr`](crate::Key::from_repr), and read the key's parts
@@ -163,8 +163,9 @@ pub trait MapConfig {
 /// the keys the map hands out. The [`MapConfig`] example shows a config that
 /// implements this trait.
 pub trait GenMapConfig: MapConfig {
-    /// What happens when a slot's generation runs out, meaning it reaches
-    /// the largest one its key config can hold.
+    /// This decides what happens when a slot's generation runs out, which is
+    /// when the map removes a value whose key has the largest generation its
+    /// key config can hold.
     ///
     /// When it is `false`, the default, the map retires the slot and does not
     /// use it again until the map is reset, so no old key to the slot can

@@ -24,9 +24,7 @@ use core::slice;
 /// A [`SecondaryMap`] keeps one [`Slot`] of this type for each index. While
 /// the slot holds a value, its generation is the generation of the value's
 /// key, which is odd, and it stores that value. While it holds no value, its
-/// generation is zero, which is even, and it stores nothing in place of a
-/// value. [`Slot::as_parity`] checks the parity of the generation and returns
-/// either the value in [`ParityRef::Odd`] or `()` in [`ParityRef::Even`].
+/// generation is zero, which is even, and it stores `()` in place of a value.
 pub type SecondaryMapSlot<T, C> = Slot<MapGen<C>, T, ()>;
 
 /// Returns the generation and a reference to the value of `slot` if it holds

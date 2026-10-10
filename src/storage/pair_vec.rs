@@ -60,8 +60,8 @@ pub struct PairVec<A, B, L: KeyPiece = usize> {
 }
 
 /// A `Buffer` is the buffer of a [`PairVec`] or a [`PairVecIntoIter`],
-/// together with its capacity and how many of its pairs are initialized.
-/// Dropping a `Buffer` frees the memory without dropping any item in it.
+/// together with its capacity and length. Dropping a `Buffer` frees the
+/// memory without dropping any item in it.
 ///
 /// [`buffer_layout`] gives the layout of the buffer for its capacity, and the
 /// position in it where the slice at the end starts. [`second_at_start`]
@@ -76,9 +76,9 @@ struct Buffer<A, B, L: KeyPiece> {
     /// of both slices take no space, it is the largest value of the length
     /// type.
     capacity: L,
-    /// `len` is the number of pairs. The first `len` items of each slice are
-    /// initialized, and the rest are not. It is never more than the capacity
-    /// or the largest `usize`.
+    /// `len` is the number of pairs in a `PairVec`. In a `PairVecIntoIter`,
+    /// the pairs from `start` up to `len` are the ones it has not yielded yet.
+    /// It is never more than the capacity or the largest `usize`.
     len: L,
 }
 

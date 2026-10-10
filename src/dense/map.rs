@@ -33,9 +33,7 @@ type Pairs<T, C> = <C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T
 /// slot. A detached slot stores its own index, which is how
 /// [`DenseGenMap::reattach`] tells a detached slot apart from a free or retired
 /// one. When the map retires a slot, it stores the largest value of the index
-/// type there, so the slot never looks detached. [`Slot::as_parity`] checks the
-/// parity of the generation and returns either the position in
-/// [`ParityRef::Odd`] or the index in [`ParityRef::Even`].
+/// type there, so the slot never looks detached.
 pub type DenseMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, MapIdx<C>>;
 
 /// The error a `DenseGenMap<T, C>` gives when one of its storages cannot make

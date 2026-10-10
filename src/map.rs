@@ -36,8 +36,6 @@ pub(crate) type Gen<C> = MapGen<C>;
 /// index, which is how [`GenMap::reattach`] tells a detached slot apart from a
 /// free or retired one. When the map retires a slot, it stores the largest
 /// value of the index type there, so the slot never looks detached.
-/// [`Slot::as_parity`] checks the parity of the generation and returns either
-/// the value in [`ParityRef::Odd`] or the index in [`ParityRef::Even`].
 pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 
 /// Returns the key of the value in the slot at `idx`, given the slot's current
@@ -1633,10 +1631,8 @@ impl<T, C: MapConfig> FusedIterator for ValuesMut<'_, T, C> {}
 
 /// Owning iterator over `(key, value)` pairs. It is created by consuming a map
 /// with `into_iter`, which a map only has when its storage implements
-/// `IntoIterator`. It implements `DoubleEndedIterator`, only when the storage's iterator
-/// implements both `DoubleEndedIterator` and `ExactSizeIterator`, because it needs the
-/// length of the storage's iterator to work out the position of a slot taken from the
-/// back.
+/// `IntoIterator`. It implements `DoubleEndedIterator` only when the storage's
+/// iterator implements both `DoubleEndedIterator` and `ExactSizeIterator`.
 pub struct IntoIter<T, C: GenMapConfig>
 where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,

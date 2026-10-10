@@ -49,10 +49,11 @@ use core::fmt;
 ///   in the order they were pushed, and no others. [`len`](Self::len) and
 ///   [`is_empty`](Self::is_empty) must agree with them, as the provided
 ///   methods do.
-/// - Apart from `pop` and `clear`, and dropping the storage itself, no method/function
-///   implemented in this trait may remove, drop, replace or change an item.
-///   An item only mutates through the slice methods. Growing
-///   may move the items in memory, but must keep them in the same order and indices.
+/// - Apart from `pop` and `clear`, and dropping the storage itself, no method
+///   of this trait may remove, drop, replace or change an item. An item may
+///   only be changed through the slices that the slice methods return. Growing
+///   may move the items in memory, but it must keep them in the same order and
+///   at the same positions.
 /// - `pop` must take out the last item of the slice and return it, or return
 ///   `None` and leave the storage as it was if it has no items.
 /// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n`
@@ -63,10 +64,10 @@ use core::fmt;
 ///   at the end.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
-/// - Only [`with_capacity`](WithCapacity::with_capacity), `ensure_room` and
-///   `clear` may panic, and `clear` only when dropping an item panics. The
-///   maps call the other methods partway through changes that a panic would
-///   leave half done.
+/// - Only [`with_capacity`](WithCapacity::with_capacity), `ensure_room`,
+///   `clear`, `clone` and `clone_from` may panic. `clear` may only panic when
+///   dropping an item panics. The maps call the other methods partway through
+///   changes that a panic would leave half done.
 /// - [`empty`](Self::empty) must return a storage with no items, and so must
 ///   `with_capacity` if the storage implements [`WithCapacity`].
 /// - If the storage implements `IntoIterator<Item = Self::Item>`,

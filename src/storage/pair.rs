@@ -43,10 +43,11 @@ use core::iter::FusedIterator;
 ///   the same position in the second slice. The other slice methods, as
 ///   well as [`len`](Self::len) and [`is_empty`](Self::is_empty), must agree
 ///   with them, as the provided methods do.
-/// - Apart from `pop` and `clear`, and dropping the storage itself, no method/function
-///   implemented in this trait may remove, drop, replace or change an item.
-///   An item only mutates through the slice methods.
-///   Growing may move the items in memory, but must keep them in the same order and indices.
+/// - Apart from `pop` and `clear`, and dropping the storage itself, no method
+///   of this trait may remove, drop, replace or change an item. An item may
+///   only be changed through the slices that the slice methods return. Growing
+///   may move the items in memory, but it must keep them in the same order and
+///   at the same positions.
 /// - `pop` must take out the last pair and return it, or return `None` and
 ///   leave the storage as it was if it has no pairs.
 /// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n` pairs,
@@ -56,10 +57,10 @@ use core::iter::FusedIterator;
 ///   items.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
-/// - Only [`with_capacity`](WithCapacity::with_capacity), `ensure_room` and
-///   `clear` may panic, and `clear` only when dropping an item panics. A dense
-///   map calls the other methods partway through changes that a panic would
-///   leave half done.
+/// - Only [`with_capacity`](WithCapacity::with_capacity), `ensure_room`,
+///   `clear`, `clone` and `clone_from` may panic. `clear` may only panic when
+///   dropping an item panics. A dense map calls the other methods partway
+///   through changes that a panic would leave half done.
 /// - [`empty`](Self::empty) must return a storage with no pairs, and so must
 ///   `with_capacity` if the storage implements [`WithCapacity`].
 /// - If the storage implements `IntoIterator<Item = (Self::First,
@@ -269,17 +270,18 @@ impl<A: SliceStorage + Clone, B: SliceStorage + Clone> Clone for SplitPair<A, B>
 // `from_parts` only accepts two storages of the same length. `with_capacity`
 // creates each storage with its own `with_capacity`, which the rules of
 // `SliceStorage` require to return a storage with no items. Neither storage
-// panics outside `with_capacity`, `ensure_room` and `clear`, so
-// `push_unchecked` and `pop` never stop after changing only one storage, and
-// no other method panics either. `ensure_room` returns `Ok` only when both
-// storages do. `push_unchecked` pushes into both storages without a check,
-// and the rules only promise room for a pair when they promise room in both
-// storages. `clear` empties the second storage even when dropping an item of
-// the first one panics. `clone` clones both storages, and the rules of
-// `SliceStorage` require each of those clones to hold a clone of each item in
-// the same order, so the clone holds a clone of each pair in the same order.
-// `clone_from` clones each storage with its own `clone_from`, which the same
-// rules cover, and it empties both storages if either one panics.
+// panics outside `with_capacity`, `ensure_room`, `clear`, `clone` and
+// `clone_from`. So a `SplitPair` only panics in those same five methods, and
+// its `push_unchecked` and `pop` never stop after changing only one storage.
+// `ensure_room` returns `Ok` only when both storages do. `push_unchecked`
+// pushes into both storages without a check, and the rules only promise room
+// for a pair when they promise room in both storages. `clear` empties the
+// second storage even when dropping an item of the first one panics. `clone`
+// clones both storages, and the rules of `SliceStorage` require each of those
+// clones to hold a clone of each item in the same order, so the clone holds a
+// clone of each pair in the same order. `clone_from` clones each storage with
+// its own `clone_from`, which the same rules cover, and it empties both
+// storages if either one panics.
 unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
     type First = A::Item;
     type Second = B::Item;
