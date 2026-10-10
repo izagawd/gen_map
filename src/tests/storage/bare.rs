@@ -147,8 +147,6 @@ fn a_map_works_without_an_owning_iterator() {
     // The borrowing iterators do not need anything from the storage.
     let backwards: Vec<_> = map.iter().rev().map(|(_, value)| *value).collect();
     assert_eq!(backwards, [2, 3]);
-    let copy = map.clone();
-    assert_eq!((copy[b], copy[c]), (2, 3));
     let drained: Vec<_> = map.drain().collect();
     assert_eq!(drained, [(c, 3), (b, 2)]);
 }
@@ -165,16 +163,12 @@ fn a_dense_map_works_without_an_owning_iterator() {
     // The borrowing iterators do not need anything from the storages.
     let backwards: Vec<_> = map.iter().rev().map(|(_, value)| *value).collect();
     assert_eq!(backwards, [3, 2]);
-    let copy = map.clone();
-    assert_eq!((copy[b], copy[c]), (2, 3));
     let drained: Vec<_> = map.drain().collect();
     assert_eq!(drained, [(c, 3), (b, 2)]);
 
     let mut secondary = DenseSecondaryMap::<u32, DenseNoIter>::new_with_config();
     secondary.insert(c, 30).unwrap();
     secondary.insert(b, 20).unwrap();
-    let copy = secondary.clone();
-    assert_eq!((copy[b], copy[c]), (20, 30));
     let drained: Vec<_> = secondary.drain().collect();
     assert_eq!(drained, [(b, 20), (c, 30)]);
 }

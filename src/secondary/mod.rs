@@ -15,7 +15,7 @@ use crate::key::Key;
 use crate::map::{decrement_len, increment_len, MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
-use crate::storage::{clone_storage, ReserveStorage, SliceStorage};
+use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -900,16 +900,15 @@ impl<T, C: SecondaryMapConfig> Default for SecondaryMap<T, C> {
     }
 }
 
-impl<T: Clone, C: SecondaryMapConfig> Clone for SecondaryMap<T, C> {
+impl<T, C: SecondaryMapConfig> Clone for SecondaryMap<T, C>
+where
+    Slots<T, C>: Clone,
+{
     /// The clone has the same slots, so every key of the original works on
     /// it.
     fn clone(&self) -> Self {
-        // `clone_storage` pushes a clone of each slot rather than calling the
-        // storage's own `Clone`, which the `SliceStorage` contract does not
-        // cover. The map builds keys from its slots without checks, which
-        // relies on every slot being where `insert` put it.
         Self {
-            slots: clone_storage(&self.slots),
+            slots: self.slots.clone(),
             len: self.len,
         }
     }

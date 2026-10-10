@@ -14,7 +14,7 @@ use crate::map::{
 };
 use crate::slot::{ParityRef, Slot};
 use crate::storage::pair::{PairStorage, ReservePairStorage};
-use crate::storage::{clone_storage, ReserveStorage, SliceStorage};
+use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
@@ -1280,38 +1280,21 @@ impl<T: fmt::Debug, C: DenseGenMapConfig> fmt::Debug for DenseGenMap<T, C> {
     }
 }
 
-impl<T: Clone, C: DenseGenMapConfig> Clone for DenseGenMap<T, C> {
+impl<T, C: DenseGenMapConfig> Clone for DenseGenMap<T, C>
+where
+    Slots<C>: Clone,
+    Pairs<T, C>: Clone,
+{
     /// The clone has the same slots, values and keys, so every key of the
     /// original works on it.
     fn clone(&self) -> Self {
-        let pairs = clone_pairs(&self.pairs);
+        let pairs = self.pairs.clone();
         Self {
-            slots: clone_storage(&self.slots),
+            slots: self.slots.clone(),
             next_free: self.next_free,
             pairs,
         }
     }
-}
-
-/// Returns a new pair storage of the same type as `pairs` that holds a clone
-/// of each of its pairs, in the same order.
-#[inline]
-pub(crate) fn clone_pairs<P>(pairs: &P) -> P
-where
-    P: PairStorage,
-    P::First: Clone,
-    P::Second: Clone,
-{
-    let mut clone = P::with_capacity(pairs.len());
-    let (firsts, seconds) = pairs.slices();
-    for (first, second) in firsts.iter().zip(seconds) {
-        // SAFETY: `pairs` has the same type as `clone` and holds the pairs
-        // being pushed, and only these pushes have run on `clone` since
-        // `with_capacity` made it, so `PairStorage` promises room for each
-        // push.
-        unsafe { clone.push_unchecked(first.clone(), second.clone()) };
-    }
-    clone
 }
 
 impl<T, C: DenseGenMapConfig> IntoIterator for DenseGenMap<T, C>

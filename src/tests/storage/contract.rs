@@ -76,6 +76,39 @@ fn check_pop<St: SliceStorage<Item = u32>>() {
     assert!(storage.is_empty());
 }
 
+/// Checks that `clone` and `clone_from` each give a storage that holds a clone
+/// of every item in the same order, and that every item and clone is dropped
+/// exactly once. `count` items must fit the storage.
+fn check_clone<St>(count: u32)
+where
+    St: SliceStorage<Item = DropItem> + Clone,
+{
+    let tracker = DropTracker::new();
+    let mut source = St::empty();
+    for _ in 0..count {
+        push(&mut source, tracker.make_item());
+    }
+    let mut target = St::empty();
+    for _ in 0..count / 2 {
+        push(&mut target, tracker.make_item());
+    }
+
+    // Each `DropItem` clone takes the next free id, so clones made in item
+    // order have ids that count up by one.
+    let clone = source.clone();
+    let first = count + count / 2;
+    assert_eq!(ids(&clone), (first..first + count).collect::<Vec<_>>());
+    target.clone_from(&source);
+    let first = first + count;
+    assert_eq!(ids(&target), (first..first + count).collect::<Vec<_>>());
+    assert_eq!(ids(&source), (0..count).collect::<Vec<_>>());
+
+    drop(source);
+    drop(clone);
+    drop(target);
+    tracker.assert_all_dropped_exactly_once(tracker.total_made());
+}
+
 /// Checks that a storage marked as one that can grow makes room for more
 /// items than it was created with, and that it holds every item pushed after
 /// that.
@@ -94,6 +127,7 @@ fn check_growth<St: ReserveStorage<Item = u32>>() {
 #[test]
 fn a_vec_keeps_the_storage_contract() {
     check_storage::<Vec<DropItem>>(6);
+    check_clone::<Vec<DropItem>>(6);
     check_growth::<Vec<u32>>();
     check_pop::<Vec<u32>>();
 }
@@ -102,6 +136,8 @@ fn a_vec_keeps_the_storage_contract() {
 fn a_single_vec_keeps_the_storage_contract() {
     check_storage::<SingleVec<DropItem>>(6);
     check_storage::<SingleVec<DropItem, u8>>(6);
+    check_clone::<SingleVec<DropItem>>(6);
+    check_clone::<SingleVec<DropItem, u8>>(6);
     check_growth::<SingleVec<u32>>();
     check_growth::<SingleVec<u32, u16>>();
     check_pop::<SingleVec<u32, u8>>();
@@ -112,6 +148,7 @@ fn a_single_vec_keeps_the_storage_contract() {
 fn an_array_vec_keeps_the_storage_contract() {
     check_storage::<arrayvec::ArrayVec<DropItem, 8>>(6);
     check_storage::<arrayvec::ArrayVec<DropItem, 6>>(6);
+    check_clone::<arrayvec::ArrayVec<DropItem, 8>>(6);
     check_pop::<arrayvec::ArrayVec<u32, 3>>();
 }
 
@@ -149,6 +186,8 @@ fn a_small_vec_keeps_the_storage_contract() {
     // Three items fit inline, and six move the storage to the heap.
     check_storage::<smallvec::SmallVec<DropItem, 4>>(3);
     check_storage::<smallvec::SmallVec<DropItem, 4>>(6);
+    check_clone::<smallvec::SmallVec<DropItem, 4>>(3);
+    check_clone::<smallvec::SmallVec<DropItem, 4>>(6);
     check_growth::<smallvec::SmallVec<u32, 4>>();
     check_pop::<smallvec::SmallVec<u32, 2>>();
 }

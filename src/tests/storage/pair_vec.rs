@@ -2,7 +2,7 @@
 //! of the default config, so the dense map tests cover it as well.
 
 use crate::tests::model::Rng;
-use crate::tests::{Bomb, DropItem, DropTracker};
+use crate::tests::{Bomb, CloneBomb, DropItem, DropTracker};
 use crate::{PairStorage, PairVec, PairVecIntoIter, PairVecRawParts, ReserveError};
 use core::alloc::Layout;
 use core::fmt::Debug;
@@ -342,6 +342,32 @@ fn clone_and_debug_show_the_same_pairs() {
     assert_eq!(copy.slices(), pairs.slices());
     assert_eq!(format!("{pairs:?}"), r#"[(1, "a"), (2, "b")]"#);
     assert!(PairVec::<u8, u8>::default().is_empty());
+}
+
+#[test]
+fn a_panic_in_clone_drops_the_clones_written_before_it() {
+    // In one run, cloning the first item of the third pair panics, and in the
+    // other, cloning its second item panics.
+    for second_panics in [false, true] {
+        let tracker = DropTracker::new();
+        let pairs: PairVec<_, _, u8> = (0..4)
+            .map(|i| {
+                let first = CloneBomb::new(&tracker, i == 2 && !second_panics);
+                let second = CloneBomb::new(&tracker, i == 2 && second_panics);
+                (first, second)
+            })
+            .collect();
+        assert!(catch_unwind(AssertUnwindSafe(|| pairs.clone())).is_err());
+        // `clone` clones every first item before any second item. So it had
+        // cloned two first items when cloning the third first item panicked,
+        // or all four first items and two second items when cloning the third
+        // second item panicked. Unwinding dropped every one of those clones.
+        let clones = if second_panics { 6 } else { 2 };
+        assert_eq!(tracker.total_made(), 8 + clones);
+        assert_eq!(tracker.total_dropped(), clones as usize);
+        drop(pairs);
+        tracker.assert_all_dropped_exactly_once(8 + clones);
+    }
 }
 
 #[test]

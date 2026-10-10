@@ -201,3 +201,30 @@ impl Drop for Bomb {
         }
     }
 }
+
+/// A value whose `clone` panics when it is armed. It holds a [`DropItem`], and
+/// its clone holds a clone of that item, so a [`DropTracker`] sees whether
+/// the clones made before a panic are dropped exactly once.
+pub(crate) struct CloneBomb {
+    armed: bool,
+    item: DropItem,
+}
+
+impl CloneBomb {
+    pub(crate) fn new(tracker: &DropTracker, armed: bool) -> Self {
+        Self {
+            armed,
+            item: tracker.make_item(),
+        }
+    }
+}
+
+impl Clone for CloneBomb {
+    fn clone(&self) -> Self {
+        assert!(!self.armed, "boom");
+        Self {
+            armed: false,
+            item: self.item.clone(),
+        }
+    }
+}

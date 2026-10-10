@@ -213,6 +213,10 @@ fn finish<I: Iterator>(mut drain: I, taken: usize) {
 fn run<C>(seed: u64, steps: usize)
 where
     C: GenMapConfig + SecondaryMapConfig + DenseGenMapConfig + DenseSecondaryMapConfig,
+    GenMap<Fragile, C>: Clone,
+    DenseGenMap<Fragile, C>: Clone,
+    SecondaryMap<Fragile, C>: Clone,
+    DenseSecondaryMap<Fragile, C>: Clone,
 {
     let tracker = DropTracker::new();
     let chaos = Rc::new(Chaos {

@@ -23,7 +23,8 @@ use core::iter::FusedIterator;
 /// implements `IntoIterator` gives a dense map an owning `into_iter`. The
 /// iterator that `into_iter` returns implements `DoubleEndedIterator` when the
 /// storage's iterator implements both `DoubleEndedIterator` and
-/// `ExactSizeIterator`.
+/// `ExactSizeIterator`. A dense map implements `Clone` when its slot storage
+/// and its pair storage do.
 ///
 /// # Safety
 ///
@@ -50,13 +51,8 @@ use core::iter::FusedIterator;
 /// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n` pairs,
 ///   the storage must have room for the next `n` calls of `push_unchecked`,
 ///   as long as no other `&mut self` method of this trait runs in between.
-/// - When another storage of the same type holds `n` pairs, a storage that
-///   [`with_capacity`](Self::with_capacity) returns for `n` pairs must have
-///   room for its first `n` calls of `push_unchecked`, as long as no other
-///   `&mut self` method of this trait runs in between. The dense maps rely on
-///   this when they clone a storage.
-/// - When one of the two rules above promises room, `push_unchecked` must
-///   append both items.
+/// - When the rule above promises room, `push_unchecked` must append both
+///   items.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
 /// - Only [`with_capacity`](Self::with_capacity), `ensure_room` and `clear`
@@ -71,6 +67,11 @@ use core::iter::FusedIterator;
 /// - If that iterator also implements `DoubleEndedIterator` and
 ///   `ExactSizeIterator`, `next_back` must yield the pairs starting from the
 ///   last one, and `len` must be the number of pairs not yet yielded.
+/// - If the storage implements `Clone`, the storage that `clone` returns must
+///   hold a clone of each pair, in the same order, as if each clone had been
+///   pushed into an empty storage. `clone_from` must leave the storage holding
+///   a clone of each pair of the source in the same way. The dense maps clone
+///   their pair storages with these methods.
 pub unsafe trait PairStorage {
     /// The type of the items in the first slice. A dense map keeps its keys
     /// in this slice.
@@ -188,7 +189,7 @@ pub trait ReservePairStorage: PairStorage {}
 /// Each of the two storages keeps a length and a capacity of its own. The
 /// capacity of a `SplitPair` is the smaller of the two capacities. A
 /// `SplitPair` implements [`ReservePairStorage`] when both storages implement
-/// [`ReserveStorage`].
+/// [`ReserveStorage`], and `Clone` when both storages implement `Clone`.
 ///
 /// # Examples
 ///
@@ -235,18 +236,30 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
     }
 }
 
+// This impl leaves `clone_from` to its default, which assigns a whole clone,
+// so the two storages keep the same length even when a clone panics.
+impl<A: Clone, B: Clone> Clone for SplitPair<A, B> {
+    fn clone(&self) -> Self {
+        Self {
+            first: self.first.clone(),
+            second: self.second.clone(),
+        }
+    }
+}
+
 // SAFETY: each slice is kept in a `SliceStorage`, which behaves like a
 // `Vec`, and every method keeps the two storages at the same length.
 // `from_parts` only accepts two storages of the same length. Neither storage
 // panics outside `with_capacity`, `ensure_room` and `clear`, so
 // `push_unchecked` and `pop` never stop after changing only one storage, and
 // no other method panics either. `ensure_room` returns `Ok` only when both
-// storages do. When another `SplitPair` of the same type holds `n` pairs, each
-// of its storages holds `n` items, so both storages that `with_capacity(n)`
-// makes have room for `n` items. `push_unchecked` pushes into both storages
-// without a check, and the rules only promise room for a pair when they
-// promise room in both storages. `clear` empties the second storage even when
-// dropping an item of the first one panics.
+// storages do. `push_unchecked` pushes into both storages without a check,
+// and the rules only promise room for a pair when they promise room in both
+// storages. `clear` empties the second storage even when dropping an item of
+// the first one panics. `clone` clones both storages, and the rules of
+// `SliceStorage` require each of those clones to hold a clone of each item in
+// the same order, so the clone holds a clone of each pair in the same order.
+// `clone_from` is the default one, which assigns such a clone.
 unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
     type First = A::Item;
     type Second = B::Item;

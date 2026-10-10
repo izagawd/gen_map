@@ -1,8 +1,11 @@
 //! Tests for `SplitPair`, which keeps each slice of a pair storage in a
 //! slice storage of its own.
 
-use crate::tests::{Bomb, DropTracker};
-use crate::{PairStorage, SplitPair, SplitPairError};
+use crate::tests::{Bomb, DropItem, DropTracker};
+use crate::{
+    DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenSlotItem,
+    MapConfig, NewerWins, PairStorage, Split, SplitPair, SplitPairError,
+};
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec;
@@ -81,6 +84,58 @@ fn the_error_says_which_storage_is_full() {
             "the storage of the second slice is full: b",
         ]
     );
+}
+
+#[test]
+fn clone_holds_a_clone_of_every_pair_in_order() {
+    let tracker = DropTracker::new();
+    let mut pairs = SplitPair::<Vec<DropItem>, Vec<u32>>::empty();
+    for i in 0..4 {
+        push_pair(&mut pairs, tracker.make_item(), i);
+    }
+    let copy = pairs.clone();
+    let ids: Vec<_> = copy.first_slice().iter().map(|item| item.id).collect();
+    assert_eq!(ids, [4, 5, 6, 7]);
+    assert_eq!(copy.second_slice(), [0, 1, 2, 3]);
+    drop(pairs);
+    drop(copy);
+    tracker.assert_all_dropped_exactly_once(8);
+}
+
+/// Dense maps with this config keep their keys in one `Vec` and their values
+/// in another.
+struct TwoVecs;
+
+impl MapConfig for TwoVecs {
+    type KeyConfig = Split<u32, u32>;
+}
+
+impl DenseGenMapConfig for TwoVecs {
+    type SlotStorage<S: GenSlotItem> = Vec<S>;
+    type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
+}
+
+impl DenseSecondaryMapConfig for TwoVecs {
+    type ReplaceStrategy = NewerWins;
+    type SlotStorage<S: GenSlotItem> = Vec<S>;
+    type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
+}
+
+#[test]
+fn dense_maps_clone_their_keys_and_values_out_of_two_vecs() {
+    let mut map = DenseGenMap::<u32, TwoVecs>::new_with_config();
+    let keys: Vec<_> = (0..4).map(|i| map.insert(i)).collect();
+    map.remove(keys[1]);
+    let mut copy = map.clone();
+    assert!(copy.iter().eq(map.iter()));
+    // The clone has the same slots, so both maps hand out the same key next.
+    assert_eq!(copy.insert(9), map.insert(9));
+
+    let mut secondary = DenseSecondaryMap::<u32, TwoVecs>::new_with_config();
+    secondary.insert(keys[2], 20).unwrap();
+    secondary.insert(keys[0], 0).unwrap();
+    let copy = secondary.clone();
+    assert!(copy.iter().eq(secondary.iter()));
 }
 
 #[cfg(feature = "arrayvec")]

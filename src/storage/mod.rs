@@ -24,7 +24,8 @@ use core::fmt;
 /// implements the [`ReserveStorage`] marker. A storage that implements
 /// `IntoIterator` gives a map an owning `into_iter`. The iterator that
 /// `into_iter` returns implements `DoubleEndedIterator` when the storage's
-/// iterator implements both `DoubleEndedIterator` and `ExactSizeIterator`.
+/// iterator implements both `DoubleEndedIterator` and `ExactSizeIterator`. A
+/// map implements `Clone` when its storages do.
 ///
 /// # Safety
 ///
@@ -56,13 +57,8 @@ use core::fmt;
 ///   items, the storage must have room for the next `n` calls of
 ///   `push_unchecked`, as long as no other `&mut self` method of this trait
 ///   runs in between.
-/// - When another storage of the same type holds `n` items, a storage that
-///   [`with_capacity`](Self::with_capacity) returns for `n` items must have
-///   room for its first `n` calls of `push_unchecked`, as long as no other
-///   `&mut self` method of this trait runs in between. The maps rely on this
-///   when they clone a storage.
-/// - When one of the two rules above promises room, `push_unchecked` must
-///   append the item at the end.
+/// - When the rule above promises room, `push_unchecked` must append the item
+///   at the end.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
 /// - Only [`with_capacity`](Self::with_capacity), `ensure_room` and `clear`
@@ -76,6 +72,11 @@ use core::fmt;
 /// - If that iterator also implements `DoubleEndedIterator` and
 ///   `ExactSizeIterator`, `next_back` must yield the items starting from the
 ///   last one, and `len` must be the number of items not yet yielded.
+/// - If the storage implements `Clone`, the storage that `clone` returns must
+///   hold a clone of each item, in the same order, as if each clone had been
+///   pushed into an empty storage. `clone_from` must leave the storage holding
+///   a clone of each item of the source in the same way. The maps clone their
+///   storages with these methods.
 pub unsafe trait SliceStorage {
     /// The items the storage holds. A `GenMap`'s storage holds its
     /// [`MapSlot`](crate::MapSlot)s, and a `SecondaryMap`'s holds its
@@ -152,35 +153,16 @@ pub unsafe trait SliceStorage {
 /// its storages implement this trait.
 pub trait ReserveStorage: SliceStorage {}
 
-/// Returns a storage of the same type as `storage` that holds a clone of each
-/// of its items, in the same order.
-#[inline]
-pub(crate) fn clone_storage<St>(storage: &St) -> St
-where
-    St: SliceStorage,
-    St::Item: Clone,
-{
-    let mut clone = St::with_capacity(storage.len());
-    for item in storage.as_slice() {
-        // SAFETY: `storage` has the same type as `clone` and holds the items
-        // being pushed, and only these pushes have run on `clone` since
-        // `with_capacity` made it, so `SliceStorage` promises room for each
-        // push.
-        unsafe { clone.push_unchecked(item.clone()) };
-    }
-    clone
-}
-
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 // SAFETY: a `Vec` behaves exactly as the trait describes. `ensure_room` goes
 // through `try_reserve`, which reports capacity overflow and allocation failure
 // as errors instead of panicking or aborting. Once `try_reserve` has made room
 // for `additional` items, the next `additional` pushes fit without growing.
-// The `Vec` that `with_capacity` returns has room for at least `capacity`
-// items, so its first `capacity` pushes fit too. `push_unchecked` writes the
-// item at the end without a check, and the rules only promise room while the
-// capacity is above the length.
+// `push_unchecked` writes the item at the end without a check, and the rules
+// only promise room while the capacity is above the length. Cloning a `Vec`
+// with `clone` or `clone_from` gives one that holds a clone of each item, in
+// the same order.
 unsafe impl<S> SliceStorage for Vec<S> {
     type Item = S;
     type Error = TryReserveError;
@@ -285,12 +267,11 @@ impl<S> ReserveStorage for Vec<S> {}
 #[cfg_attr(docsrs, doc(cfg(feature = "arrayvec")))]
 // SAFETY: an `ArrayVec` keeps its items in order and in place, like a
 // `Vec`. `ensure_room` returns `Ok` only when it has room for all
-// `additional` items. Another `ArrayVec` of the same type holds at most `CAP`
-// items, and the one that `with_capacity` returns has room for `CAP`, so it
-// has room for as many items as the other one holds. `push_unchecked` writes
-// the item without a check, and the rules only promise room while the
-// `ArrayVec` is not full. Its `clear` sets the length to zero before it drops
-// the items, so the storage is empty even when a drop panics.
+// `additional` items. `push_unchecked` writes the item without a check, and
+// the rules only promise room while the `ArrayVec` is not full. Its `clear`
+// sets the length to zero before it drops the items, so the storage is empty
+// even when a drop panics. Cloning an `ArrayVec` with `clone` or `clone_from`
+// gives one that holds a clone of each item, in the same order.
 unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
     type Item = S;
     type Error = arrayvec::CapacityError;
@@ -382,10 +363,10 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
 // on the heap. `ensure_room` goes through `try_reserve`, which returns an
 // error where growing would panic or abort. Once `try_reserve` has made room
 // for `additional` items, the next `additional` pushes fit without growing.
-// The `SmallVec` that `with_capacity` returns has room for at least
-// `capacity` items, so its first `capacity` pushes fit too. `push_unchecked`
-// calls `SmallVec::push`, which only grows a full `SmallVec`, and the rules
-// only promise room while it is not full, so that call never grows or panics.
+// `push_unchecked` calls `SmallVec::push`, which only grows a full `SmallVec`,
+// and the rules only promise room while it is not full, so that call never
+// grows or panics. Cloning a `SmallVec` with `clone` or `clone_from` gives one
+// that holds a clone of each item, in the same order.
 unsafe impl<S, const N: usize> SliceStorage for smallvec::SmallVec<S, N> {
     type Item = S;
     type Error = smallvec::SmallVecError;

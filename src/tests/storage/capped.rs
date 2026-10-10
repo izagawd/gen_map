@@ -12,6 +12,7 @@ use std::vec::Vec;
 const CAP: usize = 4;
 
 /// Holds at most `CAP` items and cannot grow on request.
+#[derive(Clone)]
 struct Capped<S>(Vec<S>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +28,7 @@ impl<S> IntoIterator for Capped<S> {
 }
 
 // SAFETY: this is a `Vec` whose `ensure_room` refuses room past `CAP` items,
-// and it behaves as the trait describes.
+// and it behaves as the trait describes. Its derived `Clone` clones the `Vec`.
 unsafe impl<S> SliceStorage for Capped<S> {
     type Item = S;
     type Error = CapReached;
@@ -185,8 +186,7 @@ fn a_secondary_map_hands_back_the_storages_own_error_and_adds_no_slots() {
 }
 
 #[test]
-fn a_secondary_map_clones_without_a_cloneable_storage() {
-    // `Capped` does not implement `Clone`, and the map does not need it to.
+fn a_secondary_map_clones_on_a_fixed_storage() {
     let mut map = SecondaryMap::<i32, Four>::new_with_config();
     let key = key_from_parts::<Split<u8, u8>>(2, 1);
     map.insert(key, 7).unwrap();

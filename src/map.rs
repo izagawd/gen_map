@@ -9,7 +9,7 @@ use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
 use crate::key::Key;
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
-use crate::storage::{clone_storage, ReserveStorage, SliceStorage};
+use crate::storage::{ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -1390,41 +1390,28 @@ impl<T, C: GenMapConfig> Drop for ClearOnUnwind<'_, T, C> {
     }
 }
 
-impl<T: Clone, C: GenMapConfig> Clone for GenMap<T, C> {
+impl<T, C: GenMapConfig> Clone for GenMap<T, C>
+where
+    Slots<T, C>: Clone,
+{
     /// The clone has the same slots, free list and generations, so every key
     /// of the original works on it.
     fn clone(&self) -> Self {
         Self {
-            slots: clone_storage(&self.slots),
+            slots: self.slots.clone(),
             next_free: self.next_free,
             len: self.len,
         }
     }
 
-    /// Reuses this map's allocation if it is large enough, and otherwise
-    /// makes one of the right size before cloning any slot. If a value's
-    /// `clone` panics, this map is left empty.
+    /// Clones the slots of `source` with the `clone_from` of this map's
+    /// storage, so a `SingleVec` or a `Vec` reuses its allocation when it is
+    /// large enough. If a value's `clone` panics, this map is left empty.
     fn clone_from(&mut self, source: &Self) {
         self.next_free = no_slot::<C>();
         self.len = Idx::<C>::ZERO;
         let guard: ClearOnUnwind<'_, T, C> = ClearOnUnwind(&mut self.slots);
-        SliceStorage::clear(guard.0);
-        let needed = source.slots.len();
-        // An allocation that is too small would grow several times while the
-        // slots are pushed, so it is swapped for one of the right size. This
-        // method also swaps the storage when its `ensure_room` returns an
-        // error, so that every push below has room.
-        if guard.0.capacity() < needed || guard.0.ensure_room(needed).is_err() {
-            *guard.0 = Slots::<T, C>::with_capacity(needed);
-        }
-        for slot in source.slots.as_slice() {
-            // SAFETY: either `ensure_room` returned `Ok` for every slot of
-            // `source`, or `with_capacity` made the storage for that many
-            // slots, which `source` holds in a storage of the same type. Only
-            // these pushes have run on the storage since, so `SliceStorage`
-            // promises room for each push.
-            unsafe { guard.0.push_unchecked(slot.clone()) };
-        }
+        guard.0.clone_from(&source.slots);
         core::mem::forget(guard);
         self.next_free = source.next_free;
         self.len = source.len;

@@ -104,6 +104,21 @@ fn clone_from_matches_clone() {
 }
 
 #[test]
+fn clone_from_reuses_the_allocation_of_a_large_enough_target() {
+    let mut source = Map::new();
+    for i in 0..3 {
+        source.insert(i);
+    }
+    let mut target = Map::with_capacity(16);
+    target.insert(100);
+    let capacity = target.capacity();
+
+    target.clone_from(&source);
+    assert_eq!(target.capacity(), capacity);
+    assert!(target.iter().eq(source.iter()));
+}
+
+#[test]
 fn clone_from_overwrites_a_larger_target() {
     let mut source = Map::new();
     source.insert(1);
