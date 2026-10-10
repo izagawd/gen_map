@@ -1,4 +1,4 @@
-use crate::storage::{ReserveStorage, SliceStorage};
+use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::FusedIterator;
 
@@ -181,6 +181,16 @@ pub unsafe trait PairStorage {
 /// slot storage implements [`ReserveStorage`].
 pub trait ReservePairStorage: PairStorage {}
 
+/// Empties a pair storage when it is dropped, the way `ClearOnUnwind` empties a
+/// storage.
+pub(crate) struct ClearPairsOnUnwind<'a, P: PairStorage>(pub(crate) &'a mut P);
+
+impl<P: PairStorage> Drop for ClearPairsOnUnwind<'_, P> {
+    fn drop(&mut self) {
+        self.0.clear();
+    }
+}
+
 /// A [`PairStorage`] that keeps each slice in a [`SliceStorage`] of its own.
 /// The first storage holds the first slice, and the second storage holds the
 /// second slice. It lets a dense map keep its keys and values in any slice
@@ -236,14 +246,24 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
     }
 }
 
-// This impl leaves `clone_from` to its default, which assigns a whole clone,
-// so the two storages keep the same length even when a clone panics.
-impl<A: Clone, B: Clone> Clone for SplitPair<A, B> {
+impl<A: SliceStorage + Clone, B: SliceStorage + Clone> Clone for SplitPair<A, B> {
     fn clone(&self) -> Self {
         Self {
             first: self.first.clone(),
             second: self.second.clone(),
         }
+    }
+
+    /// Clones each storage of `source` into the matching storage of `self`
+    /// with its own `clone_from`. If either one panics, `clone_from` empties
+    /// both storages, so they never end up at different lengths.
+    fn clone_from(&mut self, source: &Self) {
+        let first = ClearOnUnwind(&mut self.first);
+        let second = ClearOnUnwind(&mut self.second);
+        first.0.clone_from(&source.first);
+        second.0.clone_from(&source.second);
+        core::mem::forget(first);
+        core::mem::forget(second);
     }
 }
 
@@ -259,7 +279,8 @@ impl<A: Clone, B: Clone> Clone for SplitPair<A, B> {
 // the first one panics. `clone` clones both storages, and the rules of
 // `SliceStorage` require each of those clones to hold a clone of each item in
 // the same order, so the clone holds a clone of each pair in the same order.
-// `clone_from` is the default one, which assigns such a clone.
+// `clone_from` clones each storage with its own `clone_from`, which the same
+// rules cover, and it empties both storages if either one panics.
 unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
     type First = A::Item;
     type Second = B::Item;

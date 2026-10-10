@@ -9,7 +9,7 @@ use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
 use crate::key::Key;
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
-use crate::storage::{ReserveStorage, SliceStorage};
+use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -1379,17 +1379,6 @@ impl<T: fmt::Debug, C: GenMapConfig> fmt::Debug for GenMap<T, C> {
     }
 }
 
-/// Empties the slot storage on drop. It is only dropped while unwinding out
-/// of `clone_from`, where a half cloned storage would disagree with `len` and
-/// the free list.
-struct ClearOnUnwind<'a, T, C: GenMapConfig>(&'a mut Slots<T, C>);
-
-impl<T, C: GenMapConfig> Drop for ClearOnUnwind<'_, T, C> {
-    fn drop(&mut self) {
-        SliceStorage::clear(self.0);
-    }
-}
-
 impl<T, C: GenMapConfig> Clone for GenMap<T, C>
 where
     Slots<T, C>: Clone,
@@ -1405,14 +1394,13 @@ where
     }
 
     /// Clones the slots of `source` with the `clone_from` of this map's
-    /// storage, so a `SingleVec` or a `Vec` reuses its allocation when it is
-    /// large enough. If a value's `clone` panics, this map is left empty.
+    /// storage.
     fn clone_from(&mut self, source: &Self) {
         self.next_free = no_slot::<C>();
         self.len = Idx::<C>::ZERO;
-        let guard: ClearOnUnwind<'_, T, C> = ClearOnUnwind(&mut self.slots);
-        guard.0.clone_from(&source.slots);
-        core::mem::forget(guard);
+        let slots = ClearOnUnwind(&mut self.slots);
+        slots.0.clone_from(&source.slots);
+        core::mem::forget(slots);
         self.next_free = source.next_free;
         self.len = source.len;
     }

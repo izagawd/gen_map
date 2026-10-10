@@ -371,6 +371,56 @@ fn a_panic_in_clone_drops_the_clones_written_before_it() {
 }
 
 #[test]
+fn clone_from_keeps_the_whole_pairs_written_before_a_panic() {
+    let tracker = DropTracker::new();
+    let source: PairVec<_, _, u8> = (0..4)
+        .map(|i| {
+            (
+                CloneBomb::new(&tracker, false),
+                CloneBomb::new(&tracker, i == 2),
+            )
+        })
+        .collect();
+    let mut target: PairVec<_, _, u8> = (0..2)
+        .map(|_| {
+            (
+                CloneBomb::new(&tracker, false),
+                CloneBomb::new(&tracker, false),
+            )
+        })
+        .collect();
+    assert!(catch_unwind(AssertUnwindSafe(|| target.clone_from(&source))).is_err());
+    // `clone_from` dropped the four old items, cloned all four first items
+    // and two second items, and dropped the two first items that had no second
+    // item when cloning the third second item panicked.
+    assert_eq!(target.len(), 2);
+    assert_eq!(tracker.total_made(), 18);
+    assert_eq!(tracker.total_dropped(), 6);
+    drop(source);
+    drop(target);
+    tracker.assert_all_dropped_exactly_once(18);
+}
+
+#[test]
+fn clone_from_reuses_the_buffer_when_it_has_room() {
+    let source: PairVec<u32, u8, u8> = (0..3).map(|i| (i, i as u8)).collect();
+
+    let mut roomy = PairVec::<u32, u8, u8>::with_capacity(10);
+    roomy.push(9, 9);
+    let pointer = roomy.first_slice().as_ptr();
+    roomy.clone_from(&source);
+    assert_eq!(roomy.slices(), source.slices());
+    assert_eq!(roomy.first_slice().as_ptr(), pointer);
+    assert!(PairStorage::capacity(&roomy) >= 10);
+
+    let mut cramped = PairVec::<u32, u8, u8>::with_capacity(1);
+    cramped.push(9, 9);
+    cramped.clone_from(&source);
+    assert_eq!(cramped.slices(), source.slices());
+    assert!(PairStorage::capacity(&cramped) >= 3);
+}
+
+#[test]
 fn a_pair_vec_and_its_iterator_can_move_between_threads() {
     fn assert_send_and_sync<T: Send + Sync>() {}
     assert_send_and_sync::<PairVec<u32, String>>();

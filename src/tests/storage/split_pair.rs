@@ -1,7 +1,7 @@
 //! Tests for `SplitPair`, which keeps each slice of a pair storage in a
 //! slice storage of its own.
 
-use crate::tests::{Bomb, DropItem, DropTracker};
+use crate::tests::{Bomb, CloneBomb, DropItem, DropTracker};
 use crate::{
     DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenSlotItem,
     MapConfig, NewerWins, PairStorage, Split, SplitPair, SplitPairError,
@@ -100,6 +100,45 @@ fn clone_holds_a_clone_of_every_pair_in_order() {
     drop(pairs);
     drop(copy);
     tracker.assert_all_dropped_exactly_once(8);
+}
+
+#[test]
+fn clone_from_holds_a_clone_of_every_pair_in_order() {
+    let tracker = DropTracker::new();
+    let mut source = SplitPair::<Vec<DropItem>, Vec<u32>>::empty();
+    for i in 0..4 {
+        push_pair(&mut source, tracker.make_item(), i);
+    }
+    let mut target = SplitPair::<Vec<DropItem>, Vec<u32>>::empty();
+    push_pair(&mut target, tracker.make_item(), 9);
+    target.clone_from(&source);
+    let ids: Vec<_> = target.first_slice().iter().map(|item| item.id).collect();
+    assert_eq!(ids, [5, 6, 7, 8]);
+    assert_eq!(target.second_slice(), [0, 1, 2, 3]);
+    drop(source);
+    drop(target);
+    tracker.assert_all_dropped_exactly_once(9);
+}
+
+#[test]
+fn clone_from_empties_both_storages_when_a_clone_panics() {
+    let tracker = DropTracker::new();
+    let mut source = SplitPair::<Vec<CloneBomb>, Vec<CloneBomb>>::empty();
+    for i in 0..3 {
+        let second = CloneBomb::new(&tracker, i == 1);
+        push_pair(&mut source, CloneBomb::new(&tracker, false), second);
+    }
+    let mut target = SplitPair::<Vec<CloneBomb>, Vec<CloneBomb>>::empty();
+    let second = CloneBomb::new(&tracker, false);
+    push_pair(&mut target, CloneBomb::new(&tracker, false), second);
+    assert!(catch_unwind(AssertUnwindSafe(|| target.clone_from(&source))).is_err());
+    // `clone_from` had cloned the whole first storage when cloning the second
+    // one panicked, and it emptied both, so they still have the same length.
+    assert!(target.first_slice().is_empty());
+    assert!(target.second_slice().is_empty());
+    drop(source);
+    drop(target);
+    tracker.assert_all_dropped_exactly_once(tracker.total_made());
 }
 
 /// Dense maps with this config keep their keys in one `Vec` and their values

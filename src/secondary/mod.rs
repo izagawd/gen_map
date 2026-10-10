@@ -15,7 +15,7 @@ use crate::key::Key;
 use crate::map::{decrement_len, increment_len, MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
-use crate::storage::{ReserveStorage, SliceStorage};
+use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -911,6 +911,16 @@ where
             slots: self.slots.clone(),
             len: self.len,
         }
+    }
+
+    /// Clones the slots of `source` with the `clone_from` of this map's
+    /// storage.
+    fn clone_from(&mut self, source: &Self) {
+        self.len = MapIdx::<C>::ZERO;
+        let slots = ClearOnUnwind(&mut self.slots);
+        slots.0.clone_from(&source.slots);
+        core::mem::forget(slots);
+        self.len = source.len;
     }
 }
 

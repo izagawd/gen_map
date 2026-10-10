@@ -16,8 +16,8 @@ use crate::map::{MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::secondary::{get_or_grow_slot, key_from_parts_unchecked};
 use crate::slot::{ParityRef, Slot};
-use crate::storage::pair::{PairStorage, ReservePairStorage};
-use crate::storage::{ReserveStorage, SliceStorage};
+use crate::storage::pair::{ClearPairsOnUnwind, PairStorage, ReservePairStorage};
+use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
@@ -956,6 +956,17 @@ where
             slots: self.slots.clone(),
             pairs,
         }
+    }
+
+    /// Clones the slots, keys and values of `source` with the `clone_from` of
+    /// this map's storages.
+    fn clone_from(&mut self, source: &Self) {
+        let slots = ClearOnUnwind(&mut self.slots);
+        let pairs = ClearPairsOnUnwind(&mut self.pairs);
+        pairs.0.clone_from(&source.pairs);
+        slots.0.clone_from(&source.slots);
+        core::mem::forget(pairs);
+        core::mem::forget(slots);
     }
 }
 

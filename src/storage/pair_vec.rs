@@ -519,8 +519,9 @@ impl<A, B, L: KeyPiece> Drop for PairVec<A, B, L> {
 // in separate parts of the buffer, so the two mutable slices never overlap.
 // `clone` writes a clone of each pair at the position of the pair and then sets
 // the length to the number of pairs, so the clone holds the same pairs in the
-// same order, and `clone_from` assigns such a clone. Only `with_capacity`
-// panics on its own, and `clear` only panics when dropping an item does.
+// same order. `clone_from` clears the `PairVec` and then does the same, in a
+// new buffer when the old one is too small. Only `with_capacity` panics on its
+// own, and `clear` only panics when dropping an item does.
 unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     type First = A;
     type Second = B;
@@ -656,6 +657,22 @@ impl<A: Clone, B: Clone, L: KeyPiece> Clone for PairVec<A, B, L> {
         // every pair of `self`.
         unsafe { clone.fill_with_clones(self) };
         clone
+    }
+
+    /// Reuses the buffer of `self` when it has room for every pair of
+    /// `source`, and otherwise makes a buffer of the right size before it
+    /// clones any item. If cloning an item panics, `self` keeps the whole
+    /// pairs written before it.
+    fn clone_from(&mut self, source: &Self) {
+        PairStorage::clear(self);
+        // SAFETY: `clear` just set the length to zero.
+        unsafe { core::hint::assert_unchecked(self.buffer.len == L::ZERO) };
+        if self.buffer.capacity() < source.buffer.len() {
+            *self = Self::with_capacity(source.buffer.len());
+        }
+        // SAFETY: `clear` left `self` with no pairs, and its buffer has room
+        // for every pair of `source`.
+        unsafe { self.fill_with_clones(source) };
     }
 }
 

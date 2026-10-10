@@ -153,6 +153,19 @@ pub unsafe trait SliceStorage {
 /// its storages implement this trait.
 pub trait ReserveStorage: SliceStorage {}
 
+/// Empties a storage when it is dropped. A `clone_from` holds one for each
+/// storage it clones into and forgets it once the cloning has finished, so a
+/// `ClearOnUnwind` only empties a storage that a panic left half cloned. A half
+/// cloned storage would disagree with the rest of its map, or with the other
+/// storage of its `SplitPair`.
+pub(crate) struct ClearOnUnwind<'a, St: SliceStorage>(pub(crate) &'a mut St);
+
+impl<St: SliceStorage> Drop for ClearOnUnwind<'_, St> {
+    fn drop(&mut self) {
+        self.0.clear();
+    }
+}
+
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 // SAFETY: a `Vec` behaves exactly as the trait describes. `ensure_room` goes

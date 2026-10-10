@@ -1,7 +1,7 @@
 //! Tests for `SecondaryMap`.
 
 use crate::tests::model::Rng;
-use crate::tests::{key_from_parts, Bomb, Cfg, DropItem, DropTracker};
+use crate::tests::{key_from_parts, Bomb, Cfg, CloneBomb, DropItem, DropTracker};
 use crate::{
     DefaultKeyConfig, ExistingWins, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
     GetDisjointMutError, Key, MapConfig, MapKeyConfig, NewerWins, Odd, Packed, ReplaceStrategy,
@@ -814,6 +814,46 @@ fn clone_leaves_no_trace_when_a_value_panics_while_cloning() {
     assert_eq!(map.values().filter(|value| value.panics).count(), 1);
     drop(map);
     tracker.assert_all_dropped_exactly_once(6);
+}
+
+#[test]
+fn clone_from_matches_clone_and_reuses_the_allocation() {
+    let mut keys = GenMap::new();
+    let all: Vec<Key> = (0..6).map(|_| keys.insert(())).collect();
+    let mut source = SecondaryMap::<u32>::new();
+    for &i in &[0, 2, 5] {
+        source.insert(all[i], i as u32).unwrap();
+    }
+    let mut target = SecondaryMap::<u32>::with_capacity(16);
+    target.insert(all[1], 100).unwrap();
+    let capacity = target.capacity();
+
+    target.clone_from(&source);
+    assert_eq!(target.capacity(), capacity);
+    assert_eq!(target.len(), 3);
+    assert!(target.iter().eq(source.iter()));
+}
+
+#[test]
+fn clone_from_leaves_an_empty_map_if_a_value_panics_while_cloning() {
+    let tracker = DropTracker::new();
+    let mut keys = GenMap::new();
+    let mut source = SecondaryMap::new();
+    for i in 0..4 {
+        let value = CloneBomb::new(&tracker, i == 2);
+        source.insert(keys.insert(()), value).unwrap();
+    }
+    let mut target = SecondaryMap::new();
+    target
+        .insert(keys.insert(()), CloneBomb::new(&tracker, false))
+        .unwrap();
+
+    assert!(catch_unwind(AssertUnwindSafe(|| target.clone_from(&source))).is_err());
+    assert!(target.is_empty());
+    assert_eq!(target.slots_len(), 0);
+    drop(source);
+    drop(target);
+    tracker.assert_all_dropped_exactly_once(tracker.total_made());
 }
 
 #[test]
