@@ -17,14 +17,10 @@ pub(crate) fn max_len<L: KeyPiece>() -> usize {
     saturating_usize(L::MAX)
 }
 
-/// Writes `count` into the length it borrows when it is dropped. While a
-/// [`SingleVec`](crate::SingleVec) or a [`PairVec`](crate::PairVec) clones
-/// items into its buffer, it counts them with a `SetLenOnDrop`, so when a
-/// `clone` panics, the `SetLenOnDrop` sets its length to the number of clones
-/// written before the panic.
+/// Writes `count` into the length it borrows when it is dropped.
 pub(crate) struct SetLenOnDrop<'a, L: KeyPiece> {
     len: &'a mut L,
-    /// `count` is the number of items written so far.
+    /// `count` is the number of items or pairs written so far.
     pub(crate) count: L,
 }
 
