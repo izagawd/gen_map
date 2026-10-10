@@ -535,7 +535,9 @@ where
                 // often meet a value under another generation.
                 let generation = 1 + 2 * rng.below(5) as u8;
                 let key = key8(pick_idx(&mut rng), generation);
-                known.push(key);
+                if !known.contains(&key) {
+                    known.push(key);
+                }
                 assert_eq!(
                     Outcome::from(secondary.insert(key, value)),
                     Outcome::from(sparse.insert(key, value)),
