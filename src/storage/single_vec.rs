@@ -401,8 +401,6 @@ impl<T: Clone, L: KeyPiece> Clone for SingleVec<T, L> {
     /// written before it.
     fn clone_from(&mut self, source: &Self) {
         SliceStorage::clear(self);
-        // SAFETY: `clear` just set the length to zero.
-        unsafe { core::hint::assert_unchecked(self.buffer.len == L::ZERO) };
         if self.buffer.capacity() < source.buffer.len() {
             *self = Self::with_capacity(source.buffer.len());
         }
