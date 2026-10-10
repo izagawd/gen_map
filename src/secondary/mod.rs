@@ -15,7 +15,7 @@ use crate::key::Key;
 use crate::map::{decrement_len, increment_len, MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
-use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage};
+use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -257,7 +257,7 @@ impl<T> SecondaryMap<T> {
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self
     where
-        Slots<T, DefaultMapConfig>: ReserveStorage,
+        Slots<T, DefaultMapConfig>: WithCapacity,
     {
         Self {
             slots: Slots::<T, DefaultMapConfig>::with_capacity(capacity),
@@ -852,11 +852,10 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     }
 }
 
-/// These methods need a storage that can grow on request, so a map whose
-/// storage has a fixed capacity does not have them.
+/// A map has this method only when its storage implements [`WithCapacity`].
 impl<T, C: SecondaryMapConfig> SecondaryMap<T, C>
 where
-    Slots<T, C>: ReserveStorage,
+    Slots<T, C>: WithCapacity,
 {
     /// Creates an empty map with config `C` and room for `capacity` slots.
     #[inline]
@@ -867,7 +866,14 @@ where
             len: MapIdx::<C>::ZERO,
         }
     }
+}
 
+/// These methods need a storage that can grow on request, so a map whose
+/// storage has a fixed capacity does not have them.
+impl<T, C: SecondaryMapConfig> SecondaryMap<T, C>
+where
+    Slots<T, C>: ReserveStorage,
+{
     /// Reserves room for at least `additional` more slots.
     ///
     /// # Panics

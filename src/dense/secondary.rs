@@ -17,7 +17,7 @@ use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::secondary::{get_or_grow_slot, key_from_parts_unchecked};
 use crate::slot::{ParityRef, Slot};
 use crate::storage::pair::{ClearPairsOnUnwind, PairStorage, ReservePairStorage};
-use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage};
+use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
@@ -139,12 +139,12 @@ impl<T> DenseSecondaryMap<T> {
     }
 }
 
-/// These methods need slot and pair storages that can grow on request, so a
-/// map whose storages have a fixed capacity does not have them.
+/// A map has this method only when its slot storage and its pair storage
+/// implement [`WithCapacity`].
 impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C>
 where
-    <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>: ReserveStorage,
-    Pairs<T, C>: ReservePairStorage,
+    <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>: WithCapacity,
+    Pairs<T, C>: WithCapacity,
 {
     /// Creates an empty map with config `C` and room for `capacity` values,
     /// slots and keys.
@@ -152,11 +152,19 @@ where
     #[must_use]
     pub fn with_capacity_and_config(capacity: usize) -> Self {
         Self {
-            slots: <Slots<C> as SliceStorage>::with_capacity(capacity),
-            pairs: <Pairs<T, C> as PairStorage>::with_capacity(capacity),
+            slots: <Slots<C> as WithCapacity>::with_capacity(capacity),
+            pairs: <Pairs<T, C> as WithCapacity>::with_capacity(capacity),
         }
     }
+}
 
+/// These methods need slot and pair storages that can grow on request, so a
+/// map whose storages have a fixed capacity does not have them.
+impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C>
+where
+    <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>: ReserveStorage,
+    Pairs<T, C>: ReservePairStorage,
+{
     /// Reserves room for at least `additional` more values, and for as many
     /// more slots and keys.
     ///

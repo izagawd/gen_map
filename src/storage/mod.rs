@@ -21,11 +21,13 @@ use core::fmt;
 /// map in two of them.
 ///
 /// A storage whose capacity can grow past what it was created with also
-/// implements the [`ReserveStorage`] marker. A storage that implements
-/// `IntoIterator` gives a map an owning `into_iter`. The iterator that
-/// `into_iter` returns implements `DoubleEndedIterator` when the storage's
-/// iterator implements both `DoubleEndedIterator` and `ExactSizeIterator`. A
-/// map implements `Clone` when its storages do.
+/// implements the [`ReserveStorage`] marker. A storage that can be created
+/// with room for a number of items chosen at runtime implements
+/// [`WithCapacity`]. A storage that implements `IntoIterator` gives a map an
+/// owning `into_iter`. The iterator that `into_iter` returns implements
+/// `DoubleEndedIterator` when the storage's iterator implements both
+/// `DoubleEndedIterator` and `ExactSizeIterator`. A map implements `Clone`
+/// when its storages do.
 ///
 /// # Safety
 ///
@@ -61,12 +63,12 @@ use core::fmt;
 ///   at the end.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
-/// - Only [`with_capacity`](Self::with_capacity), `ensure_room` and `clear`
-///   may panic, and `clear` only when dropping an item panics. The maps call
-///   the other methods partway through changes that a panic would leave half
-///   done.
-/// - [`empty`](Self::empty) and `with_capacity` must return a storage with no
-///   items.
+/// - Only [`with_capacity`](WithCapacity::with_capacity), `ensure_room` and
+///   `clear` may panic, and `clear` only when dropping an item panics. The
+///   maps call the other methods partway through changes that a panic would
+///   leave half done.
+/// - [`empty`](Self::empty) must return a storage with no items, and so must
+///   `with_capacity` if the storage implements [`WithCapacity`].
 /// - If the storage implements `IntoIterator<Item = Self::Item>`,
 ///   `into_iter` must yield the same items as `as_slice`, in the same order.
 /// - If that iterator also implements `DoubleEndedIterator` and
@@ -88,11 +90,6 @@ pub unsafe trait SliceStorage {
 
     /// Creates a storage with no items.
     fn empty() -> Self;
-
-    /// Creates a storage with no items and room for at least `capacity` of
-    /// them. A storage whose type limits how many items it can hold, such as an
-    /// `ArrayVec`, can ignore the argument.
-    fn with_capacity(capacity: usize) -> Self;
 
     /// How many items the storage can hold before it has to grow, or in
     /// total if it cannot grow.
@@ -146,12 +143,25 @@ pub unsafe trait SliceStorage {
 
 /// Marks a [`SliceStorage`] whose capacity can grow past what it was created
 /// with. [`ensure_room`](SliceStorage::ensure_room) grows such a storage when
-/// it needs more room. A map has `with_capacity_and_config`, `reserve` and
-/// `try_reserve` only when its slot storage implements this trait. A dense map
-/// also needs [`ReservePairStorage`](crate::ReservePairStorage) on its pair
-/// storage, which a [`SplitPair`](crate::SplitPair) implements when both of
-/// its storages implement this trait.
+/// it needs more room. A map has `reserve` and `try_reserve` only when its
+/// slot storage implements this trait. A dense map also needs
+/// [`ReservePairStorage`](crate::ReservePairStorage) on its pair storage,
+/// which a [`SplitPair`](crate::SplitPair) implements when both of its
+/// storages implement this trait.
 pub trait ReserveStorage: SliceStorage {}
+
+/// A storage implements `WithCapacity` when it can be created with room for a
+/// number of items chosen at runtime. A storage whose type sets its capacity,
+/// such as an `ArrayVec`, does not implement it. A map has
+/// `with_capacity_and_config` only when its storages implement this trait.
+///
+/// The rules of [`SliceStorage`] and [`PairStorage`](crate::PairStorage)
+/// require `with_capacity` to return a storage with no items.
+pub trait WithCapacity {
+    /// Creates a storage with no items and room for at least `capacity` of
+    /// them. A pair storage gets room for at least `capacity` pairs.
+    fn with_capacity(capacity: usize) -> Self;
+}
 
 /// Empties a storage when it is dropped. A `clone_from` holds one for each
 /// storage it clones into and forgets it once the cloning has finished, so a
@@ -183,11 +193,6 @@ unsafe impl<S> SliceStorage for Vec<S> {
     #[inline]
     fn empty() -> Self {
         Vec::new()
-    }
-
-    #[inline]
-    fn with_capacity(capacity: usize) -> Self {
-        Vec::with_capacity(capacity)
     }
 
     #[inline]
@@ -238,6 +243,15 @@ unsafe impl<S> SliceStorage for Vec<S> {
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<S> ReserveStorage for Vec<S> {}
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+impl<S> WithCapacity for Vec<S> {
+    #[inline]
+    fn with_capacity(capacity: usize) -> Self {
+        Vec::with_capacity(capacity)
+    }
+}
 
 /// Storage from the `arrayvec` crate that keeps up to `CAP` items inline and
 /// never allocates. It needs the `arrayvec` feature.
@@ -292,13 +306,6 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
     #[inline]
     fn empty() -> Self {
         arrayvec::ArrayVec::new()
-    }
-
-    /// An `ArrayVec` always has room for exactly `CAP` items, so the
-    /// `capacity` argument is ignored.
-    #[inline]
-    fn with_capacity(_capacity: usize) -> Self {
-        arrayvec::ArrayVec::new_const()
     }
 
     #[inline]
@@ -390,11 +397,6 @@ unsafe impl<S, const N: usize> SliceStorage for smallvec::SmallVec<S, N> {
     }
 
     #[inline]
-    fn with_capacity(capacity: usize) -> Self {
-        smallvec::SmallVec::with_capacity(capacity)
-    }
-
-    #[inline]
     fn capacity(&self) -> usize {
         smallvec::SmallVec::capacity(self)
     }
@@ -433,3 +435,12 @@ unsafe impl<S, const N: usize> SliceStorage for smallvec::SmallVec<S, N> {
 #[cfg(feature = "smallvec")]
 #[cfg_attr(docsrs, doc(cfg(feature = "smallvec")))]
 impl<S, const N: usize> ReserveStorage for smallvec::SmallVec<S, N> {}
+
+#[cfg(feature = "smallvec")]
+#[cfg_attr(docsrs, doc(cfg(feature = "smallvec")))]
+impl<S, const N: usize> WithCapacity for smallvec::SmallVec<S, N> {
+    #[inline]
+    fn with_capacity(capacity: usize) -> Self {
+        smallvec::SmallVec::with_capacity(capacity)
+    }
+}

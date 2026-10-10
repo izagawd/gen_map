@@ -4,7 +4,7 @@
 use crate::tests::{Bomb, CloneBomb, DropItem, DropTracker};
 use crate::{
     DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenSlotItem,
-    MapConfig, NewerWins, PairStorage, Split, SplitPair, SplitPairError,
+    MapConfig, NewerWins, PairStorage, Split, SplitPair, SplitPairError, WithCapacity,
 };
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -27,6 +27,15 @@ fn from_parts_needs_two_storages_of_the_same_length() {
     let pairs = SplitPair::from_parts(vec![1, 2], vec!["a", "b"]).unwrap();
     assert_eq!(pairs.slices(), (&[1, 2][..], &["a", "b"][..]));
     assert_eq!(pairs.into_parts(), (vec![1, 2], vec!["a", "b"]));
+}
+
+#[test]
+fn with_capacity_gives_both_storages_room() {
+    let pairs = SplitPair::<Vec<u8>, Vec<u16>>::with_capacity(4);
+    assert!(pairs.is_empty());
+    let (first, second) = pairs.into_parts();
+    assert!(first.capacity() >= 4);
+    assert!(second.capacity() >= 4);
 }
 
 #[test]

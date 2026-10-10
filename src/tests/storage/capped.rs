@@ -37,10 +37,6 @@ unsafe impl<S> SliceStorage for Capped<S> {
         Capped(Vec::new())
     }
 
-    fn with_capacity(_: usize) -> Self {
-        Self::empty()
-    }
-
     fn capacity(&self) -> usize {
         CAP
     }

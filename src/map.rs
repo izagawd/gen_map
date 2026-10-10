@@ -9,7 +9,7 @@ use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
 use crate::key::Key;
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
-use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage};
+use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -344,9 +344,22 @@ impl<T> GenMap<T> {
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self
     where
-        Slots<T, DefaultMapConfig>: ReserveStorage,
+        Slots<T, DefaultMapConfig>: WithCapacity,
     {
         Self::with_slots(Slots::<T, DefaultMapConfig>::with_capacity(capacity))
+    }
+}
+
+/// A map has this method only when its storage implements [`WithCapacity`].
+impl<T, C: GenMapConfig> GenMap<T, C>
+where
+    Slots<T, C>: WithCapacity,
+{
+    /// Creates an empty map with config `C` and room for `capacity` slots.
+    #[inline]
+    #[must_use]
+    pub fn with_capacity_and_config(capacity: usize) -> Self {
+        Self::with_slots(Slots::<T, C>::with_capacity(capacity))
     }
 }
 
@@ -356,13 +369,6 @@ impl<T, C: GenMapConfig> GenMap<T, C>
 where
     Slots<T, C>: ReserveStorage,
 {
-    /// Creates an empty map with config `C` and room for `capacity` slots.
-    #[inline]
-    #[must_use]
-    pub fn with_capacity_and_config(capacity: usize) -> Self {
-        Self::with_slots(Slots::<T, C>::with_capacity(capacity))
-    }
-
     /// Reserves room for at least `additional` more slots.
     ///
     /// # Panics

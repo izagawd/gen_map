@@ -295,7 +295,7 @@ pub use storage::pair_vec::{PairVec, PairVecIntoIter, PairVecRawParts};
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use storage::single_vec::{SingleVec, SingleVecIntoIter, SingleVecRawParts};
-pub use storage::{ReserveStorage, SliceStorage};
+pub use storage::{ReserveStorage, SliceStorage, WithCapacity};
 
 // The tests use `Vec` storage and the default config, so they need `alloc`.
 #[cfg(all(test, feature = "alloc"))]

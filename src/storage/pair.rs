@@ -1,4 +1,4 @@
-use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage};
+use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::FusedIterator;
 
@@ -19,12 +19,13 @@ use core::iter::FusedIterator;
 /// `ArrayVec`.
 ///
 /// A pair storage whose capacity can grow past what it was created with also
-/// implements the [`ReservePairStorage`] marker. A pair storage that
-/// implements `IntoIterator` gives a dense map an owning `into_iter`. The
-/// iterator that `into_iter` returns implements `DoubleEndedIterator` when the
-/// storage's iterator implements both `DoubleEndedIterator` and
-/// `ExactSizeIterator`. A dense map implements `Clone` when its slot storage
-/// and its pair storage do.
+/// implements the [`ReservePairStorage`] marker. A pair storage that can be
+/// created with room for a number of pairs chosen at runtime implements
+/// [`WithCapacity`]. A pair storage that implements `IntoIterator` gives a
+/// dense map an owning `into_iter`. The iterator that `into_iter` returns
+/// implements `DoubleEndedIterator` when the storage's iterator implements
+/// both `DoubleEndedIterator` and `ExactSizeIterator`. A dense map implements
+/// `Clone` when its slot storage and its pair storage do.
 ///
 /// # Safety
 ///
@@ -55,12 +56,12 @@ use core::iter::FusedIterator;
 ///   items.
 /// - `clear` must drop every item and leave the storage empty. It must leave
 ///   the storage empty even when dropping an item panics.
-/// - Only [`with_capacity`](Self::with_capacity), `ensure_room` and `clear`
-///   may panic, and `clear` only when dropping an item panics. A dense map
-///   calls the other methods partway through changes that a panic would leave
-///   half done.
-/// - [`empty`](Self::empty) and `with_capacity` must return a storage with no
-///   pairs.
+/// - Only [`with_capacity`](WithCapacity::with_capacity), `ensure_room` and
+///   `clear` may panic, and `clear` only when dropping an item panics. A dense
+///   map calls the other methods partway through changes that a panic would
+///   leave half done.
+/// - [`empty`](Self::empty) must return a storage with no pairs, and so must
+///   `with_capacity` if the storage implements [`WithCapacity`].
 /// - If the storage implements `IntoIterator<Item = (Self::First,
 ///   Self::Second)>`, `into_iter` must yield the same pairs as `slices`, in
 ///   the same order.
@@ -86,11 +87,6 @@ pub unsafe trait PairStorage {
 
     /// Creates a storage with no pairs.
     fn empty() -> Self;
-
-    /// Creates a storage with no pairs and room for at least `capacity` of
-    /// them. A storage whose type limits how many pairs it can hold can
-    /// ignore the argument.
-    fn with_capacity(capacity: usize) -> Self;
 
     /// How many pairs the storage can hold before it has to grow, or in total
     /// if it cannot grow.
@@ -176,9 +172,9 @@ pub unsafe trait PairStorage {
 
 /// Marks a [`PairStorage`] whose capacity can grow past what it was created
 /// with. [`ensure_room`](PairStorage::ensure_room) grows such a storage when
-/// it needs more room. A dense map has `with_capacity_and_config`, `reserve`
-/// and `try_reserve` only when its pair storage implements this trait and its
-/// slot storage implements [`ReserveStorage`].
+/// it needs more room. A dense map has `reserve` and `try_reserve` only when
+/// its pair storage implements this trait and its slot storage implements
+/// [`ReserveStorage`].
 pub trait ReservePairStorage: PairStorage {}
 
 /// Empties a pair storage when it is dropped, the way `ClearOnUnwind` empties a
@@ -199,7 +195,8 @@ impl<P: PairStorage> Drop for ClearPairsOnUnwind<'_, P> {
 /// Each of the two storages keeps a length and a capacity of its own. The
 /// capacity of a `SplitPair` is the smaller of the two capacities. A
 /// `SplitPair` implements [`ReservePairStorage`] when both storages implement
-/// [`ReserveStorage`], and `Clone` when both storages implement `Clone`.
+/// [`ReserveStorage`], [`WithCapacity`] when both storages implement
+/// `WithCapacity`, and `Clone` when both storages implement `Clone`.
 ///
 /// # Examples
 ///
@@ -269,7 +266,9 @@ impl<A: SliceStorage + Clone, B: SliceStorage + Clone> Clone for SplitPair<A, B>
 
 // SAFETY: each slice is kept in a `SliceStorage`, which behaves like a
 // `Vec`, and every method keeps the two storages at the same length.
-// `from_parts` only accepts two storages of the same length. Neither storage
+// `from_parts` only accepts two storages of the same length. `with_capacity`
+// creates each storage with its own `with_capacity`, which the rules of
+// `SliceStorage` require to return a storage with no items. Neither storage
 // panics outside `with_capacity`, `ensure_room` and `clear`, so
 // `push_unchecked` and `pop` never stop after changing only one storage, and
 // no other method panics either. `ensure_room` returns `Ok` only when both
@@ -291,14 +290,6 @@ unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
         Self {
             first: A::empty(),
             second: B::empty(),
-        }
-    }
-
-    #[inline]
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            first: A::with_capacity(capacity),
-            second: B::with_capacity(capacity),
         }
     }
 
@@ -393,6 +384,16 @@ unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
 }
 
 impl<A: ReserveStorage, B: ReserveStorage> ReservePairStorage for SplitPair<A, B> {}
+
+impl<A: WithCapacity, B: WithCapacity> WithCapacity for SplitPair<A, B> {
+    #[inline]
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            first: A::with_capacity(capacity),
+            second: B::with_capacity(capacity),
+        }
+    }
+}
 
 /// This error says which storage of a [`SplitPair`] could not make room, and
 /// it holds that storage's error.

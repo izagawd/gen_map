@@ -23,10 +23,6 @@ unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
         Bare(Vec::new())
     }
 
-    fn with_capacity(capacity: usize) -> Self {
-        Bare(Vec::with_capacity(capacity))
-    }
-
     fn capacity(&self) -> usize {
         self.0.capacity()
     }

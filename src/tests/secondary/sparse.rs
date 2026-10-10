@@ -200,6 +200,10 @@ fn every_value_is_dropped_once() {
     let mut into_iter = map.clone().into_iter();
     drop(into_iter.next());
     drop(into_iter);
+    let mut copy = SparseSecondaryMap::new();
+    copy.insert(k[0], tracker.make_item()).unwrap();
+    copy.clone_from(&map);
+    drop(copy);
     map.clear();
     for key in &k[..3] {
         map.insert(*key, tracker.make_item()).unwrap();
@@ -278,6 +282,23 @@ fn a_clone_holds_the_same_values_under_the_same_keys() {
     assert_eq!(clone[k[0]], 100);
     assert_eq!(clone.get(k[1]), None);
     assert_eq!(clone[k[3]], 3);
+}
+
+#[test]
+fn clone_from_holds_the_same_values_under_the_same_keys() {
+    let k = keys(4);
+    let mut source = SparseSecondaryMap::new();
+    for (i, key) in k[..3].iter().enumerate() {
+        source.insert(*key, i).unwrap();
+    }
+    let mut target = SparseSecondaryMap::new();
+    target.insert(k[3], 3).unwrap();
+    target.clone_from(&source);
+    assert_eq!(target.len(), 3);
+    assert_eq!(target.get(k[3]), None);
+    for key in &k[..3] {
+        assert_eq!(target[*key], source[*key]);
+    }
 }
 
 #[test]

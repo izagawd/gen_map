@@ -3,7 +3,7 @@ use crate::key::piece::KeyPiece;
 use crate::storage::buffer::{
     allocate, deallocate, grown_capacity, max_len, reallocate, saturating_usize, SetLenOnDrop,
 };
-use crate::storage::{ReserveStorage, SliceStorage};
+use crate::storage::{ReserveStorage, SliceStorage, WithCapacity};
 use alloc::vec::Vec;
 use core::fmt;
 use core::iter::FusedIterator;
@@ -314,11 +314,6 @@ unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     }
 
     #[inline]
-    fn with_capacity(capacity: usize) -> Self {
-        SingleVec::with_capacity(capacity)
-    }
-
-    #[inline]
     fn capacity(&self) -> usize {
         self.buffer.capacity()
     }
@@ -379,6 +374,13 @@ unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
 }
 
 impl<T, L: KeyPiece> ReserveStorage for SingleVec<T, L> {}
+
+impl<T, L: KeyPiece> WithCapacity for SingleVec<T, L> {
+    #[inline]
+    fn with_capacity(capacity: usize) -> Self {
+        SingleVec::with_capacity(capacity)
+    }
+}
 
 // SAFETY: a `SingleVec` owns its items the way a `Vec` does, so it can move to
 // another thread when its items can.

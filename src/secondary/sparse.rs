@@ -659,6 +659,13 @@ impl<T: Clone, C: SparseSecondaryMapConfig, S: Clone> Clone for SparseSecondaryM
             slots: self.slots.clone(),
         }
     }
+
+    /// Clones the slots of `source` with the `clone_from` of this map's
+    /// `HashMap`.
+    #[inline]
+    fn clone_from(&mut self, source: &Self) {
+        self.slots.clone_from(&source.slots);
+    }
 }
 
 impl<T: fmt::Debug, C: SparseSecondaryMapConfig, S: BuildHasher> fmt::Debug
