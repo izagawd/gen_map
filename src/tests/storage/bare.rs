@@ -3,7 +3,7 @@
 
 use crate::{
     DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap,
-    GenMapConfig, GenSlotItem, MapConfig, NewerWins, SliceStorage, Split, SplitPair,
+    GenMapConfig, GenSlotItem, KeepLen, MapConfig, NewerWins, SliceStorage, Split, SplitPair,
 };
 use std::vec::Vec;
 
@@ -53,7 +53,8 @@ unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
 }
 
 /// A `Vec` iterator that only implements `Iterator`, so it has no
-/// `next_back` and no `len`.
+/// `next_back` and no `len`. Its size hint is exact, as `SliceStorage`
+/// requires.
 struct Forwards<S>(std::vec::IntoIter<S>);
 
 impl<S> Iterator for Forwards<S> {
@@ -61,6 +62,10 @@ impl<S> Iterator for Forwards<S> {
 
     fn next(&mut self) -> Option<S> {
         self.0.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
     }
 }
 
@@ -81,6 +86,7 @@ impl MapConfig for NoIter {
 }
 
 impl GenMapConfig for NoIter {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Bare<S, false>;
 }
 
@@ -92,6 +98,7 @@ impl MapConfig for ForwardIter {
 }
 
 impl GenMapConfig for ForwardIter {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Bare<S, true>;
 }
 
@@ -176,7 +183,8 @@ fn dense_into_iter_works_when_the_storage_iterators_have_no_next_back() {
     map.remove(keys[1]);
 
     let mut iter = map.into_iter();
-    // The iterator counts the pairs it has left, so the length is still exact.
+    // The storage's iterator gives an exact size hint, so the length is exact
+    // without `ExactSizeIterator`.
     assert_eq!(iter.len(), 3);
     assert_eq!(iter.next(), Some((keys[0], 0)));
     assert_eq!(iter.len(), 2);

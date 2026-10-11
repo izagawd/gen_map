@@ -60,8 +60,10 @@ use core::iter::FusedIterator;
 /// - [`empty`](Self::empty) must return a storage with no pairs, and so must
 ///   `with_capacity` if the storage implements [`WithCapacity`].
 /// - If the storage implements `IntoIterator<Item = (Self::First,
-///   Self::Second)>`, `into_iter` must yield the same pairs as `slices`, in
-///   the same order.
+///   Self::Second)>`, its iterator must yield the same pairs as `slices`, in
+///   the same order, and then keep returning `None`. Its `size_hint` must
+///   return the number of pairs not yet yielded as both its lower and its
+///   upper bound.
 /// - If that iterator also implements `DoubleEndedIterator` and
 ///   `ExactSizeIterator`, `next_back` must yield the pairs starting from the
 ///   last one, and `len` must be the number of pairs not yet yielded.
@@ -421,7 +423,6 @@ where
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         SplitPairIntoIter {
-            remaining: self.first.len(),
             first: self.first.into_iter(),
             second: self.second.into_iter(),
         }
@@ -436,8 +437,6 @@ where
 pub struct SplitPairIntoIter<A: IntoIterator, B: IntoIterator> {
     first: A::IntoIter,
     second: B::IntoIter,
-    /// The number of pairs not yet yielded.
-    remaining: usize,
 }
 
 impl<A: IntoIterator, B: IntoIterator> Iterator for SplitPairIntoIter<A, B> {
@@ -445,17 +444,15 @@ impl<A: IntoIterator, B: IntoIterator> Iterator for SplitPairIntoIter<A, B> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
-        let pair = (self.first.next()?, self.second.next()?);
-        self.remaining -= 1;
-        Some(pair)
+        Some((self.first.next()?, self.second.next()?))
     }
 
+    // `SliceStorage` requires the size hint of each storage's iterator to be
+    // exact, and the two storages hold the same number of items, so the hint
+    // of the first one is the hint for the pairs.
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
+        self.first.size_hint()
     }
 }
 
@@ -466,14 +463,12 @@ where
 {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
-        let pair = (self.first.next_back()?, self.second.next_back()?);
-        self.remaining -= 1;
-        Some(pair)
+        Some((self.first.next_back()?, self.second.next_back()?))
     }
 }
 
+// `SliceStorage` requires the iterator of each storage to give an exact size
+// hint and to keep returning `None` once it runs out, so this iterator is exact
+// and fused too.
 impl<A: IntoIterator, B: IntoIterator> ExactSizeIterator for SplitPairIntoIter<A, B> {}
 impl<A: IntoIterator, B: IntoIterator> FusedIterator for SplitPairIntoIter<A, B> {}

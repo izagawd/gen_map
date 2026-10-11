@@ -55,7 +55,7 @@
 //! its slots in.
 //!
 //! ```
-//! use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
+//! use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
 //!
 //! /// Maps with this config hand out keys with a `u8` index and a `u8`
 //! /// generation, so each key is two bytes. A map with this config never gives
@@ -67,6 +67,7 @@
 //! }
 //!
 //! impl GenMapConfig for Tiny {
+//!     type Len = KeepLen;
 //!     type Storage<S: GenSlotItem> = Vec<S>;
 //! }
 //!
@@ -116,7 +117,7 @@
 //!
 //! A map's config is a type that implements [`MapConfig`] and
 //! [`GenMapConfig`]. The map only uses the config as a type and never creates
-//! a value of it, so an empty struct is enough. A config decides three things.
+//! a value of it, so an empty struct is enough. A config decides four things.
 //!
 //! - [`KeyConfig`](MapConfig::KeyConfig) decides the integer types of a key's
 //!   index and generation, and how the key stores the two. [`Split`] keeps
@@ -125,6 +126,9 @@
 //! - [`WRAP_ON_OVERFLOW`](GenMapConfig::WRAP_ON_OVERFLOW) decides whether the
 //!   map retires a slot with no generations left or starts its generation over
 //!   at zero.
+//! - [`Len`](GenMapConfig::Len) decides whether the map keeps a count of its
+//!   values. Only a map whose config picks [`KeepLen`] has
+//!   [`len`](GenMap::len) and [`is_empty`](GenMap::is_empty).
 //! - [`Storage`](GenMapConfig::Storage) is the collection the map keeps its
 //!   slots in. It can be a [`SingleVec`], a `Vec`, an `ArrayVec`, a `SmallVec`
 //!   or any other type that implements [`SliceStorage`].
@@ -132,9 +136,9 @@
 //! When its `C` parameter is left out, as in `GenMap<T>`, a map uses
 //! [`DefaultMapConfig`]. Maps with that config hand out keys with a `u32` index
 //! and a `u32` generation, keep their slots in a [`SingleVec`] with a `u32`
-//! length and retire a slot that has no generations left. [`GenMap::new`] only
-//! exists for the default config, so use [`GenMap::new_with_config`] for any
-//! other.
+//! length, keep a count of their values and retire a slot that has no
+//! generations left. [`GenMap::new`] only exists for the default config, so
+//! use [`GenMap::new_with_config`] for any other.
 //!
 //! Maps whose configs have the same key config share a key type. A key does
 //! not record which map handed it out, so a map also accepts keys from another
@@ -232,6 +236,7 @@ mod config;
 mod dense;
 mod error;
 mod key;
+mod len;
 mod map;
 mod secondary;
 mod slot;
@@ -266,6 +271,7 @@ pub use key::layout::{Packed, Split};
 pub use key::parity::{Even, Odd};
 pub use key::piece::KeyPiece;
 pub use key::Key;
+pub use len::{KeepLen, Len, NoLen};
 pub use map::{
     Drain, GenMap, GenMapRawParts, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig,
     MapSlot, StorageError, VacantEntry, Values, ValuesMut,

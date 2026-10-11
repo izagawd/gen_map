@@ -2,6 +2,9 @@ use crate::key::layout::Split;
 use crate::key::parity::Odd;
 use crate::key::piece::KeyPiece;
 #[cfg(feature = "alloc")]
+use crate::len::KeepLen;
+use crate::len::Len;
+#[cfg(feature = "alloc")]
 use crate::map::MapIdx;
 #[cfg(feature = "alloc")]
 use crate::secondary::replace_strategy::NewerWins;
@@ -130,7 +133,7 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
 ///
 /// /// Maps with this config hand out four byte keys, and when a slot's
 /// /// generation runs out, the map wraps it back to zero instead of retiring
@@ -143,6 +146,7 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
 ///
 /// impl GenMapConfig for Small {
 ///     const WRAP_ON_OVERFLOW: bool = true;
+///     type Len = KeepLen;
 ///     // `Storage` is the collection the slots live in. `S` is the slot type.
 ///     type Storage<S: GenSlotItem> = Vec<S>;
 /// }
@@ -178,6 +182,10 @@ pub trait GenMapConfig: MapConfig {
     /// using the slot. A key from before the wrap can then match a new value.
     const WRAP_ON_OVERFLOW: bool = false;
 
+    /// This decides whether the map keeps a count of its values. The built-in
+    /// choices are [`KeepLen`](crate::KeepLen) and [`NoLen`](crate::NoLen).
+    type Len: Len;
+
     /// The collection the map keeps its slots in. `S` is the slot type, which
     /// is [`MapSlot<T, C>`](crate::MapSlot) for a `GenMap<T, C>`. The built-in
     /// storages are [`SingleVec`](crate::SingleVec), `Vec`, `ArrayVec` and
@@ -199,8 +207,8 @@ pub trait GenMapConfig: MapConfig {
 ///
 /// ```
 /// use gen_map::{
-///     DefaultKeyConfig, ExistingWins, GenMap, MapConfig, SecondaryMap, SecondaryMapConfig,
-///     SecondarySlotItem,
+///     DefaultKeyConfig, ExistingWins, GenMap, KeepLen, MapConfig, SecondaryMap,
+///     SecondaryMapConfig, SecondarySlotItem,
 /// };
 ///
 /// struct Keep;
@@ -211,6 +219,7 @@ pub trait GenMapConfig: MapConfig {
 ///
 /// impl SecondaryMapConfig for Keep {
 ///     type ReplaceStrategy = ExistingWins;
+///     type Len = KeepLen;
 ///     type Storage<S: SecondarySlotItem> = Vec<S>;
 /// }
 ///
@@ -232,6 +241,10 @@ pub trait SecondaryMapConfig: MapConfig {
     /// [`NewerWins`](crate::NewerWins) and
     /// [`ExistingWins`](crate::ExistingWins).
     type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
+
+    /// This decides whether the map keeps a count of its values. The built-in
+    /// choices are [`KeepLen`](crate::KeepLen) and [`NoLen`](crate::NoLen).
+    type Len: Len;
 
     /// The collection the map keeps its slots in. `S` is the slot type, which
     /// is [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot) for a
@@ -506,8 +519,9 @@ pub type DefaultKeyConfig = Split<u32, u32>;
 /// keep their keys and values in a [`PairVec`](crate::PairVec). Both store
 /// their length and capacity as a `u32`, the index type of the keys. Maps
 /// with this config retire a slot whose generation runs out, and the
-/// secondary maps use [`NewerWins`](crate::NewerWins). This config needs the
-/// `alloc` feature.
+/// secondary maps use [`NewerWins`](crate::NewerWins). A `GenMap` and a
+/// `SecondaryMap` with this config keep a count of their values. This config
+/// needs the `alloc` feature.
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -520,12 +534,14 @@ impl MapConfig for DefaultMapConfig {
 
 #[cfg(feature = "alloc")]
 impl GenMapConfig for DefaultMapConfig {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = SingleVec<S, MapIdx<Self>>;
 }
 
 #[cfg(feature = "alloc")]
 impl SecondaryMapConfig for DefaultMapConfig {
     type ReplaceStrategy = NewerWins;
+    type Len = KeepLen;
     type Storage<S: SecondarySlotItem> = SingleVec<S, MapIdx<Self>>;
 }
 

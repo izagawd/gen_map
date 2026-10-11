@@ -5,8 +5,8 @@
 use super::{key_from_parts, Cfg, DropTracker};
 use crate::{
     DenseGenMap, DenseGenMapRawParts, DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap,
-    GenMapConfig, GenMapRawParts, GenSlotItem, Key, MapConfig, Odd, Packed, PairStorage, Parity,
-    ParityMut, ParityRef, SecondaryMap, SecondaryMapRawParts, Slot, Split,
+    GenMapConfig, GenMapRawParts, GenSlotItem, KeepLen, Key, MapConfig, Odd, Packed, PairStorage,
+    Parity, ParityMut, ParityRef, SecondaryMap, SecondaryMapRawParts, Slot, Split,
 };
 use std::vec;
 use std::vec::Vec;
@@ -25,6 +25,7 @@ impl MapConfig for Gen4 {
 }
 
 impl GenMapConfig for Gen4 {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 

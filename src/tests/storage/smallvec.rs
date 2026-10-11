@@ -5,7 +5,7 @@
 use crate::tests::{key_from_parts, Bomb, DropTracker};
 use crate::{
     DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap,
-    GenMapConfig, GenSlotItem, MapConfig, NewerWins, SecondaryMap, SecondaryMapConfig,
+    GenMapConfig, GenSlotItem, KeepLen, MapConfig, NewerWins, SecondaryMap, SecondaryMapConfig,
     SecondarySlotItem, Split, SplitPair,
 };
 use smallvec::SmallVec;
@@ -20,11 +20,13 @@ impl MapConfig for Four {
 }
 
 impl GenMapConfig for Four {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = SmallVec<S, 4>;
 }
 
 impl SecondaryMapConfig for Four {
     type ReplaceStrategy = NewerWins;
+    type Len = KeepLen;
     type Storage<S: SecondarySlotItem> = SmallVec<S, 4>;
 }
 

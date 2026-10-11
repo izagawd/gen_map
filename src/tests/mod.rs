@@ -4,6 +4,7 @@
 
 mod dense;
 mod key;
+mod len;
 mod map;
 mod model;
 mod panic_fuzz;
@@ -14,8 +15,9 @@ mod storage;
 mod zero_sized;
 
 use crate::{
-    DenseGenMapConfig, DenseSecondaryMapConfig, GenMapConfig, GenSlotItem, Key, KeyConfig,
-    KeyPiece, MapConfig, NewerWins, Odd, PairVec, SecondaryMapConfig, SecondarySlotItem, Split,
+    DenseGenMapConfig, DenseSecondaryMapConfig, GenMap, GenMapConfig, GenSlotItem, KeepLen, Key,
+    KeyConfig, KeyPiece, Len, MapConfig, NewerWins, NoLen, Odd, PairVec, SecondaryMap,
+    SecondaryMapConfig, SecondarySlotItem, Split,
 };
 use core::marker::PhantomData;
 use std::cell::RefCell;
@@ -36,11 +38,13 @@ impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for Cfg<Idx, Gen> {
 }
 
 impl<Idx: KeyPiece, Gen: KeyPiece> GenMapConfig for Cfg<Idx, Gen> {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
 impl<Idx: KeyPiece, Gen: KeyPiece> SecondaryMapConfig for Cfg<Idx, Gen> {
     type ReplaceStrategy = NewerWins;
+    type Len = KeepLen;
     type Storage<S: SecondarySlotItem> = Vec<S>;
 }
 
@@ -63,7 +67,7 @@ impl<Idx: KeyPiece, Gen: KeyPiece> crate::SparseSecondaryMapConfig for Cfg<Idx, 
 /// Checks that `reattach` refuses `key` because nothing is detached under
 /// it, hands `value` back, and leaves the map's length and the generation of
 /// the key's slot as they were.
-pub(crate) fn assert_not_detached<C: crate::GenMapConfig>(
+pub(crate) fn assert_not_detached<C: GenMapConfig<Len = KeepLen>>(
     map: &mut crate::GenMap<i32, C>,
     key: Key<crate::MapKeyConfig<C>>,
     value: i32,
@@ -73,6 +77,61 @@ pub(crate) fn assert_not_detached<C: crate::GenMapConfig>(
     assert_eq!(map.reattach(key, value), Err(value));
     assert_eq!(map.len(), len);
     assert_eq!(map.generation_at(key.idx()), generation);
+}
+
+/// The methods of this trait check what a map and its iterators report about
+/// the number of values. A map whose config keeps no count has no `len` or
+/// `is_empty`, so for such a map they only check the size hints of its
+/// iterators.
+pub(crate) trait LenCheck: Len + Sized {
+    /// Checks that `len` and `is_empty` of `map` agree with `expected`, if
+    /// the config keeps a count.
+    fn assert_len<T, C: GenMapConfig<Len = Self>>(map: &GenMap<T, C>, expected: usize);
+
+    /// Checks that `len` and `is_empty` of `map` agree with `expected`, if
+    /// the config keeps a count.
+    fn assert_secondary_len<T, C: SecondaryMapConfig<Len = Self>>(
+        map: &SecondaryMap<T, C>,
+        expected: usize,
+    );
+
+    /// Checks that the size hint `hint` allows `expected` values. If the
+    /// config keeps a count, the hint must be exactly `expected`.
+    fn assert_hint(hint: (usize, Option<usize>), expected: usize);
+}
+
+impl LenCheck for KeepLen {
+    fn assert_len<T, C: GenMapConfig<Len = Self>>(map: &GenMap<T, C>, expected: usize) {
+        assert_eq!(map.len(), expected);
+        assert_eq!(map.is_empty(), expected == 0);
+    }
+
+    fn assert_secondary_len<T, C: SecondaryMapConfig<Len = Self>>(
+        map: &SecondaryMap<T, C>,
+        expected: usize,
+    ) {
+        assert_eq!(map.len(), expected);
+        assert_eq!(map.is_empty(), expected == 0);
+    }
+
+    fn assert_hint(hint: (usize, Option<usize>), expected: usize) {
+        assert_eq!(hint, (expected, Some(expected)));
+    }
+}
+
+impl LenCheck for NoLen {
+    fn assert_len<T, C: GenMapConfig<Len = Self>>(_map: &GenMap<T, C>, _expected: usize) {}
+
+    fn assert_secondary_len<T, C: SecondaryMapConfig<Len = Self>>(
+        _map: &SecondaryMap<T, C>,
+        _expected: usize,
+    ) {
+    }
+
+    fn assert_hint(hint: (usize, Option<usize>), expected: usize) {
+        assert_eq!(hint.0, 0);
+        assert!(hint.1.is_some_and(|upper| upper >= expected));
+    }
 }
 
 /// The key of `K` with index `idx` and generation `generation`. Panics if

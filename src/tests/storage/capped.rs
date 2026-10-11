@@ -3,7 +3,7 @@
 
 use crate::tests::key_from_parts;
 use crate::{
-    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, MapConfig,
+    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeepLen, MapConfig,
     NewerWins, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem,
     SecondaryStorageError, SliceStorage, Split, StorageError,
 };
@@ -78,11 +78,13 @@ impl MapConfig for Four {
 }
 
 impl GenMapConfig for Four {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Capped<S>;
 }
 
 impl SecondaryMapConfig for Four {
     type ReplaceStrategy = NewerWins;
+    type Len = KeepLen;
     type Storage<S: SecondarySlotItem> = Capped<S>;
 }
 

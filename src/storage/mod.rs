@@ -67,8 +67,10 @@ use core::fmt;
 ///   changes that a panic would leave half done.
 /// - [`empty`](Self::empty) must return a storage with no items, and so must
 ///   `with_capacity` if the storage implements [`WithCapacity`].
-/// - If the storage implements `IntoIterator<Item = Self::Item>`,
-///   `into_iter` must yield the same items as `as_slice`, in the same order.
+/// - If the storage implements `IntoIterator<Item = Self::Item>`, its
+///   iterator must yield the same items as `as_slice`, in the same order, and
+///   then keep returning `None`. Its `size_hint` must return the number of
+///   items not yet yielded as both its lower and its upper bound.
 /// - If that iterator also implements `DoubleEndedIterator` and
 ///   `ExactSizeIterator`, `next_back` must yield the items starting from the
 ///   last one, and `len` must be the number of items not yet yielded.
@@ -255,7 +257,7 @@ impl<S> WithCapacity for Vec<S> {
 ///
 /// ```
 /// use arrayvec::ArrayVec;
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
 ///
 /// /// Maps with this config keep up to sixteen slots inline and never
 /// /// allocate.
@@ -266,6 +268,7 @@ impl<S> WithCapacity for Vec<S> {
 /// }
 ///
 /// impl GenMapConfig for Inline {
+///     type Len = KeepLen;
 ///     type Storage<S: GenSlotItem> = ArrayVec<S, 16>;
 /// }
 ///
@@ -341,7 +344,7 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
 /// covered by semver.
 ///
 /// ```
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
 /// use smallvec::SmallVec;
 ///
 /// /// Maps with this config keep up to eight slots inline before they
@@ -353,6 +356,7 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
 /// }
 ///
 /// impl GenMapConfig for Small {
+///     type Len = KeepLen;
 ///     type Storage<S: GenSlotItem> = SmallVec<S, 8>;
 /// }
 ///

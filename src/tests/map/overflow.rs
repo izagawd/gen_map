@@ -1,5 +1,5 @@
 use crate::tests::Cfg;
-use crate::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
+use crate::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
 use std::vec::Vec;
 
 /// A `u8` index and a `u8` generation, so a slot retires after holding 128
@@ -16,6 +16,7 @@ impl MapConfig for Wrap {
 
 impl GenMapConfig for Wrap {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
