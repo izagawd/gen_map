@@ -62,10 +62,10 @@ use core::iter::FusedIterator;
 /// - If the storage implements `IntoIterator<Item = (Self::First,
 ///   Self::Second)>`, its iterator must yield the same pairs as `slices`, in
 ///   the same order. Its `size_hint` must return the number of pairs not yet
-///   yielded as both its lower and its upper bound.
-/// - If that iterator also implements `DoubleEndedIterator` and
-///   `ExactSizeIterator`, `next_back` must yield the pairs starting from the
-///   last one, and `len` must be the number of pairs not yet yielded.
+///   yielded as both its lower and its upper bound. If it implements
+///   `ExactSizeIterator`, its `len` must return that number too. If it
+///   implements `DoubleEndedIterator`, `next_back` must yield the pairs
+///   starting from the last one.
 /// - Once that iterator has yielded every pair, whichever end it took them
 ///   from, every later call of its `next` or `next_back` must return `None`.
 /// - If the storage implements `Clone`, the storage that `clone` returns must
@@ -279,10 +279,11 @@ impl<A: SliceStorage + Clone, B: SliceStorage + Clone> Clone for SplitPair<A, B>
 // clone of each pair in the same order. `clone_from` clones each storage with
 // its own `clone_from`, which the same rules cover, and it empties both
 // storages if either one panics. The rules of `SliceStorage` make the iterator
-// of each storage yield its items in order, give an exact size hint, and
-// return `None` from either end once it has yielded every item. Both storages
-// hold the same number of items, so `SplitPairIntoIter`, which takes one item
-// from each iterator for each pair, does the same for pairs.
+// of each storage yield its items in order, with `next_back` starting from the
+// last one, give an exact size hint and length, and return `None` from either
+// end once it has yielded every item. Both storages hold the same number of
+// items, so `SplitPairIntoIter`, which takes one item from each iterator for
+// each pair, does the same for pairs.
 unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
     type First = A::Item;
     type Second = B::Item;
