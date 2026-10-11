@@ -60,11 +60,14 @@ use core::iter::FusedIterator;
 /// - [`empty`](Self::empty) must return a storage with no pairs, and so must
 ///   `with_capacity` if the storage implements [`WithCapacity`].
 /// - If the storage implements `IntoIterator<Item = (Self::First,
-///   Self::Second)>`, `into_iter` must yield the same pairs as `slices`, in
-///   the same order.
-/// - If that iterator also implements `DoubleEndedIterator` and
-///   `ExactSizeIterator`, `next_back` must yield the pairs starting from the
-///   last one, and `len` must be the number of pairs not yet yielded.
+///   Self::Second)>`, its iterator must yield the same pairs as `slices`, in
+///   the same order. Its `size_hint` must return the number of pairs not yet
+///   yielded as both its lower and its upper bound. If it implements
+///   `ExactSizeIterator`, its `len` must return that number too. If it
+///   implements `DoubleEndedIterator`, `next_back` must yield the pairs
+///   starting from the last one.
+/// - Once that iterator has yielded every pair, whichever end it took them
+///   from, every later call of its `next` or `next_back` must return `None`.
 /// - If the storage implements `Clone`, the storage that `clone` returns must
 ///   hold a clone of each pair, in the same order, as if each clone had been
 ///   pushed into an empty storage. `clone_from` must leave the storage holding
@@ -275,7 +278,12 @@ impl<A: SliceStorage + Clone, B: SliceStorage + Clone> Clone for SplitPair<A, B>
 // clones to hold a clone of each item in the same order, so the clone holds a
 // clone of each pair in the same order. `clone_from` clones each storage with
 // its own `clone_from`, which the same rules cover, and it empties both
-// storages if either one panics.
+// storages if either one panics. The rules of `SliceStorage` make the iterator
+// of each storage yield its items in order, with `next_back` starting from the
+// last one, give an exact size hint and length, and return `None` from either
+// end once it has yielded every item. Both storages hold the same number of
+// items, so `SplitPairIntoIter`, which takes one item from each iterator for
+// each pair, does the same for pairs.
 unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
     type First = A::Item;
     type Second = B::Item;
@@ -421,7 +429,6 @@ where
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         SplitPairIntoIter {
-            remaining: self.first.len(),
             first: self.first.into_iter(),
             second: self.second.into_iter(),
         }
@@ -436,8 +443,6 @@ where
 pub struct SplitPairIntoIter<A: IntoIterator, B: IntoIterator> {
     first: A::IntoIter,
     second: B::IntoIter,
-    /// The number of pairs not yet yielded.
-    remaining: usize,
 }
 
 impl<A: IntoIterator, B: IntoIterator> Iterator for SplitPairIntoIter<A, B> {
@@ -445,17 +450,15 @@ impl<A: IntoIterator, B: IntoIterator> Iterator for SplitPairIntoIter<A, B> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
-        let pair = (self.first.next()?, self.second.next()?);
-        self.remaining -= 1;
-        Some(pair)
+        Some((self.first.next()?, self.second.next()?))
     }
 
+    // `SliceStorage` requires the size hint of each storage's iterator to be
+    // exact, and the two storages hold the same number of items, so the hint
+    // of the first one is the hint for the pairs.
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
+        self.first.size_hint()
     }
 }
 
@@ -466,14 +469,12 @@ where
 {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
-        let pair = (self.first.next_back()?, self.second.next_back()?);
-        self.remaining -= 1;
-        Some(pair)
+        Some((self.first.next_back()?, self.second.next_back()?))
     }
 }
 
+// `SliceStorage` requires the iterator of each storage to give an exact size
+// hint and to keep returning `None` once it runs out, so this iterator is exact
+// and fused too.
 impl<A: IntoIterator, B: IntoIterator> ExactSizeIterator for SplitPairIntoIter<A, B> {}
 impl<A: IntoIterator, B: IntoIterator> FusedIterator for SplitPairIntoIter<A, B> {}

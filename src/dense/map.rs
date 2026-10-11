@@ -1325,7 +1325,6 @@ where
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         DenseIntoIter {
-            remaining: self.pairs.len(),
             pairs: self.pairs.into_iter(),
         }
     }
@@ -1580,8 +1579,6 @@ impl<T> FusedIterator for DenseValuesMut<'_, T> {}
 /// `DoubleEndedIterator` and `ExactSizeIterator`.
 pub struct DenseIntoIter<P: IntoIterator> {
     pub(crate) pairs: P::IntoIter,
-    /// The number of pairs not yet yielded.
-    pub(crate) remaining: usize,
 }
 
 impl<P: IntoIterator> Iterator for DenseIntoIter<P> {
@@ -1589,17 +1586,12 @@ impl<P: IntoIterator> Iterator for DenseIntoIter<P> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
-        let pair = self.pairs.next()?;
-        self.remaining -= 1;
-        Some(pair)
+        self.pairs.next()
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
+        self.pairs.size_hint()
     }
 }
 
@@ -1609,15 +1601,13 @@ where
 {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
-        let pair = self.pairs.next_back()?;
-        self.remaining -= 1;
-        Some(pair)
+        self.pairs.next_back()
     }
 }
 
+// `PairStorage` requires the iterator of a pair storage to give an exact size
+// hint and to keep returning `None` once it runs out, so this iterator is
+// exact and fused too.
 impl<P: IntoIterator> ExactSizeIterator for DenseIntoIter<P> {}
 impl<P: IntoIterator> FusedIterator for DenseIntoIter<P> {}
 

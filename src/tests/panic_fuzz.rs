@@ -8,8 +8,8 @@ use super::model::Rng;
 use super::{DropItem, DropTracker};
 use crate::{
     DefaultMapConfig, DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig,
-    GenMap, GenMapConfig, GenSlotItem, Key, KeyPiece, MapConfig, MapIdx, MapKeyConfig, NewerWins,
-    Packed, PairVec, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, SplitPair,
+    GenMap, GenMapConfig, GenSlotItem, KeepLen, Key, KeyPiece, MapConfig, MapIdx, MapKeyConfig,
+    NewerWins, Packed, PairVec, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, SplitPair,
 };
 use std::cell::{Cell, RefCell};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -73,11 +73,13 @@ macro_rules! config {
 
         impl GenMapConfig for $name {
             const WRAP_ON_OVERFLOW: bool = $wrap;
+            type Len = KeepLen;
             type Storage<S: GenSlotItem> = $slots<S>;
         }
 
         impl SecondaryMapConfig for $name {
             type ReplaceStrategy = NewerWins;
+            type Len = KeepLen;
             type Storage<S: SecondarySlotItem> = $slots<S>;
         }
 
@@ -212,7 +214,10 @@ fn finish<I: Iterator>(mut drain: I, taken: usize) {
 
 fn run<C>(seed: u64, steps: usize)
 where
-    C: GenMapConfig + SecondaryMapConfig + DenseGenMapConfig + DenseSecondaryMapConfig,
+    C: GenMapConfig<Len = KeepLen>
+        + SecondaryMapConfig<Len = KeepLen>
+        + DenseGenMapConfig
+        + DenseSecondaryMapConfig,
     GenMap<Fragile, C>: Clone,
     DenseGenMap<Fragile, C>: Clone,
     SecondaryMap<Fragile, C>: Clone,
@@ -375,7 +380,10 @@ fn check<C>(
     secondary: &SecondaryMap<Fragile, C>,
     dense_secondary: &DenseSecondaryMap<Fragile, C>,
 ) where
-    C: GenMapConfig + SecondaryMapConfig + DenseGenMapConfig + DenseSecondaryMapConfig,
+    C: GenMapConfig<Len = KeepLen>
+        + SecondaryMapConfig<Len = KeepLen>
+        + DenseGenMapConfig
+        + DenseSecondaryMapConfig,
 {
     assert_eq!(sparse.iter().count(), sparse.len());
     for (key, value) in sparse {

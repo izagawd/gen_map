@@ -5,10 +5,11 @@
 //! gets its own test so they run in parallel.
 
 use crate::map::{Gen, Idx};
+use crate::tests::LenCheck;
 use crate::{
     DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
-    GetDisjointMutError, InsertError, InsertWithError, Key, KeyConfig, KeyPiece, MapConfig,
-    MapKeyConfig, Packed,
+    GetDisjointMutError, InsertError, InsertWithError, KeepLen, Key, KeyConfig, KeyPiece,
+    MapConfig, MapKeyConfig, NoLen, Packed, Split,
 };
 use std::vec::Vec;
 
@@ -21,6 +22,7 @@ impl MapConfig for Retiring {
 }
 
 impl GenMapConfig for Retiring {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
@@ -33,6 +35,7 @@ impl MapConfig for Small {
 }
 
 impl GenMapConfig for Small {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
@@ -45,6 +48,7 @@ impl MapConfig for SmallWrap {
 
 impl GenMapConfig for SmallWrap {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
@@ -60,6 +64,7 @@ impl MapConfig for InlineRetiring {
 
 #[cfg(feature = "arrayvec")]
 impl GenMapConfig for InlineRetiring {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = arrayvec::ArrayVec<S, 12>;
 }
 
@@ -76,6 +81,7 @@ impl MapConfig for InlineWrap {
 #[cfg(feature = "arrayvec")]
 impl GenMapConfig for InlineWrap {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = arrayvec::ArrayVec<S, 16>;
 }
 
@@ -92,7 +98,35 @@ impl MapConfig for Spilling {
 
 #[cfg(feature = "smallvec")]
 impl GenMapConfig for Spilling {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = smallvec::SmallVec<S, 4>;
+}
+
+/// Maps with this config use the keys of the default config and keep no count
+/// of their values.
+struct Uncounted;
+
+impl MapConfig for Uncounted {
+    type KeyConfig = Split<u32, u32>;
+}
+
+impl GenMapConfig for Uncounted {
+    type Len = NoLen;
+    type Storage<S: GenSlotItem> = Vec<S>;
+}
+
+/// Maps with this config work like those with [`SmallWrap`], but keep no
+/// count of their values.
+struct SmallWrapUncounted;
+
+impl MapConfig for SmallWrapUncounted {
+    type KeyConfig = Packed<u8, 4>;
+}
+
+impl GenMapConfig for SmallWrapUncounted {
+    const WRAP_ON_OVERFLOW: bool = true;
+    type Len = NoLen;
+    type Storage<S: GenSlotItem> = Vec<S>;
 }
 
 #[test]
@@ -113,6 +147,16 @@ fn a_small_packed_config_agrees_with_the_model() {
 #[test]
 fn a_small_packed_config_that_wraps_agrees_with_the_model() {
     run_seeds::<SmallWrap>();
+}
+
+#[test]
+fn a_config_without_a_count_agrees_with_the_model() {
+    run_seeds::<Uncounted>();
+}
+
+#[test]
+fn a_small_config_that_wraps_without_a_count_agrees_with_the_model() {
+    run_seeds::<SmallWrapUncounted>();
 }
 
 #[cfg(feature = "arrayvec")]
@@ -138,6 +182,7 @@ fn a_small_vec_agrees_with_the_model() {
 fn run_seeds<C: GenMapConfig>()
 where
     GenMap<u32, C>: Clone,
+    C::Len: LenCheck,
 {
     let (seeds, steps) = if cfg!(miri) { (2, 300) } else { (48, 2000) };
     for seed in 0..seeds {
@@ -224,6 +269,7 @@ impl Drop for Context {
 fn run<C: GenMapConfig>(seed: u64, steps: usize)
 where
     GenMap<u32, C>: Clone,
+    C::Len: LenCheck,
 {
     let mut rng = Rng(seed);
     let mut map = GenMap::<u32, C>::new_with_config();
@@ -572,24 +618,30 @@ where
 
 /// Takes a random number of values out of a drain, then drops the drain,
 /// which removes the rest.
-fn drain<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn drain<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng)
+where
+    C::Len: LenCheck,
+{
     let mut expected = model.live.clone();
     expected.sort();
     let take = rng.below(expected.len() + 1);
 
     let mut drain = map.drain();
-    assert_eq!(drain.len(), expected.len());
+    C::Len::assert_hint(drain.size_hint(), expected.len());
     let taken: Vec<_> = drain.by_ref().take(take).collect();
     drop(drain);
     assert_eq!(taken, expected[..take]);
-    assert!(map.is_empty());
+    C::Len::assert_len(map, 0);
+    assert!(map.iter().next().is_none());
     model.kill_all();
 }
 
 /// Checks the whole map against the model.
-fn check<C: GenMapConfig>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut Rng) {
-    assert_eq!(map.len(), model.live.len());
-    assert_eq!(map.is_empty(), model.live.is_empty());
+fn check<C: GenMapConfig>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut Rng)
+where
+    C::Len: LenCheck,
+{
+    C::Len::assert_len(map, model.live.len());
 
     // Iteration is in slot order, and at most one valid key points at each
     // slot, so slot order is also key order.
@@ -597,7 +649,7 @@ fn check<C: GenMapConfig>(map: &GenMap<u32, C>, model: &Model<C>, rng: &mut Rng)
     expected.sort();
     let actual: Vec<_> = map.iter().map(|(key, value)| (key, *value)).collect();
     assert_eq!(actual, expected);
-    assert_eq!(map.iter().len(), expected.len());
+    C::Len::assert_hint(map.iter().size_hint(), expected.len());
 
     for (key, value) in &model.live {
         assert_eq!(map.get(*key), Some(value));

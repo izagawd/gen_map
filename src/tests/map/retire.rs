@@ -2,7 +2,7 @@
 //! covers it too.
 
 use crate::tests::{assert_not_detached, DropTracker};
-use crate::{GenMap, GenMapConfig, GenSlotItem, InsertError, MapConfig, Packed};
+use crate::{GenMap, GenMapConfig, GenSlotItem, InsertError, KeepLen, MapConfig, Packed};
 use std::vec::Vec;
 
 /// Sixteen slots whose generations wrap after eight values, so every slot is
@@ -15,6 +15,7 @@ impl MapConfig for Wrapping {
 
 impl GenMapConfig for Wrapping {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 

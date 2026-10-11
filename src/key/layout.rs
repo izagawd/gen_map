@@ -95,7 +95,7 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, Key, MapConfig, Packed};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, Key, MapConfig, Packed};
 ///
 /// /// Maps with this config hand out four byte keys with 24 bits of index
 /// /// and 8 bits of generation.
@@ -106,6 +106,7 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// }
 ///
 /// impl GenMapConfig for Compact {
+///     type Len = KeepLen;
 ///     type Storage<S: GenSlotItem> = Vec<S>;
 /// }
 ///

@@ -3,8 +3,9 @@
 
 use crate::{
     DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap,
-    GenMapConfig, GenSlotItem, MapConfig, NewerWins, SliceStorage, Split, SplitPair,
+    GenMapConfig, GenSlotItem, KeepLen, MapConfig, NewerWins, SliceStorage, Split, SplitPair,
 };
+use std::collections::TryReserveError;
 use std::vec::Vec;
 
 /// A `Vec` behind `SliceStorage` alone. With `ITER` it also has an owning
@@ -12,12 +13,12 @@ use std::vec::Vec;
 /// `ExactSizeIterator`.
 struct Bare<S, const ITER: bool>(Vec<S>);
 
-// SAFETY: every method except `ensure_room` forwards to the `Vec`, which
-// behaves as the trait describes. `ensure_room` can skip making room because
-// `push_unchecked` grows the `Vec` when it is full.
+// SAFETY: every method forwards to the `Vec`, which behaves as the trait
+// describes. `ensure_room` makes room with `try_reserve`, so `push_unchecked`
+// never grows the `Vec` or panics while the rules promise room.
 unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
     type Item = S;
-    type Error = ();
+    type Error = TryReserveError;
 
     fn empty() -> Self {
         Bare(Vec::new())
@@ -35,11 +36,12 @@ unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
         &mut self.0
     }
 
-    fn ensure_room(&mut self, _additional: usize) -> Result<(), ()> {
-        Ok(())
+    fn ensure_room(&mut self, additional: usize) -> Result<(), TryReserveError> {
+        self.0.try_reserve(additional)
     }
 
     unsafe fn push_unchecked(&mut self, item: S) {
+        debug_assert!(self.0.len() < self.0.capacity());
         self.0.push(item);
     }
 
@@ -53,7 +55,8 @@ unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
 }
 
 /// A `Vec` iterator that only implements `Iterator`, so it has no
-/// `next_back` and no `len`.
+/// `next_back` and no `len`. Its size hint is exact, as `SliceStorage`
+/// requires.
 struct Forwards<S>(std::vec::IntoIter<S>);
 
 impl<S> Iterator for Forwards<S> {
@@ -61,6 +64,10 @@ impl<S> Iterator for Forwards<S> {
 
     fn next(&mut self) -> Option<S> {
         self.0.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
     }
 }
 
@@ -81,6 +88,7 @@ impl MapConfig for NoIter {
 }
 
 impl GenMapConfig for NoIter {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Bare<S, false>;
 }
 
@@ -92,6 +100,7 @@ impl MapConfig for ForwardIter {
 }
 
 impl GenMapConfig for ForwardIter {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Bare<S, true>;
 }
 
@@ -176,7 +185,8 @@ fn dense_into_iter_works_when_the_storage_iterators_have_no_next_back() {
     map.remove(keys[1]);
 
     let mut iter = map.into_iter();
-    // The iterator counts the pairs it has left, so the length is still exact.
+    // The storage's iterator does not implement `ExactSizeIterator`, but its
+    // size hint is exact, so `iter` still knows its exact length.
     assert_eq!(iter.len(), 3);
     assert_eq!(iter.next(), Some((keys[0], 0)));
     assert_eq!(iter.len(), 2);

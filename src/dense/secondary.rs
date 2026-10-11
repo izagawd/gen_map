@@ -1040,7 +1040,6 @@ where
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         DenseIntoIter {
-            remaining: self.pairs.len(),
             pairs: self.pairs.into_iter(),
         }
     }

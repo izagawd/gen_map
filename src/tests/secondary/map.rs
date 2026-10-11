@@ -1,11 +1,12 @@
 //! Tests for `SecondaryMap`.
 
 use crate::tests::model::Rng;
-use crate::tests::{key_from_parts, Bomb, Cfg, CloneBomb, DropItem, DropTracker};
+use crate::tests::{key_from_parts, Bomb, Cfg, CloneBomb, DropItem, DropTracker, LenCheck};
 use crate::{
     DefaultKeyConfig, ExistingWins, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
-    GetDisjointMutError, Key, MapConfig, MapKeyConfig, NewerWins, Odd, Packed, ReplaceStrategy,
-    SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Split,
+    GetDisjointMutError, KeepLen, Key, MapConfig, MapKeyConfig, NewerWins, NoLen, Odd, Packed,
+    ReplaceStrategy, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem,
+    Split,
 };
 use core::marker::PhantomData;
 use std::collections::HashMap;
@@ -23,6 +24,7 @@ impl MapConfig for Keep {
 
 impl SecondaryMapConfig for Keep {
     type ReplaceStrategy = ExistingWins;
+    type Len = KeepLen;
     type Storage<S: SecondarySlotItem> = Vec<S>;
 }
 
@@ -36,6 +38,7 @@ impl MapConfig for Wrap4 {
 
 impl GenMapConfig for Wrap4 {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
@@ -48,6 +51,7 @@ impl<R> MapConfig for With<R> {
 
 impl<R: ReplaceStrategy<MapKeyConfig<Wrap4>>> SecondaryMapConfig for With<R> {
     type ReplaceStrategy = R;
+    type Len = KeepLen;
     type Storage<S: SecondarySlotItem> = Vec<S>;
 }
 
@@ -479,6 +483,7 @@ impl MapConfig for InSmallVec {
 #[cfg(feature = "smallvec")]
 impl SecondaryMapConfig for InSmallVec {
     type ReplaceStrategy = NewerWins;
+    type Len = KeepLen;
     type Storage<S: SecondarySlotItem> = smallvec::SmallVec<S, 4>;
 }
 
@@ -495,6 +500,7 @@ impl MapConfig for InArrayVec {
 #[cfg(feature = "arrayvec")]
 impl SecondaryMapConfig for InArrayVec {
     type ReplaceStrategy = NewerWins;
+    type Len = KeepLen;
     type Storage<S: SecondarySlotItem> = arrayvec::ArrayVec<S, 16>;
 }
 
@@ -526,6 +532,7 @@ struct Coverage {
 fn follow_the_model<C>(capacity: Option<usize>)
 where
     C: SecondaryMapConfig + MapConfig<KeyConfig = DefaultKeyConfig>,
+    C::Len: LenCheck,
 {
     let (seeds, steps) = if cfg!(miri) { (2, 300) } else { (8, 2000) };
     let mut coverage = Coverage::default();
@@ -548,6 +555,7 @@ where
 fn run_model<C>(seed: u64, steps: u32, capacity: Option<usize>, coverage: &mut Coverage)
 where
     C: SecondaryMapConfig + MapConfig<KeyConfig = DefaultKeyConfig>,
+    C::Len: LenCheck,
 {
     let mut rng = Rng(seed);
     let mut keys = GenMap::new();
@@ -608,7 +616,8 @@ where
             _ => {}
         }
 
-        assert_eq!(map.len(), model.len());
+        C::Len::assert_secondary_len(&map, model.len());
+        C::Len::assert_hint(map.iter().size_hint(), model.len());
         if step % 100 == 0 || step + 1 == steps {
             let mut expected: Vec<(u32, u32, u32)> = model
                 .iter()
@@ -643,6 +652,25 @@ where
 #[test]
 fn a_secondary_map_follows_the_model() {
     follow_the_model::<crate::DefaultMapConfig>(None);
+}
+
+/// Maps with this config use the default keys and the default strategy, and
+/// keep no count of their values.
+struct Uncounted;
+
+impl MapConfig for Uncounted {
+    type KeyConfig = DefaultKeyConfig;
+}
+
+impl SecondaryMapConfig for Uncounted {
+    type ReplaceStrategy = NewerWins;
+    type Len = NoLen;
+    type Storage<S: SecondarySlotItem> = Vec<S>;
+}
+
+#[test]
+fn a_secondary_map_without_a_count_follows_the_model() {
+    follow_the_model::<Uncounted>(None);
 }
 
 #[cfg(feature = "smallvec")]

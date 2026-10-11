@@ -8,6 +8,8 @@ use crate::error::{
 use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
 use crate::key::Key;
+use crate::len::sealed::Counter;
+use crate::len::{KeepLen, Len};
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
 use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
@@ -94,6 +96,9 @@ pub(crate) unsafe fn position_of<C: MapConfig>(idx: Idx<C>) -> usize {
 /// The storage a config gives the map for its slots.
 type Slots<T, C> = <C as GenMapConfig>::Storage<MapSlot<T, C>>;
 
+/// The type a map with config `C` keeps its count of values in.
+type LenCount<C> = <<C as GenMapConfig>::Len as Len>::Count<Idx<C>>;
+
 /// The largest index a key of `C` can hold.
 #[inline]
 fn max_idx<C: MapConfig>() -> Idx<C> {
@@ -104,8 +109,8 @@ fn max_idx<C: MapConfig>() -> Idx<C> {
 /// hold, except that no slot ever gets the largest value of the index type.
 /// That value is [`no_slot`]. Leaving it out also caps the number of slots, and
 /// so the number of values, at the largest value of the index type. A `GenMap`
-/// counts its values in that type, and a `DenseGenMap` stores the position of
-/// each value in it.
+/// that keeps a count of its values keeps it in that type, and a `DenseGenMap`
+/// stores the position of each value in it.
 #[inline]
 pub(crate) fn max_slot_idx<C: MapConfig>() -> Idx<C> {
     let max = max_idx::<C>();
@@ -128,22 +133,58 @@ pub(crate) fn no_slot<C: MapConfig>() -> Idx<C> {
 /// value of the index type as its index, so a map has at most as many slots as
 /// that largest value. Every value has a slot of its own, and the new value
 /// already has one of them, so `len` is below that largest value beforehand and
-/// the add cannot overflow.
+/// the add cannot overflow. It does nothing if the map keeps no count.
 #[inline]
-pub(crate) fn increment_len<I: KeyPiece>(len: &mut I) {
-    debug_assert!(
-        *len < I::MAX,
-        "a map never holds as many values as the largest value of its index type"
-    );
-    *len = len.wrapping_add(I::ONE);
+pub(crate) fn increment_len<I: KeyPiece, L: Counter<I>>(len: &mut L) {
+    len.update(|len| {
+        debug_assert!(
+            len < I::MAX,
+            "a map never holds as many values as the largest value of its index type"
+        );
+        len.wrapping_add(I::ONE)
+    });
 }
 
-/// Takes one off a map's `len`. The map only calls this when it takes out a
-/// value it holds, so `len` is above zero beforehand.
-#[inline]
-pub(crate) fn decrement_len<I: KeyPiece>(len: &mut I) {
-    debug_assert!(*len > I::ZERO, "a map only removes a value it holds");
-    *len = len.wrapping_sub(I::ONE);
+/// Takes one off a count of values. A map only calls this when it takes out a
+/// value it holds, and an iterator only calls it when it yields a value, so
+/// the count is above zero beforehand. It does nothing if the map keeps no
+/// count.
+#[inline(always)]
+pub(crate) fn decrement_len<I: KeyPiece, L: Counter<I>>(len: &mut L) {
+    len.update(|len| {
+        debug_assert!(
+            len > I::ZERO,
+            "a count of values only goes down while it is above zero"
+        );
+        len.wrapping_sub(I::ONE)
+    });
+}
+
+/// Returns the size hint of an iterator over a map's values. `remaining` is
+/// the count of values the iterator has left to yield. If the map keeps a
+/// count, both bounds of the hint are `remaining`. Otherwise the hint has a
+/// lower bound of zero and an upper bound of what `upper` returns, which is
+/// the most values the iterator can have left. `upper` is only called when
+/// the map keeps no count.
+///
+/// # Safety
+///
+/// If the map keeps a count, `remaining` must fit in a `usize`.
+#[inline(always)]
+pub(crate) unsafe fn size_hint<I: KeyPiece, L: Counter<I>>(
+    remaining: L,
+    upper: impl FnOnce() -> Option<usize>,
+) -> (usize, Option<usize>) {
+    match remaining.get() {
+        Some(remaining) => {
+            debug_assert!(remaining.into_usize().is_some());
+            // SAFETY: the caller promises that a kept count fits in a
+            // `usize`.
+            let remaining = unsafe { remaining.into_usize_unchecked() };
+            (remaining, Some(remaining))
+        }
+        None => (0, upper()),
+    }
 }
 
 /// The generation after `generation`, or `None` if `generation` is the
@@ -310,10 +351,11 @@ pub struct GenMap<
     /// The index of the first slot on the free list, or `no_slot` if no slot
     /// is free.
     next_free: Idx<C>,
-    /// The number of values. No slot has the largest value of the index type as
-    /// its index, so there are at most as many slots as that largest value, and
-    /// the count of values always fits in the index type.
-    len: Idx<C>,
+    /// The number of values, or `()` if the config keeps no count. No slot
+    /// has the largest value of the index type as its index, so there are at
+    /// most as many slots as that largest value, and the count of values
+    /// always fits in the index type.
+    len: LenCount<C>,
 }
 
 #[cfg(feature = "alloc")]
@@ -386,11 +428,28 @@ where
     }
 }
 
+/// A map has these methods only when its config picks [`KeepLen`].
+impl<T, C: GenMapConfig<Len = KeepLen>> GenMap<T, C> {
+    /// The number of values in the map.
+    #[inline]
+    pub fn len(&self) -> usize {
+        // SAFETY: every value has a slot of its own in the storage, so the
+        // count is at most the number of slots, which is a `usize`.
+        unsafe { self.len.into_usize_unchecked() }
+    }
+
+    /// Returns `true` if the map holds no values.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len == Idx::<C>::ZERO
+    }
+}
+
 impl<T, C: GenMapConfig> GenMap<T, C> {
     /// Creates an empty map with config `C`.
     ///
     /// ```
-    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
+    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
     ///
     /// struct Wide;
     ///
@@ -399,6 +458,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// }
     ///
     /// impl GenMapConfig for Wide {
+    ///     type Len = KeepLen;
     ///     type Storage<S: GenSlotItem> = Vec<S>;
     /// }
     ///
@@ -420,7 +480,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         Self {
             slots,
             next_free: no_slot::<C>(),
-            len: Idx::<C>::ZERO,
+            len: Counter::zero(),
         }
     }
 
@@ -429,20 +489,6 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     #[inline]
     pub fn capacity(&self) -> usize {
         self.slots.capacity()
-    }
-
-    /// The number of values in the map.
-    #[inline]
-    pub fn len(&self) -> usize {
-        // SAFETY: every value has a slot of its own in the storage, so the
-        // count is at most the number of slots, which is a `usize`.
-        unsafe { self.len.into_usize_unchecked() }
-    }
-
-    /// Returns `true` if the map holds no values.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len == Idx::<C>::ZERO
     }
 
     /// The number of slots, whether they hold a value or not.
@@ -845,7 +891,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// # Examples
     ///
     /// ```
-    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, InsertError, MapConfig, Split};
+    /// use gen_map::{
+    ///     GenMap, GenMapConfig, GenSlotItem, InsertError, KeepLen, MapConfig, Split,
+    /// };
     ///
     /// struct Tiny;
     ///
@@ -854,6 +902,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// }
     ///
     /// impl GenMapConfig for Tiny {
+    ///     type Len = KeepLen;
     ///     type Storage<S: GenSlotItem> = Vec<S>;
     /// }
     ///
@@ -1059,7 +1108,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// # Examples
     ///
     /// ```
-    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Packed};
+    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Packed};
     ///
     /// /// Maps with this config have at most sixteen slots, and a slot's
     /// /// generation wraps after the slot has held eight values.
@@ -1071,6 +1120,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     ///
     /// impl GenMapConfig for Wrapping {
     ///     const WRAP_ON_OVERFLOW: bool = true;
+    ///     type Len = KeepLen;
     ///     type Storage<S: GenSlotItem> = Vec<S>;
     /// }
     ///
@@ -1125,8 +1175,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     ///
     /// Until `reattach` puts a value back or [`release`](Self::release) frees
     /// the slot, [`contains_key`](Self::contains_key) returns `false` for the
-    /// key and [`len`](Self::len) does not count the value, but the slot is not
-    /// on the free list, so no insert uses it.
+    /// key, and [`len`](Self::len) does not count the value if the config keeps
+    /// a count. The slot is not on the free list in the meantime, so no insert
+    /// uses it.
     ///
     /// While the slot is detached, its generation is one more than the key's
     /// generation, or zero if the key's generation is the largest value of the
@@ -1236,7 +1287,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
                 drop(unsafe { self.take(index_of::<C>(position), position) });
             }
         }
-        debug_assert!(self.is_empty());
+        debug_assert!(self.len.get().is_none_or(|len| len == Idx::<C>::ZERO));
     }
 
     /// Removes every value and every slot, keeping the allocation.
@@ -1253,7 +1304,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         // already be empty, and a free list that still described the
         // old slots would let the next insert read past the end of the storage.
         self.next_free = no_slot::<C>();
-        self.len = Idx::<C>::ZERO;
+        self.len = Counter::zero();
         self.slots.clear();
     }
 
@@ -1299,17 +1350,16 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     pub fn iter(&self) -> Iter<'_, T, C> {
         Iter {
             slots: self.slots.as_slice().iter().enumerate(),
-            remaining: self.len(),
+            remaining: self.len,
         }
     }
 
     /// Iterates over every value mutably together with its key, in slot order.
     #[inline]
     pub fn iter_mut(&mut self) -> IterMut<'_, T, C> {
-        let remaining = self.len();
         IterMut {
             slots: self.slots.as_mut_slice().iter_mut().enumerate(),
-            remaining,
+            remaining: self.len,
         }
     }
 
@@ -1393,7 +1443,7 @@ where
     /// storage. If a value's `clone` panics, this map is left empty.
     fn clone_from(&mut self, source: &Self) {
         self.next_free = no_slot::<C>();
-        self.len = Idx::<C>::ZERO;
+        self.len = Counter::zero();
         let slots = ClearOnUnwind(&mut self.slots);
         slots.0.clone_from(&source.slots);
         core::mem::forget(slots);
@@ -1403,19 +1453,21 @@ where
 }
 
 /// Iterator over `(key, &value)` pairs. It is created using [`GenMap::iter`].
-pub struct Iter<'a, T, C: MapConfig> {
+pub struct Iter<'a, T, C: GenMapConfig> {
     slots: Enumerate<core::slice::Iter<'a, MapSlot<T, C>>>,
-    remaining: usize,
+    /// The count of values the iterator has left to yield, or `()` if the
+    /// config keeps no count.
+    remaining: LenCount<C>,
 }
 
-impl<'a, T, C: MapConfig> Iterator for Iter<'a, T, C> {
+impl<'a, T, C: GenMapConfig> Iterator for Iter<'a, T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
             if let ParityRef::Odd(&generation, value) = slot.as_parity() {
-                self.remaining -= 1;
+                decrement_len(&mut self.remaining);
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
                 return Some((
@@ -1429,16 +1481,20 @@ impl<'a, T, C: MapConfig> Iterator for Iter<'a, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
+        // SAFETY: if the config keeps a count, `remaining` is the number of
+        // values the iterator has not yielded yet. Each of them has a slot of
+        // its own, so `remaining` is at most the number of slots, which is a
+        // `usize`.
+        unsafe { size_hint(self.remaining, || self.slots.size_hint().1) }
     }
 }
 
-impl<T, C: MapConfig> DoubleEndedIterator for Iter<'_, T, C> {
+impl<T, C: GenMapConfig> DoubleEndedIterator for Iter<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
             if let ParityRef::Odd(&generation, value) = slot.as_parity() {
-                self.remaining -= 1;
+                decrement_len(&mut self.remaining);
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
                 return Some((
@@ -1451,10 +1507,10 @@ impl<T, C: MapConfig> DoubleEndedIterator for Iter<'_, T, C> {
     }
 }
 
-impl<T, C: MapConfig> ExactSizeIterator for Iter<'_, T, C> {}
-impl<T, C: MapConfig> FusedIterator for Iter<'_, T, C> {}
+impl<T, C: GenMapConfig<Len = KeepLen>> ExactSizeIterator for Iter<'_, T, C> {}
+impl<T, C: GenMapConfig> FusedIterator for Iter<'_, T, C> {}
 
-impl<T, C: MapConfig> Clone for Iter<'_, T, C> {
+impl<T, C: GenMapConfig> Clone for Iter<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             slots: self.slots.clone(),
@@ -1465,19 +1521,21 @@ impl<T, C: MapConfig> Clone for Iter<'_, T, C> {
 
 /// Iterator over `(key, &mut value)` pairs. It is created using
 /// [`GenMap::iter_mut`].
-pub struct IterMut<'a, T, C: MapConfig> {
+pub struct IterMut<'a, T, C: GenMapConfig> {
     slots: Enumerate<core::slice::IterMut<'a, MapSlot<T, C>>>,
-    remaining: usize,
+    /// The count of values the iterator has left to yield, or `()` if the
+    /// config keeps no count.
+    remaining: LenCount<C>,
 }
 
-impl<'a, T, C: MapConfig> Iterator for IterMut<'a, T, C> {
+impl<'a, T, C: GenMapConfig> Iterator for IterMut<'a, T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a mut T);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
             if let ParityMut::Odd(&mut generation, value) = slot.as_parity_mut() {
-                self.remaining -= 1;
+                decrement_len(&mut self.remaining);
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
                 return Some((
@@ -1491,16 +1549,20 @@ impl<'a, T, C: MapConfig> Iterator for IterMut<'a, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
+        // SAFETY: if the config keeps a count, `remaining` is the number of
+        // values the iterator has not yielded yet. Each of them has a slot of
+        // its own, so `remaining` is at most the number of slots, which is a
+        // `usize`.
+        unsafe { size_hint(self.remaining, || self.slots.size_hint().1) }
     }
 }
 
-impl<T, C: MapConfig> DoubleEndedIterator for IterMut<'_, T, C> {
+impl<T, C: GenMapConfig> DoubleEndedIterator for IterMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
             if let ParityMut::Odd(&mut generation, value) = slot.as_parity_mut() {
-                self.remaining -= 1;
+                decrement_len(&mut self.remaining);
                 // SAFETY: `position` is where the slot sits in the backing
                 // storage.
                 return Some((
@@ -1513,15 +1575,15 @@ impl<T, C: MapConfig> DoubleEndedIterator for IterMut<'_, T, C> {
     }
 }
 
-impl<T, C: MapConfig> ExactSizeIterator for IterMut<'_, T, C> {}
-impl<T, C: MapConfig> FusedIterator for IterMut<'_, T, C> {}
+impl<T, C: GenMapConfig<Len = KeepLen>> ExactSizeIterator for IterMut<'_, T, C> {}
+impl<T, C: GenMapConfig> FusedIterator for IterMut<'_, T, C> {}
 
 /// Iterator over keys. It is created using [`GenMap::keys`].
-pub struct Keys<'a, T, C: MapConfig> {
+pub struct Keys<'a, T, C: GenMapConfig> {
     inner: Iter<'a, T, C>,
 }
 
-impl<T, C: MapConfig> Iterator for Keys<'_, T, C> {
+impl<T, C: GenMapConfig> Iterator for Keys<'_, T, C> {
     type Item = Key<MapKeyConfig<C>>;
 
     #[inline]
@@ -1535,17 +1597,17 @@ impl<T, C: MapConfig> Iterator for Keys<'_, T, C> {
     }
 }
 
-impl<T, C: MapConfig> DoubleEndedIterator for Keys<'_, T, C> {
+impl<T, C: GenMapConfig> DoubleEndedIterator for Keys<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(key, _)| key)
     }
 }
 
-impl<T, C: MapConfig> ExactSizeIterator for Keys<'_, T, C> {}
-impl<T, C: MapConfig> FusedIterator for Keys<'_, T, C> {}
+impl<T, C: GenMapConfig<Len = KeepLen>> ExactSizeIterator for Keys<'_, T, C> {}
+impl<T, C: GenMapConfig> FusedIterator for Keys<'_, T, C> {}
 
-impl<T, C: MapConfig> Clone for Keys<'_, T, C> {
+impl<T, C: GenMapConfig> Clone for Keys<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -1555,11 +1617,11 @@ impl<T, C: MapConfig> Clone for Keys<'_, T, C> {
 
 /// Iterator over shared references to values. It is created using
 /// [`GenMap::values`].
-pub struct Values<'a, T, C: MapConfig> {
+pub struct Values<'a, T, C: GenMapConfig> {
     inner: Iter<'a, T, C>,
 }
 
-impl<'a, T, C: MapConfig> Iterator for Values<'a, T, C> {
+impl<'a, T, C: GenMapConfig> Iterator for Values<'a, T, C> {
     type Item = &'a T;
 
     #[inline]
@@ -1573,17 +1635,17 @@ impl<'a, T, C: MapConfig> Iterator for Values<'a, T, C> {
     }
 }
 
-impl<T, C: MapConfig> DoubleEndedIterator for Values<'_, T, C> {
+impl<T, C: GenMapConfig> DoubleEndedIterator for Values<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(_, value)| value)
     }
 }
 
-impl<T, C: MapConfig> ExactSizeIterator for Values<'_, T, C> {}
-impl<T, C: MapConfig> FusedIterator for Values<'_, T, C> {}
+impl<T, C: GenMapConfig<Len = KeepLen>> ExactSizeIterator for Values<'_, T, C> {}
+impl<T, C: GenMapConfig> FusedIterator for Values<'_, T, C> {}
 
-impl<T, C: MapConfig> Clone for Values<'_, T, C> {
+impl<T, C: GenMapConfig> Clone for Values<'_, T, C> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -1593,11 +1655,11 @@ impl<T, C: MapConfig> Clone for Values<'_, T, C> {
 
 /// Iterator over mutable references to values. It is created using
 /// [`GenMap::values_mut`].
-pub struct ValuesMut<'a, T, C: MapConfig> {
+pub struct ValuesMut<'a, T, C: GenMapConfig> {
     inner: IterMut<'a, T, C>,
 }
 
-impl<'a, T, C: MapConfig> Iterator for ValuesMut<'a, T, C> {
+impl<'a, T, C: GenMapConfig> Iterator for ValuesMut<'a, T, C> {
     type Item = &'a mut T;
 
     #[inline]
@@ -1611,15 +1673,15 @@ impl<'a, T, C: MapConfig> Iterator for ValuesMut<'a, T, C> {
     }
 }
 
-impl<T, C: MapConfig> DoubleEndedIterator for ValuesMut<'_, T, C> {
+impl<T, C: GenMapConfig> DoubleEndedIterator for ValuesMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(_, value)| value)
     }
 }
 
-impl<T, C: MapConfig> ExactSizeIterator for ValuesMut<'_, T, C> {}
-impl<T, C: MapConfig> FusedIterator for ValuesMut<'_, T, C> {}
+impl<T, C: GenMapConfig<Len = KeepLen>> ExactSizeIterator for ValuesMut<'_, T, C> {}
+impl<T, C: GenMapConfig> FusedIterator for ValuesMut<'_, T, C> {}
 
 /// Owning iterator over `(key, value)` pairs. It is created by consuming a map
 /// with `into_iter`, which a map only has when its storage implements
@@ -1630,7 +1692,9 @@ where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>,
 {
     slots: Enumerate<<Slots<T, C> as IntoIterator>::IntoIter>,
-    remaining: usize,
+    /// The count of values the iterator has left to yield, or `()` if the
+    /// config keeps no count.
+    remaining: LenCount<C>,
 }
 
 impl<T, C: GenMapConfig> Iterator for IntoIter<T, C>
@@ -1643,7 +1707,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
             if let Parity::Odd(generation, value) = slot.into_parity() {
-                self.remaining -= 1;
+                decrement_len(&mut self.remaining);
                 // SAFETY: `position` is where the slot sat in the storage.
                 return Some((
                     unsafe { slot_key::<C>(index_of::<C>(position), generation) },
@@ -1656,7 +1720,11 @@ where
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
+        // SAFETY: if the config keeps a count, `remaining` is the number of
+        // values the iterator has not yielded yet. Each of them has a slot of
+        // its own, so `remaining` is at most the number of slots, which is a
+        // `usize`.
+        unsafe { size_hint(self.remaining, || self.slots.size_hint().1) }
     }
 }
 
@@ -1671,7 +1739,7 @@ where
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
             if let Parity::Odd(generation, value) = slot.into_parity() {
-                self.remaining -= 1;
+                decrement_len(&mut self.remaining);
                 // SAFETY: `position` is where the slot sat in the storage.
                 return Some((
                     unsafe { slot_key::<C>(index_of::<C>(position), generation) },
@@ -1683,7 +1751,7 @@ where
     }
 }
 
-impl<T, C: GenMapConfig> ExactSizeIterator for IntoIter<T, C> where
+impl<T, C: GenMapConfig<Len = KeepLen>> ExactSizeIterator for IntoIter<T, C> where
     Slots<T, C>: IntoIterator<Item = MapSlot<T, C>>
 {
 }
@@ -1703,7 +1771,7 @@ where
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            remaining: self.len(),
+            remaining: self.len,
             slots: self.slots.into_iter().enumerate(),
         }
     }
@@ -1762,12 +1830,14 @@ impl<T, C: GenMapConfig> Iterator for Drain<'_, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.map.len();
-        (len, Some(len))
+        // SAFETY: if the config keeps a count, `self.map.len` is the number of
+        // values in the map. Each of them has a slot of its own, so the count
+        // is at most the number of slots, which is a `usize`.
+        unsafe { size_hint(self.map.len, || Some(self.map.slots.len() - self.position)) }
     }
 }
 
-impl<T, C: GenMapConfig> ExactSizeIterator for Drain<'_, T, C> {}
+impl<T, C: GenMapConfig<Len = KeepLen>> ExactSizeIterator for Drain<'_, T, C> {}
 impl<T, C: GenMapConfig> FusedIterator for Drain<'_, T, C> {}
 
 impl<T, C: GenMapConfig> Drop for Drain<'_, T, C> {
@@ -1799,7 +1869,8 @@ impl<T, C: GenMapConfig> Drop for Drain<'_, T, C> {
 ///   also holds when the list is empty. Every slot on the list holds no value
 ///   and has a generation below the largest one the map's keys can hold, and
 ///   no slot is on the list twice.
-/// - `len` is the number of slots that hold a value.
+/// - If the config picks [`KeepLen`], `len` is the number of slots that hold
+///   a value.
 ///
 /// [`MapSlot`] explains what a free, detached or retired slot stores in place
 /// of a value.
@@ -1836,8 +1907,9 @@ pub struct GenMapRawParts<
     /// `next_free` holds the index of the first slot on the free list, or the
     /// largest value of the index type if no slot is free.
     pub next_free: MapIdx<C>,
-    /// `len` is the number of values in the map.
-    pub len: MapIdx<C>,
+    /// `len` is the number of values in the map if the config picks
+    /// [`KeepLen`], and `()` if it picks [`NoLen`](crate::NoLen).
+    pub len: <<C as GenMapConfig>::Len as Len>::Count<MapIdx<C>>,
 }
 
 impl<T, C: GenMapConfig> GenMap<T, C> {

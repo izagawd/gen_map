@@ -519,7 +519,10 @@ impl<A, B, L: KeyPiece> Drop for PairVec<A, B, L> {
 // the length to the number of pairs, so the clone holds the same pairs in the
 // same order. `clone_from` clears the `PairVec` and then does the same, in a
 // new buffer when the old one is too small. Only `with_capacity` panics on its
-// own, and `clear` only panics when dropping an item does.
+// own, and `clear` only panics when dropping an item does. `PairVecIntoIter`
+// yields the pairs in order, and `next_back` yields them starting from the
+// last one. Its size hint and its length are exact, and it returns `None` from
+// either end once it has yielded every pair.
 unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     type First = A;
     type Second = B;

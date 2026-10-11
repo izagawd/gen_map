@@ -1,6 +1,7 @@
 use core::fmt::Debug;
 use core::hash::Hash;
 use core::num::NonZero;
+use core::panic::{RefUnwindSafe, UnwindSafe};
 
 // A `Slot` reads one of its union fields based on what `is_odd` says about its
 // generation, and `SingleVec` and `PairVec` build slices from the lengths they
@@ -20,7 +21,18 @@ use core::num::NonZero;
 ///
 /// It is sealed, so it cannot be implemented outside this crate.
 pub trait KeyPiece:
-    sealed::Sealed + Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static
+    sealed::Sealed
+    + Copy
+    + Eq
+    + Ord
+    + Hash
+    + Debug
+    + Send
+    + Sync
+    + Unpin
+    + UnwindSafe
+    + RefUnwindSafe
+    + 'static
 {
     /// The `NonZero` form of this integer.
     type NonZero: Copy + Eq + Ord + Hash + Debug + Send + Sync + 'static;

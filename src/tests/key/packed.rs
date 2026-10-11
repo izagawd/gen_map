@@ -1,7 +1,7 @@
 use crate::tests::Cfg;
 use crate::{
-    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, Key, KeyConfig, KeyPiece, MapConfig,
-    MapKeyConfig, Odd, Packed, Split,
+    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, KeepLen, Key, KeyConfig, KeyPiece,
+    MapConfig, MapKeyConfig, Odd, Packed, Split,
 };
 use core::mem::size_of;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -16,6 +16,7 @@ impl MapConfig for Compact {
 }
 
 impl GenMapConfig for Compact {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
@@ -28,6 +29,7 @@ impl MapConfig for Tiny {
 }
 
 impl GenMapConfig for Tiny {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
@@ -40,6 +42,7 @@ impl MapConfig for TinyWrap {
 
 impl GenMapConfig for TinyWrap {
     const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
@@ -51,6 +54,7 @@ impl MapConfig for Byte {
 }
 
 impl GenMapConfig for Byte {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
@@ -63,6 +67,7 @@ impl MapConfig for Huge {
 }
 
 impl GenMapConfig for Huge {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
@@ -370,6 +375,7 @@ impl MapConfig for Wide8 {
 }
 
 impl GenMapConfig for Wide8 {
+    type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 

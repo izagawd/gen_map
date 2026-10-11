@@ -4,7 +4,7 @@ mod piece;
 
 use super::{key_from_parts, Cfg};
 use crate::{
-    DefaultKeyConfig, DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, Key, KeyConfig,
+    DefaultKeyConfig, DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, KeepLen, Key, KeyConfig,
     MapConfig, MapKeyConfig, Split,
 };
 use core::mem::size_of;
@@ -30,6 +30,7 @@ fn maps_whose_configs_share_a_key_config_share_a_key_type() {
 
     impl GenMapConfig for Wrapping {
         const WRAP_ON_OVERFLOW: bool = true;
+        type Len = KeepLen;
         type Storage<S: GenSlotItem> = Vec<S>;
     }
 

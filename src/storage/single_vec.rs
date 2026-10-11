@@ -299,7 +299,10 @@ impl<T, L: KeyPiece> DerefMut for SingleVec<T, L> {
 // a clone of each item at the position of the item and then set the length to
 // the number of items, so the clone holds the same items in the same order.
 // Only `with_capacity` panics on its own, and `clear` only panics when
-// dropping an item does.
+// dropping an item does. `SingleVecIntoIter` yields the items in order, and
+// `next_back` yields them starting from the last one. Its size hint and its
+// length are exact, and it returns `None` from either end once it has yielded
+// every item.
 unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     type Item = T;
     type Error = ReserveError;

@@ -67,11 +67,15 @@ use core::fmt;
 ///   changes that a panic would leave half done.
 /// - [`empty`](Self::empty) must return a storage with no items, and so must
 ///   `with_capacity` if the storage implements [`WithCapacity`].
-/// - If the storage implements `IntoIterator<Item = Self::Item>`,
-///   `into_iter` must yield the same items as `as_slice`, in the same order.
-/// - If that iterator also implements `DoubleEndedIterator` and
-///   `ExactSizeIterator`, `next_back` must yield the items starting from the
-///   last one, and `len` must be the number of items not yet yielded.
+/// - If the storage implements `IntoIterator<Item = Self::Item>`, its
+///   iterator must yield the same items as `as_slice`, in the same order. Its
+///   `size_hint` must return the number of items not yet yielded as both its
+///   lower and its upper bound. If it implements `ExactSizeIterator`, its
+///   `len` must return that number too. If it implements
+///   `DoubleEndedIterator`, `next_back` must yield the items starting from the
+///   last one.
+/// - Once that iterator has yielded every item, whichever end it took them
+///   from, every later call of its `next` or `next_back` must return `None`.
 /// - If the storage implements `Clone`, the storage that `clone` returns must
 ///   hold a clone of each item, in the same order, as if each clone had been
 ///   pushed into an empty storage. `clone_from` must leave the storage holding
@@ -181,7 +185,10 @@ impl<St: SliceStorage> Drop for ClearOnUnwind<'_, St> {
 // `push_unchecked` writes the item at the end without a check, and the rules
 // only promise room while the capacity is above the length. Cloning a `Vec`
 // with `clone` or `clone_from` gives one that holds a clone of each item, in
-// the same order.
+// the same order. Its owning iterator yields the items in order, and
+// `next_back` yields them starting from the last one. Its size hint and its
+// length are exact, and it returns `None` from either end once it has yielded
+// every item.
 unsafe impl<S> SliceStorage for Vec<S> {
     type Item = S;
     type Error = TryReserveError;
@@ -255,7 +262,7 @@ impl<S> WithCapacity for Vec<S> {
 ///
 /// ```
 /// use arrayvec::ArrayVec;
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
 ///
 /// /// Maps with this config keep up to sixteen slots inline and never
 /// /// allocate.
@@ -266,6 +273,7 @@ impl<S> WithCapacity for Vec<S> {
 /// }
 ///
 /// impl GenMapConfig for Inline {
+///     type Len = KeepLen;
 ///     type Storage<S: GenSlotItem> = ArrayVec<S, 16>;
 /// }
 ///
@@ -282,7 +290,10 @@ impl<S> WithCapacity for Vec<S> {
 // the rules only promise room while the `ArrayVec` is not full. Its `clear`
 // sets the length to zero before it drops the items, so the storage is empty
 // even when a drop panics. Cloning an `ArrayVec` with `clone` or `clone_from`
-// gives one that holds a clone of each item, in the same order.
+// gives one that holds a clone of each item, in the same order. Its owning
+// iterator yields the items in order, and `next_back` yields them starting
+// from the last one. Its size hint and its length are exact, and it returns
+// `None` from either end once it has yielded every item.
 unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
     type Item = S;
     type Error = arrayvec::CapacityError;
@@ -341,7 +352,7 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
 /// covered by semver.
 ///
 /// ```
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Split};
+/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
 /// use smallvec::SmallVec;
 ///
 /// /// Maps with this config keep up to eight slots inline before they
@@ -353,6 +364,7 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
 /// }
 ///
 /// impl GenMapConfig for Small {
+///     type Len = KeepLen;
 ///     type Storage<S: GenSlotItem> = SmallVec<S, 8>;
 /// }
 ///
@@ -369,7 +381,10 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
 // `push_unchecked` calls `SmallVec::push`, which only grows a full `SmallVec`,
 // and the rules only promise room while it is not full, so that call never
 // grows or panics. Cloning a `SmallVec` with `clone` or `clone_from` gives one
-// that holds a clone of each item, in the same order.
+// that holds a clone of each item, in the same order. Its owning iterator
+// yields the items in order, and `next_back` yields them starting from the
+// last one. Its size hint and its length are exact, and it returns `None` from
+// either end once it has yielded every item.
 unsafe impl<S, const N: usize> SliceStorage for smallvec::SmallVec<S, N> {
     type Item = S;
     type Error = smallvec::SmallVecError;

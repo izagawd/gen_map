@@ -43,10 +43,11 @@ stores them. `Split<Idx, Gen>` keeps the two as separate fields, and
 `Packed<R, GEN_BITS>` puts them in the bits of one integer and picks the
 smallest types that can hold them. A `MapConfig` is used to decide the key
 config, and a `GenMapConfig` is used to decide what happens when a slot's
-generation runs out and where the slots live.
+generation runs out, whether the map keeps a count of its values and where
+the slots live.
 
 ```rust
-use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, Packed};
+use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Packed};
 
 /// Maps with this config hand out four byte keys with 24 bits of index and 8
 /// bits of generation.
@@ -57,6 +58,7 @@ impl MapConfig for CompactConfig {
 }
 
 impl GenMapConfig for CompactConfig {
+    type Len = KeepLen;
     // `S` is the type of the slots the map keeps its values in.
     type Storage<S: GenSlotItem> = Vec<S>;
 }
