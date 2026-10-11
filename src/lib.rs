@@ -93,7 +93,7 @@
 //! iterators, [`retain`](GenMap::retain), [`drain`](GenMap::drain) and
 //! [`clear`](GenMap::clear) go through every slot, including the ones that
 //! hold no value, so the time they take follows
-//! [`slots_len`](GenMap::slots_len) rather than [`len`](GenMap::len).
+//! [`slots_len`](GenMap::slots_len) rather than the number of values.
 //!
 //! The map adds one to a slot's generation twice for each value, so a `u32`
 //! generation lets a slot hold over two billion values one after another, and

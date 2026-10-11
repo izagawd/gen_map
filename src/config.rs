@@ -164,7 +164,8 @@ pub trait MapConfig {
 }
 
 /// This trait is used to choose what happens when a slot's generation runs
-/// out, and the collection the slots of a [`GenMap`](crate::GenMap) live in.
+/// out, whether a [`GenMap`](crate::GenMap) keeps a count of its values, and
+/// the collection its slots live in.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map hands out. The [`MapConfig`] example shows a config that
@@ -194,8 +195,8 @@ pub trait GenMapConfig: MapConfig {
 }
 
 /// This trait is used to choose the [`ReplaceStrategy`] of a
-/// [`SecondaryMap`](crate::SecondaryMap), and the collection its slots live
-/// in.
+/// [`SecondaryMap`](crate::SecondaryMap), whether it keeps a count of its
+/// values, and the collection its slots live in.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map works with.

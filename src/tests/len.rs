@@ -8,6 +8,7 @@ use crate::{
 };
 use core::marker::PhantomData;
 use core::mem::size_of;
+use core::panic::{RefUnwindSafe, UnwindSafe};
 use std::vec::Vec;
 
 /// This config gives keys a `u64` index and a `u64` generation, keeps the
@@ -214,4 +215,43 @@ fn the_parts_of_a_secondary_map_without_a_count_have_no_count() {
     // SAFETY: the parts came from `into_raw_parts` unchanged.
     let map = unsafe { SecondaryMap::from_raw_parts(parts) };
     assert_eq!(map[a], 1);
+}
+
+/// Fails to compile unless `X` is `Send`, `Sync` and `Unpin`.
+fn assert_send_sync_unpin<X: Send + Sync + Unpin>(_value: &X) {}
+
+/// Fails to compile unless `X` is `Send`, `Sync`, `Unpin` and unwind safe.
+fn assert_auto_traits<X: Send + Sync + Unpin + UnwindSafe + RefUnwindSafe>(_value: &X) {}
+
+/// Fails to compile unless the borrowing iterators of a `GenMap` and a
+/// `SecondaryMap` have the auto traits in code that is generic over the
+/// config. An iterator that hands out `&mut T` is not unwind safe, so only
+/// the other iterators are checked for that.
+fn check_borrowing_iterators<T, C>(map: &mut GenMap<T, C>, secondary: &mut SecondaryMap<T, C>)
+where
+    T: Send + Sync + RefUnwindSafe,
+    C: GenMapConfig + SecondaryMapConfig,
+{
+    assert_auto_traits(&map.iter());
+    assert_auto_traits(&map.keys());
+    assert_auto_traits(&map.values());
+    assert_send_sync_unpin(&map.iter_mut());
+    assert_send_sync_unpin(&map.values_mut());
+    assert_auto_traits(&secondary.iter());
+    assert_auto_traits(&secondary.keys());
+    assert_auto_traits(&secondary.values());
+    assert_send_sync_unpin(&secondary.iter_mut());
+    assert_send_sync_unpin(&secondary.values_mut());
+}
+
+#[test]
+fn borrowing_iterators_have_the_auto_traits_for_any_config() {
+    check_borrowing_iterators(
+        &mut GenMap::<u8, Uncounted>::new_with_config(),
+        &mut SecondaryMap::<u8, Uncounted>::new_with_config(),
+    );
+    check_borrowing_iterators(
+        &mut GenMap::<u8, Counted>::new_with_config(),
+        &mut SecondaryMap::<u8, Counted>::new_with_config(),
+    );
 }

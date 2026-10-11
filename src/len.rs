@@ -160,13 +160,16 @@ struct NoLenHasNoCount;
 
 pub(crate) mod sealed {
     use crate::key::piece::KeyPiece;
+    use core::panic::{RefUnwindSafe, UnwindSafe};
 
     pub trait Sealed {}
 
     /// A map keeps its count of values in a type that implements this trait,
     /// where `I` is the index type of the map's keys. A map that keeps no
     /// count stores `()` instead.
-    pub trait Counter<I: KeyPiece>: Copy {
+    pub trait Counter<I: KeyPiece>:
+        Copy + Send + Sync + Unpin + UnwindSafe + RefUnwindSafe + 'static
+    {
         /// Returns the count of a map with no values.
         fn zero() -> Self;
 

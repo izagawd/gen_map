@@ -714,8 +714,9 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
         // No `GenMap` gives a slot the largest value of the index type as its
         // index, so only a hand-built key can have that index. Rejecting it
-        // caps the number of slots, and so the count of values, at that largest
-        // value, so the count fits in the index type.
+        // caps the number of slots, and so the number of values, at that
+        // largest value, so a map that keeps a count can keep it in the index
+        // type.
         if key.idx() == MapIdx::<C>::MAX {
             return Err(SecondaryInsertError::IndexReserved(value));
         }
@@ -989,8 +990,10 @@ impl<'a, T, C: SecondaryMapConfig> Iterator for SecondaryIter<'a, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // SAFETY: `remaining` started at the map's count of values, which is
-        // at most the number of slots, and it only goes down.
+        // SAFETY: if the config keeps a count, `remaining` is the number of
+        // values the iterator has not yielded yet. Each of them has a slot of
+        // its own, so `remaining` is at most the number of slots, which is a
+        // `usize`.
         unsafe { size_hint(self.remaining, || self.slots.size_hint().1) }
     }
 }
@@ -1054,8 +1057,10 @@ impl<'a, T, C: SecondaryMapConfig> Iterator for SecondaryIterMut<'a, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // SAFETY: `remaining` started at the map's count of values, which is
-        // at most the number of slots, and it only goes down.
+        // SAFETY: if the config keeps a count, `remaining` is the number of
+        // values the iterator has not yielded yet. Each of them has a slot of
+        // its own, so `remaining` is at most the number of slots, which is a
+        // `usize`.
         unsafe { size_hint(self.remaining, || self.slots.size_hint().1) }
     }
 }
@@ -1216,8 +1221,9 @@ impl<T, C: SecondaryMapConfig> Iterator for SecondaryDrain<'_, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // SAFETY: the map's count of values is at most the number of slots,
-        // which is a `usize`.
+        // SAFETY: if the config keeps a count, `self.map.len` is the number of
+        // values in the map. Each of them has a slot of its own, so the count
+        // is at most the number of slots, which is a `usize`.
         unsafe { size_hint(self.map.len, || Some(self.map.slots.len() - self.position)) }
     }
 }
@@ -1268,8 +1274,10 @@ where
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // SAFETY: `remaining` started at the map's count of values, which is
-        // at most the number of slots, and it only goes down.
+        // SAFETY: if the config keeps a count, `remaining` is the number of
+        // values the iterator has not yielded yet. Each of them has a slot of
+        // its own, so `remaining` is at most the number of slots, which is a
+        // `usize`.
         unsafe { size_hint(self.remaining, || self.slots.size_hint().1) }
     }
 }

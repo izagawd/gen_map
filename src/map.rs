@@ -109,8 +109,8 @@ fn max_idx<C: MapConfig>() -> Idx<C> {
 /// hold, except that no slot ever gets the largest value of the index type.
 /// That value is [`no_slot`]. Leaving it out also caps the number of slots, and
 /// so the number of values, at the largest value of the index type. A `GenMap`
-/// counts its values in that type, and a `DenseGenMap` stores the position of
-/// each value in it.
+/// that keeps a count of its values keeps it in that type, and a `DenseGenMap`
+/// stores the position of each value in it.
 #[inline]
 pub(crate) fn max_slot_idx<C: MapConfig>() -> Idx<C> {
     let max = max_idx::<C>();
@@ -1174,8 +1174,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     ///
     /// Until `reattach` puts a value back or [`release`](Self::release) frees
     /// the slot, [`contains_key`](Self::contains_key) returns `false` for the
-    /// key and [`len`](Self::len) does not count the value, but the slot is not
-    /// on the free list, so no insert uses it.
+    /// key, and [`len`](Self::len) does not count the value if the config keeps
+    /// a count. The slot is not on the free list in the meantime, so no insert
+    /// uses it.
     ///
     /// While the slot is detached, its generation is one more than the key's
     /// generation, or zero if the key's generation is the largest value of the
@@ -1479,8 +1480,10 @@ impl<'a, T, C: GenMapConfig> Iterator for Iter<'a, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // SAFETY: `remaining` started at the map's count of values, which is
-        // at most the number of slots, and it only goes down.
+        // SAFETY: if the config keeps a count, `remaining` is the number of
+        // values the iterator has not yielded yet. Each of them has a slot of
+        // its own, so `remaining` is at most the number of slots, which is a
+        // `usize`.
         unsafe { size_hint(self.remaining, || self.slots.size_hint().1) }
     }
 }
@@ -1545,8 +1548,10 @@ impl<'a, T, C: GenMapConfig> Iterator for IterMut<'a, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // SAFETY: `remaining` started at the map's count of values, which is
-        // at most the number of slots, and it only goes down.
+        // SAFETY: if the config keeps a count, `remaining` is the number of
+        // values the iterator has not yielded yet. Each of them has a slot of
+        // its own, so `remaining` is at most the number of slots, which is a
+        // `usize`.
         unsafe { size_hint(self.remaining, || self.slots.size_hint().1) }
     }
 }
@@ -1714,8 +1719,10 @@ where
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // SAFETY: `remaining` started at the map's count of values, which is
-        // at most the number of slots, and it only goes down.
+        // SAFETY: if the config keeps a count, `remaining` is the number of
+        // values the iterator has not yielded yet. Each of them has a slot of
+        // its own, so `remaining` is at most the number of slots, which is a
+        // `usize`.
         unsafe { size_hint(self.remaining, || self.slots.size_hint().1) }
     }
 }
@@ -1822,8 +1829,9 @@ impl<T, C: GenMapConfig> Iterator for Drain<'_, T, C> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // SAFETY: the map's count of values is at most the number of slots,
-        // which is a `usize`.
+        // SAFETY: if the config keeps a count, `self.map.len` is the number of
+        // values in the map. Each of them has a slot of its own, so the count
+        // is at most the number of slots, which is a `usize`.
         unsafe { size_hint(self.map.len, || Some(self.map.slots.len() - self.position)) }
     }
 }
