@@ -1,5 +1,6 @@
-//! These tests cover maps whose config picks `NoLen`. Such a map keeps no
-//! count of its values, so the tests count the values through the iterators.
+//! These tests cover the `Len` choice of a map's config, mostly for maps whose
+//! config picks `NoLen`. Such a map has no `len`, so the tests count its values
+//! through the iterators.
 
 use super::DropTracker;
 use crate::{

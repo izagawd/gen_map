@@ -5,6 +5,7 @@ use crate::{
     DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap,
     GenMapConfig, GenSlotItem, KeepLen, MapConfig, NewerWins, SliceStorage, Split, SplitPair,
 };
+use std::collections::TryReserveError;
 use std::vec::Vec;
 
 /// A `Vec` behind `SliceStorage` alone. With `ITER` it also has an owning
@@ -12,12 +13,12 @@ use std::vec::Vec;
 /// `ExactSizeIterator`.
 struct Bare<S, const ITER: bool>(Vec<S>);
 
-// SAFETY: every method except `ensure_room` forwards to the `Vec`, which
-// behaves as the trait describes. `ensure_room` can skip making room because
-// `push_unchecked` grows the `Vec` when it is full.
+// SAFETY: every method forwards to the `Vec`, which behaves as the trait
+// describes. `ensure_room` makes room with `try_reserve`, so `push_unchecked`
+// never grows the `Vec` or panics while the rules promise room.
 unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
     type Item = S;
-    type Error = ();
+    type Error = TryReserveError;
 
     fn empty() -> Self {
         Bare(Vec::new())
@@ -35,11 +36,12 @@ unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
         &mut self.0
     }
 
-    fn ensure_room(&mut self, _additional: usize) -> Result<(), ()> {
-        Ok(())
+    fn ensure_room(&mut self, additional: usize) -> Result<(), TryReserveError> {
+        self.0.try_reserve(additional)
     }
 
     unsafe fn push_unchecked(&mut self, item: S) {
+        debug_assert!(self.0.len() < self.0.capacity());
         self.0.push(item);
     }
 
@@ -183,8 +185,8 @@ fn dense_into_iter_works_when_the_storage_iterators_have_no_next_back() {
     map.remove(keys[1]);
 
     let mut iter = map.into_iter();
-    // The storage's iterator gives an exact size hint, so the length is exact
-    // without `ExactSizeIterator`.
+    // The storage's iterator does not implement `ExactSizeIterator`, but its
+    // size hint is exact, so `iter` still knows its exact length.
     assert_eq!(iter.len(), 3);
     assert_eq!(iter.next(), Some((keys[0], 0)));
     assert_eq!(iter.len(), 2);

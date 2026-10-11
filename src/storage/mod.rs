@@ -185,7 +185,9 @@ impl<St: SliceStorage> Drop for ClearOnUnwind<'_, St> {
 // `push_unchecked` writes the item at the end without a check, and the rules
 // only promise room while the capacity is above the length. Cloning a `Vec`
 // with `clone` or `clone_from` gives one that holds a clone of each item, in
-// the same order.
+// the same order. Its owning iterator yields the items in order, gives an
+// exact size hint, and returns `None` from either end once it has yielded
+// every item.
 unsafe impl<S> SliceStorage for Vec<S> {
     type Item = S;
     type Error = TryReserveError;

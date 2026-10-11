@@ -161,10 +161,11 @@ pub(crate) fn decrement_len<I: KeyPiece, L: Counter<I>>(len: &mut L) {
 }
 
 /// Returns the size hint of an iterator over a map's values. `remaining` is
-/// the count of values the iterator has left to yield. If the map keeps no
-/// count, the hint has a lower bound of zero and an upper bound of what
-/// `upper` returns, which is the most values the iterator can have left.
-/// `upper` is only called when the map keeps no count.
+/// the count of values the iterator has left to yield. If the map keeps a
+/// count, both bounds of the hint are `remaining`. Otherwise the hint has a
+/// lower bound of zero and an upper bound of what `upper` returns, which is
+/// the most values the iterator can have left. `upper` is only called when
+/// the map keeps no count.
 ///
 /// # Safety
 ///

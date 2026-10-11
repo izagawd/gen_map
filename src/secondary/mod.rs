@@ -715,8 +715,8 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         // No `GenMap` gives a slot the largest value of the index type as its
         // index, so only a hand-built key can have that index. Rejecting it
         // caps the number of slots, and so the number of values, at that
-        // largest value, so a map that keeps a count can keep it in the index
-        // type.
+        // largest value. A map that keeps a count can then keep it in the
+        // index type.
         if key.idx() == MapIdx::<C>::MAX {
             return Err(SecondaryInsertError::IndexReserved(value));
         }
