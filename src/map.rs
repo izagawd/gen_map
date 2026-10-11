@@ -149,7 +149,7 @@ pub(crate) fn increment_len<I: KeyPiece, L: Counter<I>>(len: &mut L) {
 /// value it holds, and an iterator only calls it when it yields a value, so
 /// the count is above zero beforehand. It does nothing if the map keeps no
 /// count.
-#[inline]
+#[inline(always)]
 pub(crate) fn decrement_len<I: KeyPiece, L: Counter<I>>(len: &mut L) {
     len.update(|len| {
         debug_assert!(
