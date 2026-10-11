@@ -211,7 +211,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! gen_map = { version = "0.3", default-features = false, features = ["arrayvec"] }
+//! gen_map = { version = "0.4", default-features = false, features = ["arrayvec"] }
 //! ```
 //!
 //! # Minimum supported Rust version

@@ -9,7 +9,7 @@ also works on targets that do not have `std`.
 
 ```toml
 [dependencies]
-gen_map = "0.3"
+gen_map = "0.4"
 ```
 
 ## Example

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.0 (2026-10-11)
+
+### Added
+
+- `DenseGenMap` has been added. 
+- `DenseSecondaryMap` has been added.
+- `SparseSecondaryMap` has been added. 
+- `SingleVec` has been added. It is a storage that works like a `Vec`, but it stores its length and capacity as its length type, which can be smaller than a `usize`.
+- `GenMap::release` has been added. It frees the slot of a detached key without putting a value back.
+- `GenMap` and `SecondaryMap` can now be taken apart into their fields with `into_raw_parts` and built from them again with `from_raw_parts`.
+
+### Changed
+
+- `GenMapConfig` and `SecondaryMapConfig` no longer take the slot type as a parameter, and their `Storage` takes it instead, as in `type Storage<S: GenSlotItem> = Vec<S>;`.
+- `GenMapConfig` and `SecondaryMapConfig` now have a `Len` type, which is `KeepLen` for a map that keeps a count of its values or `NoLen` for one that does not. Only a map whose config picks `KeepLen` has `len` and `is_empty`.
+- `SlotStorage` has been replaced by `SliceStorage`. 
+- `SlotStorage::try_push` has been replaced by `SliceStorage::push_unchecked`, `SliceStorage::pop` has been added, and `with_capacity` has moved to the new `WithCapacity` trait. 
+- `ReserveStorage` is now a marker trait without methods.
+-  A map now implements `Clone` only when its storage does.
+- `DefaultMapConfig` now keeps the slots of a map in a `SingleVec` with a `u32` length type instead of a `Vec`, which makes the map smaller on 64-bit targets. 
+- `SecondarySlot` has been removed, and `SecondaryMapSlot<T, C>` is now `Slot<MapGen<C>, T, ()>`.
+- `Slot::as_parity` and `Slot::as_parity_mut` now return `ParityRef` and `ParityMut`, which hold a reference to the generation instead of a copy of it.
+- `std` is now the default feature instead of `alloc`, and it turns `alloc` on too.
+- The `smallvec` feature now needs exactly version 2.0.0-beta.2 of `smallvec`.
+- The crate now needs Rust 1.86 or later.
+
 ## 0.3.0 (2026-09-28)
 
 ### Added
