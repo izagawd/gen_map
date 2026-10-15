@@ -106,7 +106,7 @@ fn a_freed_slot_is_reused_when_the_array_vec_is_full() {
     assert_eq!(map.remove(key), Some(2));
 
     let again = map.insert(20);
-    assert_eq!(again.idx(), 2);
+    assert_eq!(again.idx().get(), 2);
     assert_eq!(map[again], 20);
     assert_eq!(map.slots_len(), 4);
     assert!(map.try_insert(5).is_err());
@@ -205,12 +205,12 @@ fn a_secondary_map_in_an_array_vec_holds_the_first_four_indices() {
         .clone()
         .into_iter()
         .rev()
-        .map(|(key, _)| key.idx())
+        .map(|(key, _)| key.idx().get())
         .collect();
     assert_eq!(backward, [3, 2, 1, 0]);
     let pairs: Vec<(u8, u32)> = map
         .into_iter()
-        .map(|(key, value)| (key.idx(), value))
+        .map(|(key, value)| (key.idx().get(), value))
         .collect();
     assert_eq!(pairs, [(0, 0), (1, 1), (2, 2), (3, 3)]);
 }

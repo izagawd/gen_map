@@ -29,13 +29,13 @@ fn retire_takes_the_value_out_and_retires_the_slot() {
     assert_eq!(map.len(), 1);
     assert!(map.get(a).is_none());
     assert!(!map.contains_key(a));
-    assert!(map.key_at(a.idx()).is_none());
-    assert_eq!(map.generation_at(a.idx()), Some(0));
+    assert!(map.key_at(a.idx().get()).is_none());
+    assert_eq!(map.generation_at(a.idx().get()), Some(0));
     assert_eq!(map[b], 2);
 
     // The retired slot is skipped, so the next value goes into a new slot.
     let c = map.insert(3);
-    assert_eq!(c.idx(), 2);
+    assert_eq!(c.idx().get(), 2);
     assert_eq!(map.slots_len(), 3);
 }
 
@@ -77,7 +77,7 @@ fn retire_keeps_a_chosen_slot_from_wrapping() {
     while !key.is_max_generation() {
         map.remove(key);
         key = map.insert(0);
-        assert_eq!(key.idx(), 0);
+        assert_eq!(key.idx().get(), 0);
     }
     assert_eq!(key.generation().get().get(), 15);
     map.remove(key);
@@ -91,7 +91,7 @@ fn retire_keeps_a_chosen_slot_from_wrapping() {
     }
     assert_eq!(map.retire(key), Some(0));
     let fresh = map.insert(1);
-    assert_eq!(fresh.idx(), 1);
+    assert_eq!(fresh.idx().get(), 1);
     assert!(map.get(first).is_none());
     assert_eq!(map.generation_at(0), Some(0));
 }
@@ -123,7 +123,7 @@ fn a_retired_slot_stays_retired_until_reset() {
     map.clear();
     let mut copy = map.clone();
     for m in [&mut map, &mut copy] {
-        assert_eq!(m.generation_at(a.idx()), Some(0));
+        assert_eq!(m.generation_at(a.idx().get()), Some(0));
         let key = m.insert(3);
         assert_ne!(key.idx(), a.idx());
     }

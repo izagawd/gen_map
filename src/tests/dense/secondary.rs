@@ -60,15 +60,12 @@ fn a_value_replaced_under_a_newer_key_keeps_its_place() {
 }
 
 #[test]
-fn the_largest_index_is_reserved() {
+fn a_key_at_the_largest_index_fits() {
     let mut map = DenseSecondaryMap::<u32, Keyed>::new_with_config();
-    let key = key_from_parts::<Split<u8, u8>>(u8::MAX, 1);
-    assert!(matches!(
-        map.insert(key, 1),
-        Err(SecondaryInsertError::IndexReserved(1))
-    ));
-    assert!(map.is_empty());
-    assert_eq!(map.slots_len(), 0);
+    let key = key_from_parts::<Split<u8, u8>>(u8::MAX - 1, 1);
+    assert_eq!(map.insert(key, 1).unwrap(), None);
+    assert_eq!(map[key], 1);
+    assert_eq!(map.slots_len(), usize::from(u8::MAX));
 }
 
 #[test]

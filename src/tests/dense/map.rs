@@ -305,7 +305,7 @@ fn a_dropped_entry_or_a_rejected_value_inserts_nothing() {
     let result = map.try_insert_with_key(|_| Err::<u32, _>("no"));
     assert_eq!(result, Err(InsertWithError::Rejected("no")));
     assert_eq!(map.len(), 0);
-    let key = map.insert_with_key(|key| key.idx());
+    let key = map.insert_with_key(|key| key.idx().get());
     assert_eq!(key, promised);
     assert_eq!(map[key], 0);
 }
@@ -356,7 +356,7 @@ fn clone_from_leaves_an_empty_map_if_a_value_panics_while_cloning() {
     assert_eq!(target.slots_len(), 0);
     // The emptied map hands out keys like a new map.
     let key = target.insert(CloneBomb::new(&tracker, false));
-    assert_eq!(key.idx(), 0);
+    assert_eq!(key.idx().get(), 0);
     drop(source);
     drop(target);
     tracker.assert_all_dropped_exactly_once(tracker.total_made());
@@ -424,12 +424,12 @@ fn a_slot_retires_once_its_generations_run_out() {
     let mut map = DenseGenMap::<u32, Retiring>::new_with_config();
     for i in 0..8 {
         let key = map.insert(i);
-        assert_eq!(key.idx(), 0);
+        assert_eq!(key.idx().get(), 0);
         assert_eq!(map.remove(key), Some(i));
     }
     // The retired slot stays out of use, so the next value gets a new slot.
     assert_eq!(map.generation_at(0), Some(0));
-    assert_eq!(map.insert(8).idx(), 1);
+    assert_eq!(map.insert(8).idx().get(), 1);
     assert_eq!(map.slots_len(), 2);
 }
 
@@ -521,7 +521,7 @@ mod capped {
         let key = map.key_at(1).unwrap();
         assert_eq!(map.remove(key), Some(1));
         let next = map.try_insert(9).unwrap();
-        assert_eq!(next.idx(), 1);
+        assert_eq!(next.idx().get(), 1);
         assert!(map.try_insert(10).is_err());
     }
 

@@ -4,9 +4,9 @@ use crate::tests::model::Rng;
 use crate::tests::{key_from_parts, Bomb, Cfg, CloneBomb, DropItem, DropTracker, LenCheck};
 use crate::{
     u1, DefaultKeyConfig, ExistingWins, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
-    GetDisjointMutError, KeepLen, Key, MapConfig, MapKeyConfig, NewerWins, NoLen, Odd, Packed,
-    ReplaceStrategy, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem,
-    Split,
+    GetDisjointMutError, KeepLen, Key, KeyConfig, MapConfig, MapKeyConfig, NewerWins, NoLen, Odd,
+    Packed, ReplaceStrategy, SecondaryInsertError, SecondaryMap, SecondaryMapConfig,
+    SecondarySlotItem, Split,
 };
 use core::marker::PhantomData;
 use std::collections::HashMap;
@@ -457,9 +457,9 @@ fn model_insert(
     value: u32,
 ) -> Result<Option<u32>, u32> {
     let generation = key.generation().get().get();
-    match model.get_mut(&key.idx()) {
+    match model.get_mut(&key.idx().get()) {
         None => {
-            model.insert(key.idx(), (generation, value));
+            model.insert(key.idx().get(), (generation, value));
             Ok(None)
         }
         Some((current, old)) if generation >= *current => {
@@ -574,7 +574,7 @@ where
             }
             40..=74 if !live.is_empty() || !dead.is_empty() => {
                 let key = pick(&mut rng, &live, &dead);
-                if capacity.is_some_and(|capacity| key.idx() as usize >= capacity) {
+                if capacity.is_some_and(|capacity| key.idx().get() as usize >= capacity) {
                     coverage.full += 1;
                     assert!(
                         matches!(
@@ -584,7 +584,9 @@ where
                         "insert past the capacity at step {step} of seed {seed}"
                     );
                 } else {
-                    let before = model.get(&key.idx()).map(|&(generation, _)| generation);
+                    let before = model
+                        .get(&key.idx().get())
+                        .map(|&(generation, _)| generation);
                     let expected = model_insert(&mut model, key, step);
                     if before.is_some_and(|current| current != key.generation().get().get()) {
                         coverage.met_older_or_newer += 1;
@@ -597,9 +599,9 @@ where
             75..=94 if !live.is_empty() || !dead.is_empty() => {
                 let key = pick(&mut rng, &live, &dead);
                 let generation = key.generation().get().get();
-                let expected = match model.get(&key.idx()) {
+                let expected = match model.get(&key.idx().get()) {
                     Some(&(current, _)) if current == generation => {
-                        model.remove(&key.idx()).map(|(_, value)| value)
+                        model.remove(&key.idx().get()).map(|(_, value)| value)
                     }
                     _ => None,
                 };
@@ -627,23 +629,23 @@ where
             // The map iterates in index order, which the sorted model matches.
             let found: Vec<(u32, u32, u32)> = map
                 .iter()
-                .map(|(key, &value)| (key.idx(), key.generation().get().get(), value))
+                .map(|(key, &value)| (key.idx().get(), key.generation().get().get(), value))
                 .collect();
             assert_eq!(found, expected, "contents at step {step} of seed {seed}");
             // Iterating from the back gives the same values in reverse.
             let backward: Vec<(u32, u32, u32)> = map
                 .iter()
                 .rev()
-                .map(|(key, &value)| (key.idx(), key.generation().get().get(), value))
+                .map(|(key, &value)| (key.idx().get(), key.generation().get().get(), value))
                 .collect();
             assert!(
                 backward.iter().rev().eq(found.iter()),
                 "reversed contents at step {step} of seed {seed}"
             );
             for (key, value) in map.iter() {
-                assert_eq!(map.get_at(key.idx()), Some((key, value)));
+                assert_eq!(map.get_at(key.idx().get()), Some((key, value)));
                 let generation = key.generation().get().get();
-                assert_eq!(map.generation_at(key.idx()), Some(generation));
+                assert_eq!(map.generation_at(key.idx().get()), Some(generation));
             }
         }
     }
@@ -993,15 +995,15 @@ fn the_index_lookups_follow_a_replaced_and_removed_value() {
     let (old, new) = reused_keys();
     let mut map = SecondaryMap::<u32>::new();
     map.insert(old, 1).unwrap();
-    assert_eq!(map.key_at(old.idx()), Some(old));
+    assert_eq!(map.key_at(old.idx().get()), Some(old));
     map.insert(new, 2).unwrap();
-    assert_eq!(map.key_at(new.idx()), Some(new));
-    assert_eq!(map.get_at(new.idx()), Some((new, &2)));
+    assert_eq!(map.key_at(new.idx().get()), Some(new));
+    assert_eq!(map.get_at(new.idx().get()), Some((new, &2)));
 
     // Removing the value leaves an empty slot with generation zero.
     map.remove(new);
-    assert_eq!(map.key_at(new.idx()), None);
-    assert_eq!(map.generation_at(new.idx()), Some(0));
+    assert_eq!(map.key_at(new.idx().get()), None);
+    assert_eq!(map.generation_at(new.idx().get()), Some(0));
 }
 
 #[test]
@@ -1210,33 +1212,23 @@ fn every_iterator_runs_from_both_ends() {
 }
 
 #[test]
-fn insert_rejects_a_key_at_the_largest_index() {
-    // No `GenMap` gives a slot the largest index, so only a hand-built key
-    // can have it.
-    let key = key_from_parts::<Split<u8, u8>>(u8::MAX, 1);
+fn insert_takes_a_key_at_the_largest_index() {
+    // The largest index a `Split<u8, u8>` key can hold is one less than
+    // `u8::MAX`, so the map needs `u8::MAX` slots to store a value under it.
+    let key = key_from_parts::<Split<u8, u8>>(u8::MAX - 1, 1);
     let mut map = SecondaryMap::<&str, Cfg<u8, u8>>::new_with_config();
-    let error = map.insert(key, "x").unwrap_err();
-    assert!(matches!(error, SecondaryInsertError::IndexReserved("x")));
-    assert_eq!(format!("{error:?}"), "IndexReserved(..)");
-    assert!(format!("{error}").contains("largest value"));
-    assert_eq!(error.into_inner(), "x");
-    assert_eq!(map.len(), 0);
-    assert_eq!(map.slots_len(), 0);
-    assert!(map.get(key).is_none());
+    assert_eq!(map.insert(key, "x").unwrap(), None);
+    assert_eq!(map.len(), 1);
+    assert_eq!(map.slots_len(), usize::from(u8::MAX));
+    assert_eq!(map[key], "x");
 }
 
 #[test]
-fn insert_rejects_a_key_whose_u1_index_is_one() {
-    // One is the largest `u1`, so no slot gets it as an index.
-    let key = key_from_parts::<Split<u1, u8>>(u1::MAX, 1);
-    let mut map = SecondaryMap::<&str, Cfg<u1, u8>>::new_with_config();
-    assert!(matches!(
-        map.insert(key, "x"),
-        Err(SecondaryInsertError::IndexReserved("x"))
-    ));
-    assert_eq!(map.slots_len(), 0);
-
+fn insert_takes_a_key_whose_u1_index_is_zero() {
+    // One is the largest `u1`, so zero is the only `u1` index a key can hold.
+    assert_eq!(Split::<u1, u8>::max_idx().get(), u1::MIN);
     let key = key_from_parts::<Split<u1, u8>>(u1::MIN, 1);
+    let mut map = SecondaryMap::<&str, Cfg<u1, u8>>::new_with_config();
     assert_eq!(map.insert(key, "y").unwrap(), None);
     assert_eq!(map[key], "y");
 }

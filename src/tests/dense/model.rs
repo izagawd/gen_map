@@ -607,7 +607,6 @@ fn check_gen<G, D>(
 enum Outcome {
     Stored(Option<u32>),
     Refused(u32),
-    IndexReserved(u32),
     StorageFull(u32),
 }
 
@@ -616,7 +615,6 @@ impl<S> From<Result<Option<u32>, SecondaryInsertError<u32, S>>> for Outcome {
         match result {
             Ok(old) => Self::Stored(old),
             Err(SecondaryInsertError::Refused(value)) => Self::Refused(value),
-            Err(SecondaryInsertError::IndexReserved(value)) => Self::IndexReserved(value),
             Err(SecondaryInsertError::StorageFull(value, _)) => Self::StorageFull(value),
         }
     }
@@ -637,9 +635,9 @@ where
             0..=44 => {
                 // The keys mostly have small indices and generations, so they
                 // often meet a value under another generation. Now and then the
-                // index is the reserved largest one.
+                // index is the largest one a key can hold.
                 let idx = if rng.chance(2) {
-                    u8::MAX
+                    u8::MAX - 1
                 } else {
                     rng.below(20) as u8
                 };

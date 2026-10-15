@@ -314,7 +314,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
             let slot = self
                 .slots
                 .as_slice()
-                .get_unchecked(key.idx().into_usize_unchecked());
+                .get_unchecked(key.plain_idx().into_usize_unchecked());
             let position = to_position::<C>(*slot.get_odd_unchecked());
             self.pairs.second_slice().get_unchecked(position)
         }
@@ -335,7 +335,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
             let slot = self
                 .slots
                 .as_slice()
-                .get_unchecked(key.idx().into_usize_unchecked());
+                .get_unchecked(key.plain_idx().into_usize_unchecked());
             let position = to_position::<C>(*slot.get_odd_unchecked());
             self.pairs.second_slice_mut().get_unchecked_mut(position)
         }
@@ -599,7 +599,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         unsafe {
             let slots = self.slots.as_slice();
             let stored_positions = keys.map(|key| {
-                let slot = slots.get_unchecked(key.idx().into_usize_unchecked());
+                let slot = slots.get_unchecked(key.plain_idx().into_usize_unchecked());
                 ((), *slot.get_odd_unchecked())
             });
             self.values_at(stored_positions).map(|((), value)| value)
@@ -645,10 +645,9 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// # Errors
     ///
     /// Hands `value` back, and leaves the map as it was, if the strategy
-    /// kept the old value, the key's index is the largest value of the index
-    /// type, or a storage could not make room. The [`SecondaryInsertError`]
-    /// variant says which of the three happened, and the [`DenseError`] in a
-    /// storage error says which storage it was.
+    /// kept the old value or a storage could not make room. The
+    /// [`SecondaryInsertError`] variant says which of the two happened, and the
+    /// [`DenseError`] in a storage error says which storage it was.
     ///
     /// # Examples
     ///
@@ -671,16 +670,9 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// assert_eq!(ages[bob], 25);
     /// ```
     pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
-        // No `GenMap` gives a slot the largest value of the index type as its
-        // index, so only a hand-built key can have it. Rejecting it caps the
-        // number of slots at that largest value, so every position fits in the
-        // index type.
-        if key.idx() == MapIdx::<C>::MAX {
-            return Err(SecondaryInsertError::IndexReserved(value));
-        }
         let new_generation = key.generation();
         let existing = key
-            .idx()
+            .plain_idx()
             .into_usize()
             .and_then(|slot_index| self.slots.as_slice().get(slot_index))
             .and_then(occupied::<C>);
@@ -727,7 +719,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         }
         // SAFETY: `self.pairs.len()` is the number of values.
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
-        match get_or_grow_slot(&mut self.slots, key.idx()) {
+        match get_or_grow_slot(&mut self.slots, key.plain_idx()) {
             Ok(slot) => {
                 slot.set_odd(key.generation(), stored_position);
             }
@@ -829,7 +821,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// `None` if no value is stored under `key`.
     #[inline]
     fn stored_position(&self, key: Key<MapKeyConfig<C>>) -> Option<MapIdx<C>> {
-        let slot_index = key.idx().into_usize()?;
+        let slot_index = key.plain_idx().into_usize()?;
         self.slots
             .as_slice()
             .get(slot_index)?
@@ -849,7 +841,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         key: Key<MapKeyConfig<C>>,
     ) -> &mut DenseSecondaryMapSlot<C> {
         debug_assert!(key
-            .idx()
+            .plain_idx()
             .into_usize()
             .is_some_and(|position| position < self.slots.len()));
         // SAFETY: the caller promises a slot at the key's index, so the index
@@ -857,7 +849,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         unsafe {
             self.slots
                 .as_mut_slice()
-                .get_unchecked_mut(key.idx().into_usize_unchecked())
+                .get_unchecked_mut(key.plain_idx().into_usize_unchecked())
         }
     }
 
@@ -866,7 +858,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// value moves into the place of the removed one.
     #[inline]
     pub fn remove(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
-        let slot_index = key.idx().into_usize()?;
+        let slot_index = key.plain_idx().into_usize()?;
         let slot = self.slots.as_mut_slice().get_mut(slot_index)?;
         slot.get_odd(key.generation())?;
         // SAFETY: the slot's generation matches the key's, which is odd.
@@ -1149,7 +1141,7 @@ impl<T, C: DenseSecondaryMapConfig> Drop for DenseSecondaryDrain<'_, T, C> {
 /// # Rules
 ///
 /// - No slot sits at a position above the largest index the map's keys can
-///   hold, or at the largest value of the index type.
+///   hold.
 /// - A slot that holds a value has a generation no larger than the largest
 ///   one the map's keys can hold, and a slot that holds no value has
 ///   generation zero.

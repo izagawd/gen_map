@@ -74,10 +74,10 @@ pub(crate) fn assert_not_detached<C: GenMapConfig<Len = KeepLen>>(
     value: i32,
 ) {
     let len = map.len();
-    let generation = map.generation_at(key.idx());
+    let generation = map.generation_at(key.plain_idx());
     assert_eq!(map.reattach(key, value), Err(value));
     assert_eq!(map.len(), len);
-    assert_eq!(map.generation_at(key.idx()), generation);
+    assert_eq!(map.generation_at(key.plain_idx()), generation);
 }
 
 /// The methods of this trait check what a map and its iterators report about
@@ -139,7 +139,7 @@ impl LenCheck for NoLen {
 /// the generation is even or either part does not fit the key config.
 pub(crate) fn key_from_parts<K: KeyConfig>(idx: K::Idx, generation: K::Gen) -> Key<K> {
     let generation = Odd::new(generation).unwrap();
-    Key::from_repr(K::pack(idx, generation).unwrap())
+    Key::from_repr(K::pack(idx.into_non_max().unwrap(), generation).unwrap())
 }
 
 /// Hands out numbered items and records how many times each one has been

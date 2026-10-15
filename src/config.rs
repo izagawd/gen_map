@@ -77,9 +77,10 @@ use core::hash::Hash;
     note = "`Split<Idx, Gen>` and `Packed<R, GEN_BITS>` are key configs. `Packed` needs `R` to be `u8`, `u16`, `u32`, `u64` or `u128`, and `GEN_BITS` to be at least 1 and less than the bits of `R`"
 )]
 pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
-    /// `Idx` is the type that represents the index of a slot. No map gives a
-    /// slot the largest value of this type. It can be [`u1`](crate::u1), `u8`,
-    /// `u16`, `u32`, `u64`, `u128` or `usize`.
+    /// `Idx` is the type that represents the index of a slot. A key holds its
+    /// index as an [`Idx::NonMax`](KeyPiece::NonMax), so the index is never the
+    /// largest value of `Idx`. It can be [`u1`](crate::u1), `u8`, `u16`, `u32`,
+    /// `u64`, `u128` or `usize`.
     type Idx: KeyPiece;
 
     /// `Gen` is the type that represents the generation of a slot. It can be
@@ -87,7 +88,7 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
     type Gen: KeyPiece;
 
     /// The largest index a key can hold.
-    fn max_idx() -> Self::Idx;
+    fn max_idx() -> <Self::Idx as KeyPiece>::NonMax;
 
     /// The largest generation a key can hold.
     fn max_generation() -> Odd<Self::Gen>;
@@ -98,12 +99,15 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
     ///
     /// `idx` must be at most [`max_idx`](Self::max_idx), and `generation` at
     /// most [`max_generation`](Self::max_generation).
-    unsafe fn pack_unchecked(idx: Self::Idx, generation: Odd<Self::Gen>) -> Self;
+    unsafe fn pack_unchecked(
+        idx: <Self::Idx as KeyPiece>::NonMax,
+        generation: Odd<Self::Gen>,
+    ) -> Self;
 
     /// Packs an index and a generation, or returns `None` if either is larger
     /// than the key config can hold.
     #[inline]
-    fn pack(idx: Self::Idx, generation: Odd<Self::Gen>) -> Option<Self> {
+    fn pack(idx: <Self::Idx as KeyPiece>::NonMax, generation: Odd<Self::Gen>) -> Option<Self> {
         if idx <= Self::max_idx() && generation <= Self::max_generation() {
             // SAFETY: both parts were just checked to fit.
             Some(unsafe { Self::pack_unchecked(idx, generation) })
@@ -113,7 +117,7 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
     }
 
     /// Returns the index that was packed into this value.
-    fn idx(self) -> Self::Idx;
+    fn idx(self) -> <Self::Idx as KeyPiece>::NonMax;
 
     /// Returns the generation that was packed into this value.
     fn generation(self) -> Odd<Self::Gen>;

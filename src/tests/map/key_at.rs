@@ -26,7 +26,7 @@ fn key_at_is_none_for_a_vacant_slot() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     map.remove(key);
-    assert_eq!(map.key_at(key.idx()), None);
+    assert_eq!(map.key_at(key.idx().get()), None);
 }
 
 #[test]
@@ -36,8 +36,8 @@ fn key_at_reports_the_current_key_of_a_reused_slot() {
     map.remove(old);
     let new = map.insert(2);
     assert_eq!(new.idx(), old.idx());
-    assert_eq!(map.key_at(old.idx()), Some(new));
-    assert_ne!(map.key_at(old.idx()), Some(old));
+    assert_eq!(map.key_at(old.idx().get()), Some(new));
+    assert_ne!(map.key_at(old.idx().get()), Some(old));
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn key_at_is_none_for_a_retired_slot() {
         key = map.insert(0);
     }
     // The first slot retired and the value went into a second one.
-    assert_eq!(key.idx(), 1);
+    assert_eq!(key.idx().get(), 1);
     assert_eq!(map.key_at(0), None);
     assert_eq!(map.key_at(1), Some(key));
 }
@@ -59,9 +59,9 @@ fn key_at_is_none_for_a_detached_slot() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     let value = map.detach(key).unwrap();
-    assert_eq!(map.key_at(key.idx()), None);
+    assert_eq!(map.key_at(key.idx().get()), None);
     map.reattach(key, value).unwrap();
-    assert_eq!(map.key_at(key.idx()), Some(key));
+    assert_eq!(map.key_at(key.idx().get()), Some(key));
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn key_at_with_an_index_that_does_not_fit_in_usize_is_none() {
 
     let mut map = GenMap::<i32, Wide>::new_with_config();
     let key = map.insert(1);
-    assert_eq!(map.key_at(key.idx()), Some(key));
+    assert_eq!(map.key_at(key.idx().get()), Some(key));
     assert_eq!(map.key_at(u128::MAX), None);
 }
 
@@ -82,10 +82,10 @@ fn key_at_agrees_with_iteration() {
         map.remove(*key);
     }
     for (key, _) in &map {
-        assert_eq!(map.key_at(key.idx()), Some(key));
+        assert_eq!(map.key_at(key.idx().get()), Some(key));
     }
     for key in keys.iter().step_by(3) {
-        assert_eq!(map.key_at(key.idx()), None);
+        assert_eq!(map.key_at(key.idx().get()), None);
     }
 }
 
@@ -97,8 +97,8 @@ fn key_at_unchecked_agrees_with_key_at() {
     let reused = map.insert(100);
 
     for (key, _) in &map {
-        let unchecked = unsafe { map.key_at_unchecked(key.idx()) };
-        assert_eq!(map.key_at(key.idx()), Some(unchecked));
+        let unchecked = unsafe { map.key_at_unchecked(key.idx().get()) };
+        assert_eq!(map.key_at(key.idx().get()), Some(unchecked));
         assert_eq!(unchecked, key);
     }
     assert_eq!(unsafe { map.key_at_unchecked(4) }, reused);

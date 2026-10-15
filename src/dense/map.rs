@@ -60,9 +60,13 @@ impl<C: MapConfig> Target<C> {
     #[inline]
     fn key(&self) -> Key<MapKeyConfig<C>> {
         // SAFETY: a `Target` only ever comes from `next_target`, which picks an
-        // index and a generation that a key can hold.
+        // index and a generation that a key can hold. A key never holds the
+        // largest value of the index type.
         Key::from_repr(unsafe {
-            <MapKeyConfig<C> as KeyConfig>::pack_unchecked(self.idx, self.generation)
+            <MapKeyConfig<C> as KeyConfig>::pack_unchecked(
+                self.idx.into_non_max_unchecked(),
+                self.generation,
+            )
         })
     }
 }
@@ -428,7 +432,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             let slot = self
                 .slots
                 .as_slice()
-                .get_unchecked(slot_index_of::<C>(key.idx()));
+                .get_unchecked(slot_index_of::<C>(key.plain_idx()));
             let position = to_position::<C>(*slot.get_odd_unchecked());
             self.pairs.second_slice().get_unchecked(position)
         }
@@ -450,7 +454,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             let slot = self
                 .slots
                 .as_slice()
-                .get_unchecked(slot_index_of::<C>(key.idx()));
+                .get_unchecked(slot_index_of::<C>(key.plain_idx()));
             let position = to_position::<C>(*slot.get_odd_unchecked());
             self.pairs.second_slice_mut().get_unchecked_mut(position)
         }
@@ -719,7 +723,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         unsafe {
             let slots = self.slots.as_slice();
             let stored_positions = keys.map(|key| {
-                let slot = slots.get_unchecked(slot_index_of::<C>(key.idx()));
+                let slot = slots.get_unchecked(slot_index_of::<C>(key.plain_idx()));
                 ((), *slot.get_odd_unchecked())
             });
             self.values_at(stored_positions).map(|((), value)| value)
@@ -898,7 +902,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         };
         let (generation, link) = freed_parts::<C>(
             &mut self.next_free,
-            key.idx(),
+            key.plain_idx(),
             key.generation(),
             C::WRAP_ON_OVERFLOW,
         );
@@ -1001,7 +1005,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     fn stored_position(&self, key: Key<MapKeyConfig<C>>) -> Option<MapIdx<C>> {
         self.slots
             .as_slice()
-            .get(key.idx().into_usize()?)?
+            .get(key.plain_idx().into_usize()?)?
             .get_odd(key.generation())
             .copied()
     }
@@ -1114,7 +1118,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// there is none. The last value moves into the place of the removed one.
     #[inline]
     pub fn remove(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
-        let slot_index = key.idx().into_usize()?;
+        let slot_index = key.plain_idx().into_usize()?;
         self.slots
             .as_slice()
             .get(slot_index)?
@@ -1133,7 +1137,10 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// `None` if there is no value for `key`.
     #[inline]
     pub fn retire(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
-        let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
+        let slot = self
+            .slots
+            .as_mut_slice()
+            .get_mut(key.plain_idx().into_usize()?)?;
         slot.get_odd(key.generation())?;
         // A retired slot has generation zero and `no_slot` as its link. This
         // method does not put the slot on the free list, so no insert can use
@@ -1166,12 +1173,15 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// ```
     #[inline]
     pub fn detach(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
-        let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
+        let slot = self
+            .slots
+            .as_mut_slice()
+            .get_mut(key.plain_idx().into_usize()?)?;
         slot.get_odd(key.generation())?;
         let detached = detached_generation::<C>(key.generation());
         // A detached slot stores its own index, which `detached_slot` checks.
         // SAFETY: the slot's generation matched the key's, which is odd.
-        let stored_position = unsafe { slot.replace_odd_unchecked(detached, key.idx()) };
+        let stored_position = unsafe { slot.replace_odd_unchecked(detached, key.plain_idx()) };
         // SAFETY: `stored_position` is the position the key's slot stored,
         // which is below the number of values.
         Some(unsafe { self.swap_remove(to_position::<C>(stored_position)) })
@@ -1203,7 +1213,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             // is the position of a slot that holds that value, and `position`
             // is below the number of values.
             unsafe {
-                self.free_slot_at(slot_index_of::<C>(key.idx()));
+                self.free_slot_at(slot_index_of::<C>(key.plain_idx()));
                 drop(self.swap_remove(position));
             }
             // The last value moved to `position`, so `position` is checked
@@ -1272,7 +1282,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             *self
                 .slots
                 .as_mut_slice()
-                .get_unchecked_mut(slot_index_of::<C>(last_key.idx()))
+                .get_unchecked_mut(slot_index_of::<C>(last_key.plain_idx()))
                 .get_odd_unchecked_mut() = to_stored::<C>(position);
             let (keys, values) = self.pairs.slices_mut();
             *keys.get_unchecked_mut(position) = last_key;
@@ -1426,7 +1436,7 @@ impl<T, C: DenseGenMapConfig> Iterator for DenseDrain<'_, T, C> {
         // SAFETY: `key` is the key of the value just taken out, so its index is
         // the position of a slot that still holds that value. The slot is
         // freed like the slot of a removed value.
-        unsafe { self.map.free_slot_at(slot_index_of::<C>(key.idx())) };
+        unsafe { self.map.free_slot_at(slot_index_of::<C>(key.plain_idx())) };
         Some((key, value))
     }
 
@@ -1685,7 +1695,7 @@ impl<P: IntoIterator> FusedIterator for DenseIntoIter<P> {}
 /// # Rules
 ///
 /// - No slot sits at a position above the largest index the map's keys can
-///   hold, or at the largest value of the index type.
+///   hold.
 /// - A slot that holds a value has a generation no larger than the largest
 ///   one the map's keys can hold.
 /// - The free list starts at the slot whose index is in `next_free`. Each

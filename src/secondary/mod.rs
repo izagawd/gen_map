@@ -167,14 +167,16 @@ pub(crate) unsafe fn key_from_parts_unchecked<C: MapConfig>(
 ) -> Key<MapKeyConfig<C>> {
     debug_assert!(
         MapIdx::<C>::from_usize(position)
+            .and_then(KeyPiece::into_non_max)
             .and_then(|idx| <MapKeyConfig<C> as KeyConfig>::pack(idx, generation))
             .is_some(),
         "the index and the generation fit the key"
     );
     // SAFETY: the caller promises that `position` fits in the index type,
-    // and that the index and `generation` fit the key config.
+    // and that the index and `generation` fit the key config. An index that
+    // fits the key config is not the largest value of the index type.
     unsafe {
-        let idx = MapIdx::<C>::from_usize_unchecked(position);
+        let idx = MapIdx::<C>::from_usize_unchecked(position).into_non_max_unchecked();
         Key::from_repr(<MapKeyConfig<C> as KeyConfig>::pack_unchecked(
             idx, generation,
         ))
@@ -339,7 +341,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// there is none.
     #[inline]
     pub fn get(&self, key: Key<MapKeyConfig<C>>) -> Option<&T> {
-        let position = key.idx().into_usize()?;
+        let position = key.plain_idx().into_usize()?;
         self.slots
             .as_slice()
             .get(position)?
@@ -350,7 +352,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// `None` if there is none.
     #[inline]
     pub fn get_mut(&mut self, key: Key<MapKeyConfig<C>>) -> Option<&mut T> {
-        let position = key.idx().into_usize()?;
+        let position = key.plain_idx().into_usize()?;
         self.slots
             .as_mut_slice()
             .get_mut(position)?
@@ -374,7 +376,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         unsafe {
             self.slots
                 .as_slice()
-                .get_unchecked(key.idx().into_usize_unchecked())
+                .get_unchecked(key.plain_idx().into_usize_unchecked())
                 .get_odd_unchecked()
         }
     }
@@ -394,7 +396,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         unsafe {
             self.slots
                 .as_mut_slice()
-                .get_unchecked_mut(key.idx().into_usize_unchecked())
+                .get_unchecked_mut(key.plain_idx().into_usize_unchecked())
                 .get_odd_unchecked_mut()
         }
     }
@@ -569,13 +571,14 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// map.insert(a, 1).unwrap();
     /// map.insert(b, 2).unwrap();
     ///
-    /// let [(key_a, x), (key_b, y)] = map.get_disjoint_mut_at([a.idx(), b.idx()]).unwrap();
+    /// let idxs = [a.idx().get(), b.idx().get()];
+    /// let [(key_a, x), (key_b, y)] = map.get_disjoint_mut_at(idxs).unwrap();
     /// assert_eq!((key_a, key_b), (a, b));
     /// core::mem::swap(x, y);
     /// assert_eq!(map[a], 2);
     ///
     /// assert_eq!(
-    ///     map.get_disjoint_mut_at([a.idx(), a.idx()]),
+    ///     map.get_disjoint_mut_at([a.idx().get(), a.idx().get()]),
     ///     Err(GetDisjointMutAtError::OverlappingIndices)
     /// );
     /// ```
@@ -690,7 +693,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
             // index fits in `usize` and points at a slot in bounds that holds
             // a value. The caller also promises that no other key points at
             // the same slot, so the references do not alias.
-            unsafe { (*slots.add(key.idx().into_usize_unchecked())).get_odd_unchecked_mut() }
+            unsafe { (*slots.add(key.plain_idx().into_usize_unchecked())).get_odd_unchecked_mut() }
         })
     }
 
@@ -710,9 +713,8 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// # Errors
     ///
     /// Hands `value` back, and leaves the map as it was, if the strategy
-    /// kept the old value, the key's index is the largest value of the index
-    /// type, or the storage could not make room for the slots. The
-    /// [`SecondaryInsertError`] variant says which of the three happened.
+    /// kept the old value or the storage could not make room for the slots.
+    /// The [`SecondaryInsertError`] variant says which of the two happened.
     ///
     /// # Examples
     ///
@@ -736,16 +738,8 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// assert_eq!(ages[bob], 25);
     /// ```
     pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
-        // No `GenMap` gives a slot the largest value of the index type as its
-        // index, so only a hand-built key can have that index. Rejecting it
-        // caps the number of slots, and so the number of values, at that
-        // largest value. A map that keeps a count can then keep it in the
-        // index type.
-        if key.idx() == MapIdx::<C>::MAX {
-            return Err(SecondaryInsertError::IndexReserved(value));
-        }
         let generation = key.generation();
-        let slot = match get_or_grow_slot(&mut self.slots, key.idx()) {
+        let slot = match get_or_grow_slot(&mut self.slots, key.plain_idx()) {
             Ok(slot) => slot,
             Err(error) => return Err(SecondaryInsertError::StorageFull(value, error)),
         };
@@ -774,7 +768,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// value.
     #[inline]
     pub fn remove(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
-        let position = key.idx().into_usize()?;
+        let position = key.plain_idx().into_usize()?;
         let slot = self.slots.as_mut_slice().get_mut(position)?;
         slot.get_odd(key.generation())?;
         let value = take(slot)?;
@@ -1387,7 +1381,7 @@ impl<'a, T, C: SecondaryMapConfig> IntoIterator for &'a mut SecondaryMap<T, C> {
 /// # Rules
 ///
 /// - No slot sits at a position above the largest index the map's keys can
-///   hold, or at the largest value of the index type.
+///   hold.
 /// - A slot that holds a value has a generation no larger than the largest
 ///   one the map's keys can hold, and a slot that holds no value has
 ///   generation zero.

@@ -144,13 +144,24 @@ fn existing_wins_keeps_the_value_until_it_is_removed() {
 }
 
 #[test]
-fn the_largest_index_is_reserved() {
+fn a_key_at_the_largest_index_fits() {
     let mut map = SparseSecondaryMap::<u32, Newer>::new_with_config();
-    assert!(matches!(
-        map.insert(key8(u8::MAX, 1), 1),
-        Err(SecondaryInsertError::IndexReserved(1))
-    ));
-    assert!(map.is_empty());
+    let key = key8(u8::MAX - 1, 1);
+    assert_eq!(map.insert(key, 1).unwrap(), None);
+    assert_eq!(map[key], 1);
+}
+
+#[test]
+fn no_value_is_at_the_largest_value_of_the_index_type() {
+    let mut map = SparseSecondaryMap::<u32, Newer>::new_with_config();
+    map.insert(key8(0, 1), 1).unwrap();
+    assert_eq!(map.key_at(u8::MAX), None);
+    assert_eq!(map.get_at(u8::MAX), None);
+    assert_eq!(map.get_at_mut(u8::MAX), None);
+    assert_eq!(
+        map.get_disjoint_mut_at([0, u8::MAX]),
+        Err(GetDisjointMutAtError::NoValue)
+    );
 }
 
 #[test]
@@ -366,16 +377,18 @@ fn get_disjoint_mut_checks_every_key() {
         Err(GetDisjointMutError::OverlappingKeys)
     );
     let [] = map.get_disjoint_mut([]).unwrap();
-    let [(a, x), (b, y)] = map.get_disjoint_mut_at([k[1].idx(), k[0].idx()]).unwrap();
+    let [(a, x), (b, y)] = map
+        .get_disjoint_mut_at([k[1].idx().get(), k[0].idx().get()])
+        .unwrap();
     assert_eq!((a, b), (k[1], k[0]));
     core::mem::swap(x, y);
     assert_eq!((map[k[0]], map[k[1]]), (1, 0));
     assert_eq!(
-        map.get_disjoint_mut_at([k[0].idx(), k[2].idx()]),
+        map.get_disjoint_mut_at([k[0].idx().get(), k[2].idx().get()]),
         Err(GetDisjointMutAtError::NoValue)
     );
     assert_eq!(
-        map.get_disjoint_mut_at([k[0].idx(), k[0].idx()]),
+        map.get_disjoint_mut_at([k[0].idx().get(), k[0].idx().get()]),
         Err(GetDisjointMutAtError::OverlappingIndices)
     );
 }
@@ -493,7 +506,6 @@ fn the_map_can_move_to_and_be_shared_between_threads() {
 enum Outcome {
     Stored(Option<u32>),
     Refused(u32),
-    IndexReserved(u32),
     StorageFull(u32),
 }
 
@@ -502,7 +514,6 @@ impl<S> From<Result<Option<u32>, SecondaryInsertError<u32, S>>> for Outcome {
         match result {
             Ok(old) => Self::Stored(old),
             Err(SecondaryInsertError::Refused(value)) => Self::Refused(value),
-            Err(SecondaryInsertError::IndexReserved(value)) => Self::IndexReserved(value),
             Err(SecondaryInsertError::StorageFull(value, _)) => Self::StorageFull(value),
         }
     }
@@ -523,11 +534,11 @@ fn pick(known: &[Key<Split<u8, u8>>], rng: &mut Rng) -> Option<Key<Split<u8, u8>
     (!known.is_empty()).then(|| known[rng.below(known.len())])
 }
 
-/// Picks an index that may hold a value, or now and then the reserved
-/// largest index.
+/// Picks an index that may hold a value, or now and then the largest index a
+/// key can hold.
 fn pick_idx(rng: &mut Rng) -> u8 {
     if rng.chance(2) {
-        u8::MAX
+        u8::MAX - 1
     } else {
         rng.below(21) as u8
     }
@@ -616,10 +627,10 @@ where
                 }
                 4 => {
                     for (key, old) in secondary.iter_mut() {
-                        *old = old.wrapping_add(u32::from(key.idx()));
+                        *old = old.wrapping_add(u32::from(key.idx().get()));
                     }
                     for (key, old) in sparse.iter_mut() {
-                        *old = old.wrapping_add(u32::from(key.idx()));
+                        *old = old.wrapping_add(u32::from(key.idx().get()));
                     }
                 }
                 _ => {
@@ -735,7 +746,7 @@ fn check<C, S>(
     S: core::hash::BuildHasher,
 {
     assert_eq!(secondary.len(), sparse.len(), "{context:?}");
-    for idx in (0..=21).chain([u8::MAX]) {
+    for idx in (0..=21).chain([u8::MAX - 1, u8::MAX]) {
         let key = secondary.key_at(idx);
         assert_eq!(key, sparse.key_at(idx), "{context:?}");
         assert_eq!(secondary.get_at(idx), sparse.get_at(idx), "{context:?}");

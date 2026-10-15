@@ -69,15 +69,15 @@ fn the_parts_of_a_gen_map_hold_its_slots_free_list_and_count() {
     assert_eq!(parts.len, 1);
     // The slot of `d` was freed last, so the free list starts there and goes
     // on to the slot of `b`.
-    assert_eq!(parts.next_free, d.idx());
+    assert_eq!(parts.next_free, d.idx().get());
     let slots: Vec<_> = parts.slots.iter().map(parity).collect();
     assert_eq!(
         slots,
         [
-            Parity::Even(even(2), a.idx()),
+            Parity::Even(even(2), a.idx().get()),
             Parity::Even(even(2), u8::MAX),
             Parity::Odd(odd(1), "c"),
-            Parity::Even(even(2), b.idx()),
+            Parity::Even(even(2), b.idx().get()),
             Parity::Even(even(0), u8::MAX),
         ]
     );
@@ -90,7 +90,7 @@ fn the_parts_of_a_gen_map_hold_its_slots_free_list_and_count() {
     // retired slot stays out of use.
     assert_eq!(map.insert("f").idx(), d.idx());
     assert_eq!(map.insert("g").idx(), b.idx());
-    assert_eq!(map.insert("h").idx(), 5);
+    assert_eq!(map.insert("h").idx().get(), 5);
     // The slot of `a` is still detached under `a`.
     assert_eq!(map.reattach(a, "a"), Ok(()));
     assert_eq!(map[a], "a");
@@ -173,11 +173,11 @@ fn a_free_slot_one_below_the_largest_generation_hands_out_the_largest_key() {
     };
     let mut map = unsafe { GenMap::from_raw_parts(parts) };
     let key = map.insert(1);
-    assert_eq!(key.idx(), 0);
+    assert_eq!(key.idx().get(), 0);
     assert!(key.is_max_generation());
     // The slot has no generations left, so removing the value retires it.
     assert_eq!(map.remove(key), Some(1));
-    assert_eq!(map.insert(2).idx(), 1);
+    assert_eq!(map.insert(2).idx().get(), 1);
 }
 
 #[test]
@@ -213,7 +213,7 @@ fn the_parts_of_a_dense_gen_map_keep_its_values_keys_and_slots_in_step() {
     // Removing `a` moved the last value into its place.
     assert_eq!(parts.pairs.second_slice(), ["c", "b"]);
     assert_eq!(parts.pairs.first_slice(), [c, b]);
-    assert_eq!(parts.next_free, a.idx());
+    assert_eq!(parts.next_free, a.idx().get());
     let slots: Vec<_> = parts.slots.iter().map(parity).collect();
     assert_eq!(
         slots,
@@ -346,7 +346,7 @@ fn a_dense_secondary_map_built_by_hand_moves_its_last_value_on_remove() {
 #[cfg(feature = "std")]
 mod sparse {
     use super::{key, odd, Byte};
-    use crate::{SparseSecondaryMap, SparseSecondaryMapRawParts, SparseSlot};
+    use crate::{NonMax, SparseSecondaryMap, SparseSecondaryMapRawParts, SparseSlot};
     use core::hash::BuildHasher;
     use std::collections::HashMap;
     use std::format;
@@ -375,7 +375,7 @@ mod sparse {
 
         let parts = map.into_raw_parts();
         assert_eq!(parts.slots.hasher().0, 7);
-        let slot = &parts.slots[&9];
+        let slot = &parts.slots[&NonMax::<u8>::new(9).unwrap()];
         assert_eq!((slot.generation(), slot.value()), (odd(3), &"b"));
 
         let map = unsafe { SparseSecondaryMap::from_raw_parts(parts) };
@@ -386,8 +386,11 @@ mod sparse {
     #[test]
     fn a_sparse_secondary_map_built_by_hand_holds_what_it_was_given() {
         let mut slots = HashMap::new();
-        slots.insert(2, SparseSlot::new(odd(5), "a"));
-        slots.insert(200, SparseSlot::new(odd(1), "b"));
+        slots.insert(NonMax::<u8>::new(2).unwrap(), SparseSlot::new(odd(5), "a"));
+        slots.insert(
+            NonMax::<u8>::new(200).unwrap(),
+            SparseSlot::new(odd(1), "b"),
+        );
         let mut map: SparseSecondaryMap<&str, Byte> =
             unsafe { SparseSecondaryMap::from_raw_parts(SparseSecondaryMapRawParts { slots }) };
         assert_eq!(map.len(), 2);

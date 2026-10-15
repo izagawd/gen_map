@@ -51,7 +51,9 @@ fn a_gen_map_refuses_a_storage_that_holds_slots_and_hands_it_back() {
     // The storage still holds both slots, including the free one.
     let slots = error.into_storage();
     assert_eq!(slots.len(), 2);
-    assert!(slots[a.idx() as usize].get_odd(a.generation()).is_none());
+    assert!(slots[a.idx().get() as usize]
+        .get_odd(a.generation())
+        .is_none());
 }
 
 #[test]
