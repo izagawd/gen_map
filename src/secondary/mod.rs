@@ -7,7 +7,7 @@ use crate::config::DefaultMapConfig;
 use crate::config::{KeyConfig, MapConfig, SecondaryMapConfig};
 use crate::error::{
     check_disjoint_idxs, check_disjoint_keys, GetDisjointMutAtError, GetDisjointMutError,
-    SecondaryInsertError,
+    SecondaryInsertError, WithStorageError,
 };
 use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
@@ -289,6 +289,30 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         Self {
             slots: Slots::<T, C>::empty(),
             len: Counter::zero(),
+        }
+    }
+
+    /// Creates an empty map with config `C` that keeps its slots in
+    /// `storage`. This method lets the caller set up the storage, such as
+    /// with a custom allocator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WithStorageError::NotEmpty`] with `storage` in it if
+    /// `storage` holds any slots.
+    #[inline]
+    #[allow(clippy::type_complexity)]
+    pub fn with_storage(
+        storage: <C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>>,
+    ) -> Result<Self, WithStorageError<<C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>>>>
+    {
+        if storage.is_empty() {
+            Ok(Self {
+                slots: storage,
+                len: Counter::zero(),
+            })
+        } else {
+            Err(WithStorageError::NotEmpty(storage))
         }
     }
 

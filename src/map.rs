@@ -3,7 +3,7 @@ use crate::config::DefaultMapConfig;
 use crate::config::{GenMapConfig, KeyConfig, MapConfig};
 use crate::error::{
     check_disjoint_idxs, check_disjoint_keys, FullError, GetDisjointMutAtError,
-    GetDisjointMutError, InsertError, InsertWithError,
+    GetDisjointMutError, InsertError, InsertWithError, WithStorageError,
 };
 use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
@@ -470,6 +470,54 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     #[must_use]
     pub fn new_with_config() -> Self {
         Self::with_slots(Slots::<T, C>::empty())
+    }
+
+    /// Creates an empty map with config `C` that keeps its slots in
+    /// `storage`. This method lets the caller set up the storage, such as
+    /// with a custom allocator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WithStorageError::NotEmpty`] with `storage` in it if
+    /// `storage` holds any slots.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
+    ///
+    /// /// Maps with this config keep their slots in a `Vec`.
+    /// struct VecSlots;
+    ///
+    /// impl MapConfig for VecSlots {
+    ///     type KeyConfig = Split<u32, u32>;
+    /// }
+    ///
+    /// impl GenMapConfig for VecSlots {
+    ///     type Len = KeepLen;
+    ///     type Storage<S: GenSlotItem> = Vec<S>;
+    /// }
+    ///
+    /// let mut map = GenMap::<&str, VecSlots>::with_storage(Vec::with_capacity(8)).unwrap();
+    /// assert!(map.capacity() >= 8);
+    /// map.insert("a");
+    ///
+    /// // `slots` holds the slot of "a", so `with_storage` refuses it and hands
+    /// // it back in the error.
+    /// let slots = map.into_raw_parts().slots;
+    /// let error = GenMap::<&str, VecSlots>::with_storage(slots).unwrap_err();
+    /// assert_eq!(error.into_storage().len(), 1);
+    /// ```
+    #[inline]
+    #[allow(clippy::type_complexity)]
+    pub fn with_storage(
+        storage: <C as GenMapConfig>::Storage<MapSlot<T, C>>,
+    ) -> Result<Self, WithStorageError<<C as GenMapConfig>::Storage<MapSlot<T, C>>>> {
+        if storage.is_empty() {
+            Ok(Self::with_slots(storage))
+        } else {
+            Err(WithStorageError::NotEmpty(storage))
+        }
     }
 
     /// Creates a map with no values that keeps its slots in `slots`. The
