@@ -3,7 +3,7 @@
 
 use crate::tests::model::Rng;
 use crate::tests::{Bomb, CloneBomb, DropTracker};
-use crate::{ReserveError, SingleVec, SingleVecIntoIter, SingleVecRawParts, SliceStorage};
+use crate::{u1, ReserveError, SingleVec, SingleVecIntoIter, SingleVecRawParts, SliceStorage};
 use core::mem::ManuallyDrop;
 use core::ptr::NonNull;
 use std::format;
@@ -95,6 +95,27 @@ fn the_length_type_caps_how_many_items_fit() {
     assert_eq!(items.pop(), Some(254));
     assert!(items.try_push(254).is_ok());
     assert!(items.into_iter().eq(0..255));
+}
+
+#[test]
+fn a_u1_length_type_fits_one_item() {
+    let mut items = SingleVec::<String, u1>::new();
+    items.push(String::from("a"));
+    assert_eq!(items.capacity(), 1);
+    assert_eq!(items.try_push(String::from("b")), Err(String::from("b")));
+    assert_eq!(items.ensure_room(1), Err(ReserveError::CapacityOverflow));
+    assert_eq!(items.pop(), Some(String::from("a")));
+    assert!(items.is_empty());
+    assert!(items.try_push(String::from("c")).is_ok());
+    assert!(items.into_iter().eq([String::from("c")]));
+
+    let mut units = SingleVec::<(), u1>::new();
+    assert_eq!(units.capacity(), 1);
+    units.push(());
+    assert_eq!(units.try_push(()), Err(()));
+
+    assert_eq!(SingleVec::<u8, u1>::with_capacity(1).capacity(), 1);
+    assert!(catch_unwind(|| SingleVec::<u8, u1>::with_capacity(2)).is_err());
 }
 
 #[test]

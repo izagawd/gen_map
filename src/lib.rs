@@ -96,15 +96,18 @@
 //! [`slots_len`](GenMap::slots_len) rather than the number of values.
 //!
 //! The map adds one to a slot's generation twice for each value, so a `u32`
-//! generation lets a slot hold over two billion values one after another, and
-//! a 4-bit generation lets it hold eight. When the map removes a value whose
-//! key has the largest generation its key config can hold, the slot has no
-//! generations left. By default, the map then retires the slot and never uses
-//! it again. When [`WRAP_ON_OVERFLOW`](GenMapConfig::WRAP_ON_OVERFLOW) is
-//! `true`, the map instead starts the slot's generation over at zero and keeps
-//! using the slot. The map then counts the slot's generation up through the
-//! same values again, so a key from before the wrap can match a new value once
-//! the slot's generation is back at the key's.
+//! generation lets a slot hold over two billion values one after another, a
+//! 4-bit generation lets it hold eight, and a [`u1`] generation lets it hold
+//! one. When the map removes a value whose key has the largest generation its
+//! key config can hold, the slot has no generations left. By default, the map
+//! then retires the slot and never uses it again. When
+//! [`WRAP_ON_OVERFLOW`](GenMapConfig::WRAP_ON_OVERFLOW) is `true`, the map
+//! instead starts the slot's generation over at zero and keeps using the slot.
+//! The map then counts the slot's generation up through the same values again,
+//! so a key from before the wrap can match a new value once the slot's
+//! generation is back at the key's. With a `u1` generation, the slot's
+//! generation is back at the key's as soon as the slot holds a new value, so a
+//! key matches whatever value its slot holds.
 //!
 //! Two methods also let a key match a value other than the one it was handed
 //! out for. [`reset`](GenMap::reset) removes every slot and starts the
@@ -119,10 +122,11 @@
 //! [`GenMapConfig`]. The map only uses the config as a type and never creates
 //! a value of it, so an empty struct is enough. A config decides four things.
 //!
-//! - [`KeyConfig`](MapConfig::KeyConfig) decides the integer types of a key's
-//!   index and generation, and how the key stores the two. [`Split`] keeps
-//!   them as two fields, and [`Packed`] puts them in the bits of one integer.
-//!   With either key config, `Option<Key>` is the same size as `Key`.
+//! - [`KeyConfig`](MapConfig::KeyConfig) decides the types of a key's index
+//!   and generation, and how the key stores the two. [`Split`] keeps them as
+//!   two fields, and [`Packed`] puts them in the bits of one integer. With
+//!   either key config, `Option<Key>` is the same size as `Key` as long as the
+//!   generation type is not `u1`.
 //! - [`WRAP_ON_OVERFLOW`](GenMapConfig::WRAP_ON_OVERFLOW) decides whether the
 //!   map retires a slot with no generations left or starts its generation over
 //!   at zero.
@@ -269,7 +273,7 @@ pub use error::{
 };
 pub use key::layout::{Packed, Split};
 pub use key::parity::{Even, Odd};
-pub use key::piece::KeyPiece;
+pub use key::piece::{u1, KeyPiece, NonMax, NonMaxU1, NonZeroU1};
 pub use key::Key;
 pub use len::{KeepLen, Len, NoLen};
 pub use map::{

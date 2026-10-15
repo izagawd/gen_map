@@ -3,7 +3,7 @@
 
 use crate::tests::model::Rng;
 use crate::tests::{Bomb, CloneBomb, DropItem, DropTracker};
-use crate::{PairStorage, PairVec, PairVecIntoIter, PairVecRawParts, ReserveError};
+use crate::{u1, PairStorage, PairVec, PairVecIntoIter, PairVecRawParts, ReserveError};
 use core::alloc::Layout;
 use core::fmt::Debug;
 use core::mem::size_of;
@@ -208,6 +208,26 @@ fn the_length_type_caps_how_many_pairs_fit() {
     assert_eq!(pairs.pop(), Some((254, 508)));
     assert!(pairs.try_push(254, 508).is_ok());
     assert!(pairs.into_iter().eq((0..255).map(|i| (i, i * 2))));
+}
+
+#[test]
+fn a_u1_length_type_fits_one_pair() {
+    let mut pairs = PairVec::<u32, u64, u1>::new();
+    pairs.push(1, 2);
+    assert_eq!(pairs.capacity(), 1);
+    assert_eq!(pairs.try_push(3, 4), Err((3, 4)));
+    assert_eq!(pairs.ensure_room(1), Err(ReserveError::CapacityOverflow));
+    assert_eq!(pairs.pop(), Some((1, 2)));
+    assert!(pairs.try_push(5, 6).is_ok());
+    assert!(pairs.into_iter().eq([(5, 6)]));
+
+    let mut units = PairVec::<(), (), u1>::new();
+    assert_eq!(units.capacity(), 1);
+    units.push((), ());
+    assert_eq!(units.try_push((), ()), Err(((), ())));
+
+    assert_eq!(PairVec::<u8, u8, u1>::with_capacity(1).capacity(), 1);
+    assert!(catch_unwind(|| PairVec::<u8, u8, u1>::with_capacity(2)).is_err());
 }
 
 #[test]

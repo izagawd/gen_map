@@ -4,8 +4,8 @@ mod piece;
 
 use super::{key_from_parts, Cfg};
 use crate::{
-    DefaultKeyConfig, DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, KeepLen, Key, KeyConfig,
-    MapConfig, MapKeyConfig, Split,
+    u1, DefaultKeyConfig, DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, InsertError,
+    KeepLen, Key, KeyConfig, MapConfig, MapKeyConfig, Split,
 };
 use core::mem::size_of;
 use std::vec::Vec;
@@ -50,6 +50,8 @@ fn key_sizes_follow_the_config() {
     assert_eq!(size_of::<Key<Split<u32, u16>>>(), 8);
     assert_eq!(size_of::<Key<Split<u64, u64>>>(), 16);
     assert_eq!(size_of::<Key>(), 8);
+    assert_eq!(size_of::<Key<Split<u8, u1>>>(), 1);
+    assert_eq!(size_of::<Key<Split<u32, u1>>>(), 4);
 }
 
 #[test]
@@ -78,6 +80,33 @@ fn key_debug_prints_both_parts() {
     let text = std::format!("{k:?}");
     assert!(text.contains("idx: 4"));
     assert!(text.contains("generation: 7"));
+}
+
+#[test]
+fn key_debug_prints_a_u1_generation_as_a_number() {
+    let k = key_from_parts::<Split<u32, u1>>(4, u1::MAX);
+    assert_eq!(std::format!("{k:?}"), "Key { idx: 4, generation: 1 }");
+}
+
+#[test]
+fn a_u1_index_gives_a_map_a_single_slot() {
+    // No slot gets the largest index, which is one here, so the only slot is
+    // at index zero.
+    let mut map = GenMap::<i32, Cfg<u1, u8>>::new_with_config();
+    let a = map.insert(1);
+    assert_eq!(a.idx(), u1::MIN);
+    assert!(matches!(
+        map.try_insert(2),
+        Err(InsertError::IndexExhausted(2))
+    ));
+
+    map.remove(a);
+    let b = map.insert(3);
+    assert_eq!(b.idx(), u1::MIN);
+    assert_eq!(b.generation().get().get(), 3);
+    assert!(map.get(a).is_none());
+    assert_eq!(map[b], 3);
+    assert_eq!(map.len(), 1);
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use crate::tests::Cfg;
-use crate::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
+use crate::{u1, GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
 use std::vec::Vec;
 
 /// A `u8` index and a `u8` generation, so a slot retires after holding 128
@@ -15,6 +15,25 @@ impl MapConfig for Wrap {
 }
 
 impl GenMapConfig for Wrap {
+    const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
+    type Storage<S: GenSlotItem> = Vec<S>;
+}
+
+/// Maps with this config hand out keys with a `u8` index and a `u1`
+/// generation, so they retire a slot after it holds one value.
+type RetireU1 = Cfg<u8, u1>;
+
+/// Maps with this config work like those with [`RetireU1`], but they wrap
+/// a slot's generation after the slot holds one value, and then use the slot
+/// again.
+struct WrapU1;
+
+impl MapConfig for WrapU1 {
+    type KeyConfig = Split<u8, u1>;
+}
+
+impl GenMapConfig for WrapU1 {
     const WRAP_ON_OVERFLOW: bool = true;
     type Len = KeepLen;
     type Storage<S: GenSlotItem> = Vec<S>;
@@ -115,6 +134,51 @@ fn retired_slots_survive_clear_and_clone() {
     map.clear();
     let next = map.insert(6);
     assert_eq!(next.idx(), 1, "clear must not revive a retired slot");
+}
+
+#[test]
+fn a_u1_generation_retires_a_slot_after_one_value() {
+    let mut map = GenMap::<u32, RetireU1>::new_with_config();
+    let first = map.insert(1);
+    assert!(first.is_max_generation());
+    assert_eq!(map.remove(first), Some(1));
+    assert_eq!(map.generation_at(first.idx()), Some(u1::MIN));
+
+    let second = map.insert(2);
+    assert_eq!(second.idx(), 1);
+    assert!(map.get(first).is_none());
+    assert_eq!(map.slots_len(), 2);
+}
+
+#[test]
+fn a_u1_generation_that_wraps_lets_a_key_match_the_next_value_in_its_slot() {
+    let mut map = GenMap::<u32, WrapU1>::new_with_config();
+    let first = map.insert(1);
+    assert_eq!(map.remove(first), Some(1));
+    assert!(map.get(first).is_none());
+
+    let second = map.insert(2);
+    assert_eq!(second, first);
+    assert_eq!(map.get(first), Some(&2));
+    assert_eq!(map.slots_len(), 1);
+}
+
+#[test]
+fn a_u1_generation_detaches_and_reattaches() {
+    let mut map = GenMap::<u32, WrapU1>::new_with_config();
+    let key = map.insert(1);
+    assert_eq!(map.detach(key), Some(1));
+    assert!(map.get(key).is_none());
+
+    // A detached slot is not free, so the next value goes into a new slot.
+    let other = map.insert(2);
+    assert_ne!(other.idx(), key.idx());
+
+    map.reattach(key, 3).unwrap();
+    assert_eq!(map[key], 3);
+    assert_eq!(map.detach(key), Some(3));
+    assert!(map.release(key));
+    assert_eq!(map.insert(4), key);
 }
 
 #[test]

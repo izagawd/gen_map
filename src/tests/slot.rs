@@ -1,5 +1,5 @@
 use super::DropTracker;
-use crate::{Even, Odd, Parity, ParityMut, ParityRef, Slot};
+use crate::{u1, Even, Odd, Parity, ParityMut, ParityRef, Slot};
 use std::format;
 use std::string::String;
 
@@ -256,4 +256,30 @@ fn as_parity_mut_changes_the_generation_but_not_the_parity() {
         *value = 9;
     }
     assert_eq!(slot.as_parity(), ParityRef::Even(&even(8), &9));
+}
+
+#[test]
+fn a_slot_with_a_u1_generation_hands_out_references_to_it() {
+    let odd = Odd::new(u1::MAX).unwrap();
+    let mut slot = Slot::<u1, &str, u8>::new_odd(odd, "a");
+    assert_eq!(slot.as_parity(), ParityRef::Odd(&odd, &"a"));
+    // An `Odd<u1>` takes no space, so this write leaves the generation at one.
+    if let ParityMut::Odd(generation, value) = slot.as_parity_mut() {
+        *generation = odd;
+        *value = "b";
+    }
+    assert_eq!(slot.generation(), u1::MAX);
+    assert_eq!(format!("{slot:?}"), "Slot { generation: 1, value: \"b\" }");
+    assert_eq!(slot.into_parity(), Parity::Odd(odd, "b"));
+
+    let mut slot = Slot::<u1, &str, u8>::new_even(Even::ZERO, 7);
+    // An `Even<u1>` takes no space too, so this write leaves the generation at
+    // zero.
+    if let ParityMut::Even(generation, value) = slot.as_parity_mut() {
+        *generation = Even::ZERO;
+        *value = 9;
+    }
+    assert_eq!(slot.generation(), u1::MIN);
+    assert_eq!(slot.as_parity(), ParityRef::Even(&Even::ZERO, &9));
+    assert_eq!(slot.into_parity(), Parity::Even(Even::ZERO, 9));
 }

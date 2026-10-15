@@ -3,7 +3,7 @@
 use crate::tests::model::Rng;
 use crate::tests::{key_from_parts, Bomb, Cfg, CloneBomb, DropItem, DropTracker, LenCheck};
 use crate::{
-    DefaultKeyConfig, ExistingWins, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
+    u1, DefaultKeyConfig, ExistingWins, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
     GetDisjointMutError, KeepLen, Key, MapConfig, MapKeyConfig, NewerWins, NoLen, Odd, Packed,
     ReplaceStrategy, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem,
     Split,
@@ -1226,6 +1226,22 @@ fn insert_rejects_a_key_at_the_largest_index() {
 }
 
 #[test]
+fn insert_rejects_a_key_whose_u1_index_is_one() {
+    // One is the largest `u1`, so no slot gets it as an index.
+    let key = key_from_parts::<Split<u1, u8>>(u1::MAX, 1);
+    let mut map = SecondaryMap::<&str, Cfg<u1, u8>>::new_with_config();
+    assert!(matches!(
+        map.insert(key, "x"),
+        Err(SecondaryInsertError::IndexReserved("x"))
+    ));
+    assert_eq!(map.slots_len(), 0);
+
+    let key = key_from_parts::<Split<u1, u8>>(u1::MIN, 1);
+    assert_eq!(map.insert(key, "y").unwrap(), None);
+    assert_eq!(map[key], "y");
+}
+
+#[test]
 fn a_value_under_every_key_a_byte_map_hands_out_fits_the_count() {
     let mut keys = GenMap::<(), Cfg<u8, u8>>::new_with_config();
     let mut map = SecondaryMap::<u32, Cfg<u8, u8>>::new_with_config();
@@ -1237,4 +1253,41 @@ fn a_value_under_every_key_a_byte_map_hands_out_fits_the_count() {
     assert_eq!(map.iter().len(), 255);
     assert_eq!(map.drain().count(), 255);
     assert!(map.is_empty());
+}
+
+/// Maps with this config use keys with a `u1` generation. A `GenMap` with
+/// this config wraps generations, so it hands out the same key again for the
+/// next value in a slot.
+struct WrapU1;
+
+impl MapConfig for WrapU1 {
+    type KeyConfig = Split<u8, u1>;
+}
+
+impl GenMapConfig for WrapU1 {
+    const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
+    type Storage<S: GenSlotItem> = Vec<S>;
+}
+
+impl SecondaryMapConfig for WrapU1 {
+    type ReplaceStrategy = NewerWins;
+    type Len = KeepLen;
+    type Storage<S: SecondarySlotItem> = Vec<S>;
+}
+
+#[test]
+fn a_u1_generation_hands_the_next_key_in_a_slot_the_old_value() {
+    let mut people = GenMap::<&str, WrapU1>::new_with_config();
+    let mut ages = SecondaryMap::<u32, WrapU1>::new_with_config();
+    let alice = people.insert("Alice");
+    ages.insert(alice, 30).unwrap();
+
+    // Bob gets Alice's slot under the same key, so the age stored for Alice
+    // is found under his key, and his insert replaces it.
+    people.remove(alice);
+    let bob = people.insert("Bob");
+    assert_eq!(bob, alice);
+    assert_eq!(ages[bob], 30);
+    assert_eq!(ages.insert(bob, 25).unwrap(), Some(30));
 }

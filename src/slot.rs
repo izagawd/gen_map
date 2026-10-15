@@ -76,7 +76,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     #[inline]
     pub fn new_even(generation: Even<G>, value: U) -> Self {
         Self {
-            generation: generation.get(),
+            generation: G::from_non_max(generation.get()),
             value: Value {
                 even: ManuallyDrop::new(value),
             },
@@ -110,10 +110,9 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
         // SAFETY: the parity of the generation says which field is live. The
         // first branch only runs for an odd generation, so it reads `odd` and
         // treats the generation as an `Odd`, and the second branch does the
-        // same with `even` and `Even` for an even generation. `Odd` and `Even`
-        // have the layout of the plain integer, as the comments on them
-        // explain, so a reference to the generation can be cast to a reference
-        // to either.
+        // same with `even` and `Even` for an even generation. A reference to
+        // the generation can be cast to a reference to either, as the comments
+        // on `Odd` and `Even` explain.
         unsafe {
             if self.is_odd() {
                 ParityRef::Odd(&*generation.cast::<Odd<G>>(), &self.value.odd)
@@ -131,9 +130,11 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
         let generation: *mut G = generation;
         // SAFETY: the same as in `as_parity`. Writing through a reference to an
         // `Odd` stores another `Odd`, which is odd, and writing through a
-        // reference to an `Even` stores another `Even`, which is even. So the
-        // generation keeps its parity, and the field it says is live stays
-        // live, for as long as the references exist.
+        // reference to an `Even` stores another `Even`, which is even. When `G`
+        // is `u1`, an `Odd` and an `Even` take no space, and writing one leaves
+        // the generation as it was. So the generation keeps its parity, and the
+        // field it says is live stays live, for as long as the references
+        // exist.
         unsafe {
             if odd {
                 ParityMut::Odd(&mut *generation.cast::<Odd<G>>(), &mut value.odd)
@@ -211,7 +212,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     /// `generation`.
     #[inline]
     pub fn get_even(&self, generation: Even<G>) -> Option<&U> {
-        if self.generation == generation.get() {
+        if self.generation == G::from_non_max(generation.get()) {
             // SAFETY: the generation is even, so `even` is the live field.
             Some(unsafe { &self.value.even })
         } else {
@@ -223,7 +224,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     /// `generation`.
     #[inline]
     pub fn get_even_mut(&mut self, generation: Even<G>) -> Option<&mut U> {
-        if self.generation == generation.get() {
+        if self.generation == G::from_non_max(generation.get()) {
             // SAFETY: the generation is even, so `even` is the live field.
             Some(unsafe { &mut self.value.even })
         } else {
@@ -239,7 +240,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     /// Hands the slot back if its generation is not `generation`.
     #[inline]
     pub fn into_even(self, generation: Even<G>) -> Result<U, Self> {
-        if self.generation == generation.get() {
+        if self.generation == G::from_non_max(generation.get()) {
             let mut slot = ManuallyDrop::new(self);
             // SAFETY: the generation is even, so `even` is the live field,
             // and the slot is never dropped, so the value is not dropped
@@ -279,7 +280,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
     pub fn set_even(&mut self, generation: Even<G>, value: U) -> Parity<G, T, U> {
         // SAFETY: the same as in `set_odd`.
         let old = unsafe { ptr::read(self).into_parity() };
-        self.generation = generation.get();
+        self.generation = G::from_non_max(generation.get());
         self.value.even = ManuallyDrop::new(value);
         old
     }
@@ -296,7 +297,7 @@ impl<G: KeyPiece, T, U> Slot<G, T, U> {
         // SAFETY: the caller promises an odd generation, so `odd` is the live
         // field. It is overwritten right after without being dropped.
         let old = unsafe { ManuallyDrop::take(&mut self.value.odd) };
-        self.generation = generation.get();
+        self.generation = G::from_non_max(generation.get());
         self.value.even = ManuallyDrop::new(value);
         old
     }

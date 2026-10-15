@@ -7,9 +7,10 @@
 use super::model::Rng;
 use super::{DropItem, DropTracker};
 use crate::{
-    DefaultMapConfig, DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig,
-    GenMap, GenMapConfig, GenSlotItem, KeepLen, Key, KeyPiece, MapConfig, MapIdx, MapKeyConfig,
-    NewerWins, Packed, PairVec, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, SplitPair,
+    u1, DefaultMapConfig, DenseGenMap, DenseGenMapConfig, DenseSecondaryMap,
+    DenseSecondaryMapConfig, GenMap, GenMapConfig, GenSlotItem, KeepLen, Key, KeyPiece, MapConfig,
+    MapIdx, MapKeyConfig, NewerWins, Packed, PairVec, SecondaryMap, SecondaryMapConfig,
+    SecondarySlotItem, SplitPair,
 };
 use std::cell::{Cell, RefCell};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -120,6 +121,16 @@ config!(
     TwoVecs
 );
 
+config!(
+    /// Maps with this config hand out keys with a `u1` generation and wrap
+    /// generations, so they use a slot again as soon as its value is removed.
+    U1Wrapping,
+    crate::Split<u8, u1>,
+    true,
+    Vec,
+    PairVec
+);
+
 #[cfg(feature = "arrayvec")]
 type Eight<T> = arrayvec::ArrayVec<T, 8>;
 
@@ -161,6 +172,14 @@ fn maps_that_wrap_survive_panics() {
     let (seeds, steps) = seeds();
     for seed in 0..seeds {
         run::<Wrapping>(seed, steps);
+    }
+}
+
+#[test]
+fn maps_with_a_u1_generation_survive_panics() {
+    let (seeds, steps) = seeds();
+    for seed in 0..seeds {
+        run::<U1Wrapping>(seed, steps);
     }
 }
 

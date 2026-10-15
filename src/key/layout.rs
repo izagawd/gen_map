@@ -6,22 +6,25 @@ use crate::key::piece::KeyPiece;
 /// as the two put together, plus any padding their alignment needs. A key
 /// can hold any index of type `Idx` and any odd generation of type `Gen`.
 ///
-/// `Idx` and `Gen` can each be any unsigned integer from `u8` to `u128`, or
-/// `usize`. Both default to `u32`.
+/// `Idx` and `Gen` can each be [`u1`](crate::u1), any unsigned integer from
+/// `u8` to `u128`, or `usize`. Both default to `u32`. A `u1` generation takes
+/// no space in a key, because one is the only odd `u1`.
 ///
 /// # Examples
 ///
 /// ```
-/// use gen_map::{Key, Split};
+/// use gen_map::{u1, Key, Split};
 ///
 /// assert_eq!(core::mem::size_of::<Key<Split<u16, u16>>>(), 4);
 /// assert_eq!(core::mem::size_of::<Key<Split>>(), 8);
+/// assert_eq!(core::mem::size_of::<Key<Split<u32, u1>>>(), 4);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Split<Idx = u32, Gen: KeyPiece = u32> {
     idx: Idx,
-    /// An odd generation is never zero, and an [`Odd`] stores it as a
-    /// `NonZero`, which gives `Option<Key>` the size of `Key`.
+    /// An odd generation is never zero, and an [`Odd`] stores it as
+    /// `Gen::NonZero`. Unless `Gen` is `u1`, that `NonZero` gives `Option<Key>`
+    /// the size of `Key`.
     generation: Odd<Gen>,
 }
 
@@ -39,8 +42,7 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 
     #[inline]
     fn max_generation() -> Odd<Gen> {
-        // SAFETY: every `KeyPiece` type is an unsigned integer, and the
-        // largest value of an unsigned integer is odd.
+        // SAFETY: the largest value of every `KeyPiece` type is odd.
         unsafe { Odd::new_unchecked(Gen::MAX) }
     }
 
