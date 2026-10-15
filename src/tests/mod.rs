@@ -12,6 +12,7 @@ mod raw_parts;
 mod secondary;
 mod slot;
 mod storage;
+mod with_storage;
 mod zero_sized;
 
 use crate::{

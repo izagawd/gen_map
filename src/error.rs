@@ -382,6 +382,88 @@ impl<S: fmt::Display, P: fmt::Display> fmt::Display for DenseError<S, P> {
     }
 }
 
+/// This error says why [`GenMap::with_storage`](crate::GenMap::with_storage)
+/// or [`SecondaryMap::with_storage`](crate::SecondaryMap::with_storage) could
+/// not build a map. It hands the storage back so that the caller can keep it.
+pub enum WithStorageError<S> {
+    /// The storage holds items, but `with_storage` only builds a map from an
+    /// empty storage.
+    NotEmpty(S),
+}
+
+impl<S> WithStorageError<S> {
+    /// Takes the storage back out of the error.
+    #[inline]
+    pub fn into_storage(self) -> S {
+        match self {
+            Self::NotEmpty(storage) => storage,
+        }
+    }
+}
+
+// This impl is written by hand so that it does not require `S: Debug`.
+impl<S> fmt::Debug for WithStorageError<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotEmpty(_) => f.write_str("NotEmpty(..)"),
+        }
+    }
+}
+
+impl<S> fmt::Display for WithStorageError<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotEmpty(_) => f.write_str("the storage is not empty"),
+        }
+    }
+}
+
+/// This error says why
+/// [`DenseGenMap::with_storages`](crate::DenseGenMap::with_storages) or
+/// [`DenseSecondaryMap::with_storages`](crate::DenseSecondaryMap::with_storages)
+/// could not build a map. `with_storages` only builds a map from two empty
+/// storages. Each variant hands both storages back so that the caller can
+/// keep them. The first field of a variant is the slot storage, and the
+/// second is the [`PairStorage`](crate::PairStorage).
+pub enum WithStoragesError<S, P> {
+    /// The slot storage holds items. `with_storages` returns this variant
+    /// without checking the pair storage, so the pair storage may hold items
+    /// too.
+    SlotsNotEmpty(S, P),
+    /// The pair storage holds items, and the slot storage is empty.
+    PairsNotEmpty(S, P),
+}
+
+impl<S, P> WithStoragesError<S, P> {
+    /// Takes the slot storage and the pair storage back out of the error.
+    #[inline]
+    pub fn into_storages(self) -> (S, P) {
+        match self {
+            Self::SlotsNotEmpty(slots, pairs) | Self::PairsNotEmpty(slots, pairs) => (slots, pairs),
+        }
+    }
+}
+
+// This impl is written by hand so that it does not require `S: Debug` or
+// `P: Debug`.
+impl<S, P> fmt::Debug for WithStoragesError<S, P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SlotsNotEmpty(..) => f.write_str("SlotsNotEmpty(..)"),
+            Self::PairsNotEmpty(..) => f.write_str("PairsNotEmpty(..)"),
+        }
+    }
+}
+
+impl<S, P> fmt::Display for WithStoragesError<S, P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SlotsNotEmpty(..) => f.write_str("the slot storage is not empty"),
+            Self::PairsNotEmpty(..) => f.write_str("the pair storage is not empty"),
+        }
+    }
+}
+
 /// This error says why a [`SingleVec`](crate::SingleVec) or a
 /// [`PairVec`](crate::PairVec) could not make room for more items. It needs
 /// the `alloc` feature.

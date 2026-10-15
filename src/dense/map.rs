@@ -3,7 +3,7 @@ use crate::config::DefaultMapConfig;
 use crate::config::{DenseGenMapConfig, KeyConfig, MapConfig};
 use crate::error::{
     check_disjoint_idxs, check_disjoint_keys, DenseError, FullError, GetDisjointMutAtError,
-    GetDisjointMutError, InsertError, InsertWithError,
+    GetDisjointMutError, InsertError, InsertWithError, WithStoragesError,
 };
 use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
@@ -290,6 +290,66 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
             slots: <Slots<C> as SliceStorage>::empty(),
             next_free: no_slot::<C>(),
             pairs: <Pairs<T, C> as PairStorage>::empty(),
+        }
+    }
+
+    /// Creates an empty map with config `C` that keeps its slots in `slots`
+    /// and its keys and values in `pairs`. This method lets the caller set up
+    /// the storages, such as with a custom allocator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WithStoragesError::SlotsNotEmpty`] if `slots` holds any
+    /// slots, or else [`WithStoragesError::PairsNotEmpty`] if `pairs` holds
+    /// any pairs. The error holds both storages in either case.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, PairVec, Split};
+    ///
+    /// /// Maps with this config keep their slots in a `Vec` and their keys and
+    /// /// values in a `PairVec`.
+    /// struct VecSlots;
+    ///
+    /// impl MapConfig for VecSlots {
+    ///     type KeyConfig = Split<u32, u32>;
+    /// }
+    ///
+    /// impl DenseGenMapConfig for VecSlots {
+    ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
+    ///     type PairStorage<K, V> = PairVec<K, V>;
+    /// }
+    ///
+    /// let slots = Vec::with_capacity(8);
+    /// let pairs = PairVec::with_capacity(8);
+    /// let mut map = DenseGenMap::<&str, VecSlots>::with_storages(slots, pairs).unwrap();
+    /// assert!(map.capacity() >= 8);
+    /// let key = map.insert("a");
+    /// assert_eq!(map[key], "a");
+    /// ```
+    #[inline]
+    #[allow(clippy::type_complexity)]
+    pub fn with_storages(
+        slots: <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>,
+        pairs: <C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>,
+    ) -> Result<
+        Self,
+        WithStoragesError<
+            <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>,
+            <C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>,
+        >,
+    > {
+        if !slots.is_empty() {
+            Err(WithStoragesError::SlotsNotEmpty(slots, pairs))
+        } else if !pairs.is_empty() {
+            Err(WithStoragesError::PairsNotEmpty(slots, pairs))
+        } else {
+            Ok(Self {
+                slots,
+                next_free: no_slot::<C>(),
+                pairs,
+            })
         }
     }
 

@@ -269,7 +269,7 @@ pub use dense::secondary::{
 pub use error::ReserveError;
 pub use error::{
     DenseError, FullError, GetDisjointMutAtError, GetDisjointMutError, InsertError,
-    InsertWithError, SecondaryInsertError,
+    InsertWithError, SecondaryInsertError, WithStorageError, WithStoragesError,
 };
 pub use key::layout::{Packed, Split};
 pub use key::parity::{Even, Odd};

@@ -7,7 +7,7 @@ use crate::dense::map::{
 };
 use crate::error::{
     check_disjoint_idxs, check_disjoint_keys, DenseError, GetDisjointMutAtError,
-    GetDisjointMutError, SecondaryInsertError,
+    GetDisjointMutError, SecondaryInsertError, WithStoragesError,
 };
 use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
@@ -205,6 +205,36 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         Self {
             slots: <Slots<C> as SliceStorage>::empty(),
             pairs: <Pairs<T, C> as PairStorage>::empty(),
+        }
+    }
+
+    /// Creates an empty map with config `C` that keeps its slots in `slots`
+    /// and its keys and values in `pairs`. This method lets the caller set up
+    /// the storages, such as with a custom allocator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WithStoragesError::SlotsNotEmpty`] if `slots` holds any
+    /// slots, or else [`WithStoragesError::PairsNotEmpty`] if `pairs` holds
+    /// any pairs. The error holds both storages in either case.
+    #[inline]
+    #[allow(clippy::type_complexity)]
+    pub fn with_storages(
+        slots: <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>,
+        pairs: <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>,
+    ) -> Result<
+        Self,
+        WithStoragesError<
+            <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>,
+            <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>,
+        >,
+    > {
+        if !slots.is_empty() {
+            Err(WithStoragesError::SlotsNotEmpty(slots, pairs))
+        } else if !pairs.is_empty() {
+            Err(WithStoragesError::PairsNotEmpty(slots, pairs))
+        } else {
+            Ok(Self { slots, pairs })
         }
     }
 
