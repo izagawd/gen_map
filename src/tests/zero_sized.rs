@@ -27,7 +27,7 @@ fn unit_values_work_like_any_other() {
     assert_eq!(map.get(again), Some(&()));
 
     assert!(map.get_disjoint_mut([keys[0], keys[1]]).is_ok());
-    assert_eq!(map.get_at(keys[5].idx()), Some((keys[5], &())));
+    assert_eq!(map.get_at(keys[5].idx().get()), Some((keys[5], &())));
 
     let copy = map.clone();
     assert!(keys.iter().all(|key| copy.get(*key) == map.get(*key)));

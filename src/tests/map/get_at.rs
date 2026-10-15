@@ -12,7 +12,7 @@ fn map_with_a_retired_slot() -> (GenMap<i32, Tiny>, Key<MapKeyConfig<Tiny>>) {
         map.remove(key);
         key = map.insert(0);
     }
-    assert_eq!(key.idx(), 1);
+    assert_eq!(key.idx().get(), 1);
     (map, key)
 }
 
@@ -39,8 +39,8 @@ fn get_at_is_none_for_a_vacant_slot() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     map.remove(key);
-    assert_eq!(map.get_at(key.idx()), None);
-    assert_eq!(map.get_at_mut(key.idx()), None);
+    assert_eq!(map.get_at(key.idx().get()), None);
+    assert_eq!(map.get_at_mut(key.idx().get()), None);
 }
 
 #[test]
@@ -48,9 +48,9 @@ fn get_at_is_none_for_a_detached_slot() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     let value = map.detach(key).unwrap();
-    assert_eq!(map.get_at(key.idx()), None);
+    assert_eq!(map.get_at(key.idx().get()), None);
     map.reattach(key, value).unwrap();
-    assert_eq!(map.get_at(key.idx()), Some((key, &1)));
+    assert_eq!(map.get_at(key.idx().get()), Some((key, &1)));
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn get_at_reports_the_current_key_of_a_reused_slot() {
     let old = map.insert(1);
     map.remove(old);
     let new = map.insert(2);
-    let (key, value) = map.get_at(old.idx()).unwrap();
+    let (key, value) = map.get_at(old.idx().get()).unwrap();
     assert_eq!(key, new);
     assert_ne!(key, old);
     assert_eq!(*value, 2);
@@ -78,7 +78,7 @@ fn get_at_with_an_index_that_does_not_fit_in_usize_is_none() {
 
     let mut map = GenMap::<i32, Wide>::new_with_config();
     let key = map.insert(1);
-    assert_eq!(map.get_at(key.idx()), Some((key, &1)));
+    assert_eq!(map.get_at(key.idx().get()), Some((key, &1)));
     assert_eq!(map.get_at(u128::MAX), None);
     assert_eq!(map.get_at_mut(u128::MAX), None);
     assert_eq!(map.generation_at(u128::MAX), None);
@@ -88,7 +88,7 @@ fn get_at_with_an_index_that_does_not_fit_in_usize_is_none() {
 fn get_at_mut_writes_through() {
     let mut map = GenMap::new();
     let key = map.insert(1);
-    let (found, value) = map.get_at_mut(key.idx()).unwrap();
+    let (found, value) = map.get_at_mut(key.idx().get()).unwrap();
     assert_eq!(found, key);
     *value = 5;
     assert_eq!(map[key], 5);
@@ -104,12 +104,12 @@ fn get_at_agrees_with_get() {
     for (i, key) in keys.iter().enumerate() {
         match map.get(*key) {
             Some(value) => {
-                let (found, at) = map.get_at(key.idx()).unwrap();
+                let (found, at) = map.get_at(key.idx().get()).unwrap();
                 assert_eq!(found, *key);
                 assert!(core::ptr::eq(value, at));
                 assert_eq!(*at, i as i32);
             }
-            None => assert_eq!(map.get_at(key.idx()), None),
+            None => assert_eq!(map.get_at(key.idx().get()), None),
         }
     }
 }
@@ -122,7 +122,7 @@ fn get_at_unchecked_agrees_with_get_at() {
     let reused = map.insert(99);
 
     for (key, value) in &map {
-        let (found, at) = unsafe { map.get_at_unchecked(key.idx()) };
+        let (found, at) = unsafe { map.get_at_unchecked(key.idx().get()) };
         assert_eq!(found, key);
         assert!(core::ptr::eq(value, at));
     }
@@ -137,12 +137,12 @@ fn get_at_unchecked_mut_writes_through() {
     let a = map.insert(1);
     let b = map.insert(2);
     {
-        let (found, value) = unsafe { map.get_at_unchecked_mut(a.idx()) };
+        let (found, value) = unsafe { map.get_at_unchecked_mut(a.idx().get()) };
         assert_eq!(found, a);
         *value += 10;
     }
     {
-        let (found, value) = unsafe { map.get_at_unchecked_mut(b.idx()) };
+        let (found, value) = unsafe { map.get_at_unchecked_mut(b.idx().get()) };
         assert_eq!(found, b);
         *value += 20;
     }
@@ -255,19 +255,21 @@ fn get_disjoint_mut_at_rejects_a_vacant_detached_or_retired_slot() {
     map.remove(b);
     let value = map.detach(c).unwrap();
     assert_eq!(
-        map.get_disjoint_mut_at([a.idx(), b.idx()]),
+        map.get_disjoint_mut_at([a.idx().get(), b.idx().get()]),
         Err(GetDisjointMutAtError::NoValue)
     );
     assert_eq!(
-        map.get_disjoint_mut_at([a.idx(), c.idx()]),
+        map.get_disjoint_mut_at([a.idx().get(), c.idx().get()]),
         Err(GetDisjointMutAtError::NoValue)
     );
     map.reattach(c, value).unwrap();
-    assert!(map.get_disjoint_mut_at([a.idx(), c.idx()]).is_ok());
+    assert!(map
+        .get_disjoint_mut_at([a.idx().get(), c.idx().get()])
+        .is_ok());
 
     let (mut map, key) = map_with_a_retired_slot();
     assert_eq!(
-        map.get_disjoint_mut_at([key.idx(), 0]),
+        map.get_disjoint_mut_at([key.idx().get(), 0]),
         Err(GetDisjointMutAtError::NoValue)
     );
 }

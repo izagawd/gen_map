@@ -185,8 +185,8 @@ fn detach_and_reattach_work_at_the_largest_generation() {
     // The detached slot's generation wraps to zero, so the key finds nothing.
     assert_eq!(map.detach(key), Some(0));
     assert_eq!(map.get(key), None);
-    assert_eq!(map.key_at(key.idx()), None);
-    assert_eq!(map.generation_at(key.idx()), Some(0));
+    assert_eq!(map.key_at(key.idx().get()), None);
+    assert_eq!(map.generation_at(key.idx().get()), Some(0));
     assert_eq!(map.len(), 0);
 
     // No insert takes the detached slot.
@@ -196,7 +196,7 @@ fn detach_and_reattach_work_at_the_largest_generation() {
     // Reattaching gives the slot the key's generation back.
     map.reattach(key, 5).unwrap();
     assert_eq!(map[key], 5);
-    assert_eq!(map.generation_at(key.idx()), Some(u8::MAX));
+    assert_eq!(map.generation_at(key.idx().get()), Some(u8::MAX));
     assert_eq!(map.len(), 2);
 
     // Removing the value now retires the slot, as it would have without the
@@ -214,11 +214,11 @@ fn a_packed_key_detaches_at_the_largest_generation_of_its_key_config() {
     // The generation goes to 16, one past the largest a key can hold. It is
     // even, so no key matches the slot.
     assert_eq!(map.detach(key), Some(0));
-    assert_eq!(map.generation_at(key.idx()), Some(16));
+    assert_eq!(map.generation_at(key.idx().get()), Some(16));
     assert_eq!(map.get(key), None);
     map.reattach(key, 7).unwrap();
     assert_eq!(map[key], 7);
-    assert_eq!(map.generation_at(key.idx()), Some(15));
+    assert_eq!(map.generation_at(key.idx().get()), Some(15));
 
     // The config wraps, so removing the value frees the slot, and the next
     // value takes it under generation 1.
@@ -234,7 +234,7 @@ fn reattach_fails_for_a_retired_slot_at_the_largest_generation() {
     // generation does, but it links to no slot, so it is not detached.
     let (mut map, key) = at_the_largest_generation::<Cfg<u8, u8>>();
     map.remove(key);
-    assert_eq!(map.generation_at(key.idx()), Some(0));
+    assert_eq!(map.generation_at(key.idx().get()), Some(0));
     assert_not_detached(&mut map, key, 1);
 }
 
@@ -245,7 +245,7 @@ fn reattach_fails_for_a_wrapped_slot_at_the_largest_generation() {
     // to itself.
     let (mut map, key) = at_the_largest_generation::<WrapU8>();
     map.remove(key);
-    assert_eq!(map.generation_at(key.idx()), Some(0));
+    assert_eq!(map.generation_at(key.idx().get()), Some(0));
     assert_not_detached(&mut map, key, 1);
 }
 
@@ -255,7 +255,7 @@ fn reattach_fails_for_another_key_of_a_slot_detached_at_the_largest_generation()
     map.detach(key);
     // A key with the same index and an older generation does not own the
     // detached slot.
-    let older = crate::tests::key_from_parts::<Packed<u16, 4>>(key.idx(), 13);
+    let older = crate::tests::key_from_parts::<Packed<u16, 4>>(key.idx().get(), 13);
     assert_not_detached(&mut map, older, 1);
     // The slot is still detached under `key`.
     map.reattach(key, 2).unwrap();
@@ -292,7 +292,7 @@ fn release_fails_for_a_key_that_is_not_detached() {
     assert_eq!(map.len(), 1);
     // The free list still holds only the removed slot.
     assert_eq!(map.insert(3).idx(), removed.idx());
-    assert_eq!(map.insert(4).idx(), 2);
+    assert_eq!(map.insert(4).idx().get(), 2);
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn release_retires_a_slot_whose_generation_ran_out() {
     let (mut map, key) = at_the_largest_generation::<Cfg<u8, u8>>();
     map.detach(key).unwrap();
     assert!(map.release(key));
-    assert_eq!(map.generation_at(key.idx()), Some(0));
+    assert_eq!(map.generation_at(key.idx().get()), Some(0));
     assert_eq!(map.reattach(key, 1), Err(1));
     // The retired slot is skipped, so the next value gets a new slot.
     assert_ne!(map.insert(1).idx(), key.idx());
@@ -347,7 +347,7 @@ fn release_wraps_a_slot_whose_generation_ran_out() {
     let (mut map, key) = at_the_largest_generation::<Wrap4>();
     map.detach(key).unwrap();
     assert!(map.release(key));
-    assert_eq!(map.generation_at(key.idx()), Some(0));
+    assert_eq!(map.generation_at(key.idx().get()), Some(0));
     let next = map.insert(1);
     assert_eq!(next.idx(), key.idx());
     assert_eq!(next.generation().get().get(), 1);

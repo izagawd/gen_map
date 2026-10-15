@@ -54,7 +54,7 @@ fn retired_slot_is_never_reused() {
     let mut map = GenMap::<u32, Retire>::new_with_config();
 
     let first = map.insert(1000);
-    assert_eq!(first.idx(), 0);
+    assert_eq!(first.idx().get(), 0);
     assert_eq!(first.generation().get().get(), 1);
 
     let mut last = first;
@@ -65,12 +65,12 @@ fn retired_slot_is_never_reused() {
             break;
         }
         last = map.insert(0);
-        assert_eq!(last.idx(), 0);
+        assert_eq!(last.idx().get(), 0);
     }
     assert_eq!(map.slots_len(), 1);
 
     let after = map.insert(2222);
-    assert_eq!(after.idx(), 1);
+    assert_eq!(after.idx().get(), 1);
     assert_eq!(after.generation().get().get(), 1);
     assert_eq!(map.slots_len(), 2);
     assert!(map.get(first).is_none());
@@ -83,7 +83,7 @@ fn wrap_config_reuses_slot_and_reissues_key_values() {
     let mut map = GenMap::<u32, Wrap>::new_with_config();
 
     let first = map.insert(1000);
-    assert_eq!(first.idx(), 0);
+    assert_eq!(first.idx().get(), 0);
     assert_eq!(first.generation().get().get(), 1);
 
     let mut last = first;
@@ -97,7 +97,7 @@ fn wrap_config_reuses_slot_and_reissues_key_values() {
         }
         last = map.insert(7);
         expected = 7;
-        assert_eq!(last.idx(), 0);
+        assert_eq!(last.idx().get(), 0);
     }
 
     let revived = map.insert(2222);
@@ -124,7 +124,7 @@ fn retired_slots_survive_clear_and_clone() {
     }
 
     let live = map.insert(5);
-    assert_eq!(live.idx(), 1);
+    assert_eq!(live.idx().get(), 1);
 
     let clone = map.clone();
     assert_eq!(clone[live], 5);
@@ -133,7 +133,7 @@ fn retired_slots_survive_clear_and_clone() {
 
     map.clear();
     let next = map.insert(6);
-    assert_eq!(next.idx(), 1, "clear must not revive a retired slot");
+    assert_eq!(next.idx().get(), 1, "clear must not revive a retired slot");
 }
 
 #[test]
@@ -142,10 +142,10 @@ fn a_u1_generation_retires_a_slot_after_one_value() {
     let first = map.insert(1);
     assert!(first.is_max_generation());
     assert_eq!(map.remove(first), Some(1));
-    assert_eq!(map.generation_at(first.idx()), Some(u1::MIN));
+    assert_eq!(map.generation_at(first.idx().get()), Some(u1::MIN));
 
     let second = map.insert(2);
-    assert_eq!(second.idx(), 1);
+    assert_eq!(second.idx().get(), 1);
     assert!(map.get(first).is_none());
     assert_eq!(map.slots_len(), 2);
 }
@@ -196,6 +196,6 @@ fn full_map_still_accepts_inserts_after_a_remove() {
     let keys: std::vec::Vec<_> = (0..255u16).map(|i| map.insert(i)).collect();
     map.remove(keys[100]);
     let key = map.insert(1234);
-    assert_eq!(key.idx(), 100);
+    assert_eq!(key.idx().get(), 100);
     assert_eq!(map[key], 1234);
 }

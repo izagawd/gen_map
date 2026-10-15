@@ -4,6 +4,7 @@ pub(crate) mod piece;
 
 use crate::config::{DefaultKeyConfig, KeyConfig};
 use crate::key::parity::Odd;
+use crate::key::piece::KeyPiece;
 use core::cmp::Ordering;
 use core::fmt;
 
@@ -16,10 +17,17 @@ pub struct Key<K = DefaultKeyConfig> {
 }
 
 impl<K: KeyConfig> Key<K> {
-    /// The index of the slot this key refers to.
+    /// Returns the index of the slot this key refers to. The index is never the
+    /// largest value of `K::Idx`.
     #[inline]
-    pub fn idx(&self) -> K::Idx {
+    pub fn idx(&self) -> <K::Idx as KeyPiece>::NonMax {
         self.repr.idx()
+    }
+
+    /// Returns the index of the slot this key refers to as a plain `K::Idx`.
+    #[inline]
+    pub(crate) fn plain_idx(&self) -> K::Idx {
+        K::Idx::from_non_max(self.idx())
     }
 
     /// The generation the key's slot had when the key was handed out. The

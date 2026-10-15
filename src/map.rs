@@ -53,8 +53,11 @@ pub(crate) unsafe fn slot_key<C: MapConfig>(
     generation: Odd<Gen<C>>,
 ) -> Key<MapKeyConfig<C>> {
     // SAFETY: the map never lets a slot's position, or the generation of a
-    // slot that holds a value, grow past what the key config holds.
-    Key::from_repr(unsafe { <MapKeyConfig<C> as KeyConfig>::pack_unchecked(idx, generation) })
+    // slot that holds a value, grow past what the key config holds. The largest
+    // index a key config can hold is below the largest value of the index type.
+    Key::from_repr(unsafe {
+        <MapKeyConfig<C> as KeyConfig>::pack_unchecked(idx.into_non_max_unchecked(), generation)
+    })
 }
 
 /// Converts a position in the backing storage to `Idx<C>`.
@@ -99,26 +102,15 @@ type Slots<T, C> = <C as GenMapConfig>::Storage<MapSlot<T, C>>;
 /// The type a map with config `C` keeps its count of values in.
 type LenCount<C> = <<C as GenMapConfig>::Len as Len>::Count<Idx<C>>;
 
-/// The largest index a key of `C` can hold.
-#[inline]
-fn max_idx<C: MapConfig>() -> Idx<C> {
-    <MapKeyConfig<C> as KeyConfig>::max_idx()
-}
-
-/// The largest index a slot can have. It is the largest index a key of `C` can
-/// hold, except that no slot ever gets the largest value of the index type.
-/// That value is [`no_slot`]. Leaving it out also caps the number of slots, and
-/// so the number of values, at the largest value of the index type. A `GenMap`
-/// that keeps a count of its values keeps it in that type, and a `DenseGenMap`
-/// stores the position of each value in it.
+/// The largest index a slot can have, which is the largest index a key of `C`
+/// can hold. It is below the largest value of the index type, which is
+/// [`no_slot`]. So the number of slots, and so the number of values, is at most
+/// the largest value of the index type. A `GenMap` that keeps a count of its
+/// values keeps it in that type, and a `DenseGenMap` stores the position of
+/// each value in it.
 #[inline]
 pub(crate) fn max_slot_idx<C: MapConfig>() -> Idx<C> {
-    let max = max_idx::<C>();
-    if max == Idx::<C>::MAX {
-        max.wrapping_sub(Idx::<C>::ONE)
-    } else {
-        max
-    }
+    Idx::<C>::from_non_max(<MapKeyConfig<C> as KeyConfig>::max_idx())
 }
 
 /// The largest value of the index type, which no slot ever has as its index.
@@ -226,12 +218,12 @@ pub(crate) fn detached_slot<V, C: MapConfig>(
     slots: &mut [MapSlot<V, C>],
     key: Key<MapKeyConfig<C>>,
 ) -> Option<&mut MapSlot<V, C>> {
-    key.idx()
+    key.plain_idx()
         .into_usize()
         .and_then(|position| slots.get_mut(position))
         .filter(|slot| {
             slot.get_even(detached_generation::<C>(key.generation()))
-                .is_some_and(|link| *link == key.idx())
+                .is_some_and(|link| *link == key.plain_idx())
         })
 }
 
@@ -276,9 +268,13 @@ impl<C: MapConfig> Target<C> {
     #[inline]
     fn key(&self) -> Key<MapKeyConfig<C>> {
         // SAFETY: a `Target` only ever comes from `next_target`, which picks an
-        // index and a generation that a key can hold.
+        // index and a generation that a key can hold. A key never holds the
+        // largest value of the index type.
         Key::from_repr(unsafe {
-            <MapKeyConfig<C> as KeyConfig>::pack_unchecked(self.idx, self.generation)
+            <MapKeyConfig<C> as KeyConfig>::pack_unchecked(
+                self.idx.into_non_max_unchecked(),
+                self.generation,
+            )
         })
     }
 }
@@ -556,7 +552,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     pub fn get(&self, key: Key<MapKeyConfig<C>>) -> Option<&T> {
         self.slots
             .as_slice()
-            .get(key.idx().into_usize()?)?
+            .get(key.plain_idx().into_usize()?)?
             .get_odd(key.generation())
     }
 
@@ -565,7 +561,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     pub fn get_mut(&mut self, key: Key<MapKeyConfig<C>>) -> Option<&mut T> {
         self.slots
             .as_mut_slice()
-            .get_mut(key.idx().into_usize()?)?
+            .get_mut(key.plain_idx().into_usize()?)?
             .get_odd_mut(key.generation())
     }
 
@@ -586,7 +582,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         unsafe {
             self.slots
                 .as_slice()
-                .get_unchecked(position_of::<C>(key.idx()))
+                .get_unchecked(position_of::<C>(key.plain_idx()))
                 .get_odd_unchecked()
         }
     }
@@ -606,7 +602,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         unsafe {
             self.slots
                 .as_mut_slice()
-                .get_unchecked_mut(position_of::<C>(key.idx()))
+                .get_unchecked_mut(position_of::<C>(key.plain_idx()))
                 .get_odd_unchecked_mut()
         }
     }
@@ -787,13 +783,14 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// let a = map.insert(1);
     /// let b = map.insert(2);
     ///
-    /// let [(key_a, x), (key_b, y)] = map.get_disjoint_mut_at([a.idx(), b.idx()]).unwrap();
+    /// let idxs = [a.idx().get(), b.idx().get()];
+    /// let [(key_a, x), (key_b, y)] = map.get_disjoint_mut_at(idxs).unwrap();
     /// assert_eq!((key_a, key_b), (a, b));
     /// core::mem::swap(x, y);
     /// assert_eq!(map[a], 2);
     ///
     /// assert_eq!(
-    ///     map.get_disjoint_mut_at([a.idx(), a.idx()]),
+    ///     map.get_disjoint_mut_at([a.idx().get(), a.idx().get()]),
     ///     Err(GetDisjointMutAtError::OverlappingIndices)
     /// );
     /// ```
@@ -904,7 +901,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
             // position is in bounds and its slot's generation is odd. The
             // caller also promises that no other key refers to the same slot,
             // so the references do not alias.
-            unsafe { (*slots.add(position_of::<C>(key.idx()))).get_odd_unchecked_mut() }
+            unsafe { (*slots.add(position_of::<C>(key.plain_idx()))).get_odd_unchecked_mut() }
         })
     }
 
@@ -1132,7 +1129,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// there is none.
     #[inline]
     pub fn remove(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
-        let position = key.idx().into_usize()?;
+        let position = key.plain_idx().into_usize()?;
         self.slots
             .as_slice()
             .get(position)?
@@ -1140,7 +1137,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         // SAFETY: the slot's generation matches the key's, which is odd, so
         // the slot holds a value, and `position` is the key's index as a
         // `usize`.
-        Some(unsafe { self.take(key.idx(), position) })
+        Some(unsafe { self.take(key.plain_idx(), position) })
     }
 
     /// Removes and returns the value corresponding to `key` like
@@ -1176,7 +1173,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// let key = map.insert("a");
     /// assert_eq!(map.retire(key), Some("a"));
     /// assert!(map.get(key).is_none());
-    /// assert_eq!(map.generation_at(key.idx()), Some(0));
+    /// assert_eq!(map.generation_at(key.idx().get()), Some(0));
     ///
     /// // The retired slot is skipped, so the next value gets a new slot.
     /// let other = map.insert("b");
@@ -1184,7 +1181,10 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// ```
     #[inline]
     pub fn retire(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
-        let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
+        let slot = self
+            .slots
+            .as_mut_slice()
+            .get_mut(key.plain_idx().into_usize()?)?;
         slot.get_odd(key.generation())?;
         decrement_len(&mut self.len);
         // A retired slot has generation zero and `no_slot` as its link. This
@@ -1256,13 +1256,16 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// ```
     #[inline]
     pub fn detach(&mut self, key: Key<MapKeyConfig<C>>) -> Option<T> {
-        let slot = self.slots.as_mut_slice().get_mut(key.idx().into_usize()?)?;
+        let slot = self
+            .slots
+            .as_mut_slice()
+            .get_mut(key.plain_idx().into_usize()?)?;
         slot.get_odd(key.generation())?;
         decrement_len(&mut self.len);
         let detached = detached_generation::<C>(key.generation());
         // A detached slot stores its own index, which `detached_slot` checks.
         // SAFETY: the slot's generation matched the key's, which is odd.
-        Some(unsafe { slot.replace_odd_unchecked(detached, key.idx()) })
+        Some(unsafe { slot.replace_odd_unchecked(detached, key.plain_idx()) })
     }
 
     /// Puts a value back under a key whose value [`detach`](Self::detach)
@@ -1314,7 +1317,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         };
         let (next, link) = freed_parts::<C>(
             &mut self.next_free,
-            key.idx(),
+            key.plain_idx(),
             key.generation(),
             C::WRAP_ON_OVERFLOW,
         );
@@ -1908,7 +1911,7 @@ impl<T, C: GenMapConfig> Drop for Drain<'_, T, C> {
 /// # Rules
 ///
 /// - No slot sits at a position above the largest index the map's keys can
-///   hold, or at the largest value of the index type.
+///   hold.
 /// - A slot that holds a value has a generation no larger than the largest
 ///   one the map's keys can hold.
 /// - The free list starts at the slot whose index is in `next_free`. Each
@@ -1979,7 +1982,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// assert_eq!(parts.slots.len(), 2);
     /// assert_eq!(parts.len, 1);
     /// // The slot that held 1 is the only free slot.
-    /// assert_eq!(parts.next_free, a.idx());
+    /// assert_eq!(parts.next_free, a.idx().get());
     ///
     /// // Changing the value stored under `b` keeps the parts following the
     /// // rules.

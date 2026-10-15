@@ -187,6 +187,6 @@ fn clone_from_leaves_an_empty_map_if_a_value_panics_while_cloning() {
     assert_eq!(target.slots_len(), 0);
     assert_eq!(target.iter().count(), 0);
     let k = target.insert(PanicsOnClone(7));
-    assert_eq!(k.idx(), 0);
+    assert_eq!(k.idx().get(), 0);
     assert_eq!(k.generation().get().get(), 1);
 }

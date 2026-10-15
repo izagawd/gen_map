@@ -24,9 +24,13 @@ pub struct SparseSlot<G: KeyPiece, T> {
     value: T,
 }
 
+/// `NonMaxIdx<C>` is the `NonMax` form of the index type of `C`'s keys. A map
+/// with config `C` keeps its values under indices of this type.
+type NonMaxIdx<C> = <MapIdx<C> as KeyPiece>::NonMax;
+
 /// A map with config `C` and hasher `S` keeps its values in this `HashMap`,
 /// under the indices of their keys.
-type Slots<T, C, S> = HashMap<MapIdx<C>, SparseSlot<MapGen<C>, T>, S>;
+type Slots<T, C, S> = HashMap<NonMaxIdx<C>, SparseSlot<MapGen<C>, T>, S>;
 
 /// `Strategy<C>` is the replace strategy that config `C` gives the map.
 type Strategy<C> = <C as SparseSecondaryMapConfig>::ReplaceStrategy;
@@ -42,7 +46,7 @@ type InsertResult<T> = Result<Option<T>, SecondaryInsertError<T, TryReserveError
 /// `idx` and `generation` must fit the key config together.
 #[inline]
 unsafe fn key_from_parts_unchecked<C: MapConfig>(
-    idx: MapIdx<C>,
+    idx: NonMaxIdx<C>,
     generation: Odd<MapGen<C>>,
 ) -> Key<MapKeyConfig<C>> {
     debug_assert!(
@@ -244,6 +248,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// value at that index.
     #[inline]
     pub fn key_at(&self, idx: MapIdx<C>) -> Option<Key<MapKeyConfig<C>>> {
+        let idx = idx.into_non_max()?;
         let slot = self.slots.get(&idx)?;
         // SAFETY: `idx` and the slot's generation are the index and the
         // generation of the key that the slot's value is stored under, so they
@@ -255,6 +260,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// if there is no value at that index.
     #[inline]
     pub fn get_at(&self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &T)> {
+        let idx = idx.into_non_max()?;
         let slot = self.slots.get(&idx)?;
         // SAFETY: `idx` and the slot's generation are the index and the
         // generation of the key that the slot's value is stored under, so they
@@ -267,6 +273,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// or `None` if there is no value at that index.
     #[inline]
     pub fn get_at_mut(&mut self, idx: MapIdx<C>) -> Option<(Key<MapKeyConfig<C>>, &mut T)> {
+        let idx = idx.into_non_max()?;
         let slot = self.slots.get_mut(&idx)?;
         // SAFETY: `idx` and the slot's generation are the index and the
         // generation of the key that the slot's value is stored under, so they
@@ -291,7 +298,13 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         &mut self,
         idxs: [MapIdx<C>; N],
     ) -> Result<[(Key<MapKeyConfig<C>>, &mut T); N], GetDisjointMutAtError> {
-        check_disjoint_idxs(&idxs, |idx| self.slots.contains_key(idx))?;
+        check_disjoint_idxs(&idxs, |idx| {
+            idx.into_non_max()
+                .is_some_and(|idx| self.slots.contains_key(&idx))
+        })?;
+        // SAFETY: `check_disjoint_idxs` found a value at every index, and the
+        // map keeps no value at the largest value of the index type.
+        let idxs = idxs.map(|idx| unsafe { idx.into_non_max_unchecked() });
         // SAFETY: `check_disjoint_idxs` found that no two of the indices are
         // the same.
         let mut slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };
@@ -333,7 +346,14 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         &mut self,
         idxs: [MapIdx<C>; N],
     ) -> [(Key<MapKeyConfig<C>>, &mut T); N] {
-        debug_assert!(check_disjoint_idxs(&idxs, |idx| self.slots.contains_key(idx)).is_ok());
+        debug_assert!(check_disjoint_idxs(&idxs, |idx| {
+            idx.into_non_max()
+                .is_some_and(|idx| self.slots.contains_key(&idx))
+        })
+        .is_ok());
+        // SAFETY: the caller promises a value at every index, and the map
+        // keeps no value at the largest value of the index type.
+        let idxs = idxs.map(|idx| unsafe { idx.into_non_max_unchecked() });
         // SAFETY: the caller promises that no two of the indices are the same.
         let mut slots = unsafe { self.slots.get_disjoint_unchecked_mut(idxs.each_ref()) };
         core::array::from_fn(|i| {
@@ -453,11 +473,10 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// # Errors
     ///
     /// Hands `value` back, and leaves the values in the map as they were, if
-    /// the strategy kept the old value, the key's index is the largest value of
-    /// the index type, or the `HashMap` could not make room for one more value.
-    /// The map makes that room before it looks the index up, even when `value`
-    /// ends up replacing a value. The [`SecondaryInsertError`] variant says
-    /// which of the three happened.
+    /// the strategy kept the old value or the `HashMap` could not make room for
+    /// one more value. The map makes that room before it looks the index up,
+    /// even when `value` ends up replacing a value. The
+    /// [`SecondaryInsertError`] variant says which of the two happened.
     ///
     /// # Examples
     ///
@@ -480,12 +499,6 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// assert_eq!(ages[bob], 25);
     /// ```
     pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T> {
-        // No `GenMap` gives a slot the largest value of the index type as its
-        // index, so only a hand-built key can have that index. The map refuses
-        // such a key, as the other secondary maps do.
-        if key.idx() == MapIdx::<C>::MAX {
-            return Err(SecondaryInsertError::IndexReserved(value));
-        }
         // `HashMap::entry` makes room for one more value when it finds no value
         // at the index, and it panics or aborts if it cannot. The map makes
         // room first, so it can hand `value` back instead.
@@ -747,7 +760,7 @@ impl<'a, T, C: SparseSecondaryMapConfig, S: BuildHasher> IntoIterator
 /// reference to its value, in arbitrary order. It is created using
 /// [`SparseSecondaryMap::iter`].
 pub struct SparseSecondaryIter<'a, T, C: MapConfig> {
-    slots: hash_map::Iter<'a, MapIdx<C>, SparseSlot<MapGen<C>, T>>,
+    slots: hash_map::Iter<'a, NonMaxIdx<C>, SparseSlot<MapGen<C>, T>>,
 }
 
 impl<'a, T, C: MapConfig> Iterator for SparseSecondaryIter<'a, T, C> {
@@ -787,7 +800,7 @@ impl<T, C: MapConfig> Clone for SparseSecondaryIter<'_, T, C> {
 /// mutable reference to its value, in arbitrary order. It is created using
 /// [`SparseSecondaryMap::iter_mut`].
 pub struct SparseSecondaryIterMut<'a, T, C: MapConfig> {
-    slots: hash_map::IterMut<'a, MapIdx<C>, SparseSlot<MapGen<C>, T>>,
+    slots: hash_map::IterMut<'a, NonMaxIdx<C>, SparseSlot<MapGen<C>, T>>,
 }
 
 impl<'a, T, C: MapConfig> Iterator for SparseSecondaryIterMut<'a, T, C> {
@@ -848,7 +861,7 @@ impl<T, C: MapConfig> Clone for SparseSecondaryKeys<'_, T, C> {
 /// [`SparseSecondaryMap`], in arbitrary order. It is created using
 /// [`SparseSecondaryMap::values`].
 pub struct SparseSecondaryValues<'a, T, C: MapConfig> {
-    slots: hash_map::Values<'a, MapIdx<C>, SparseSlot<MapGen<C>, T>>,
+    slots: hash_map::Values<'a, NonMaxIdx<C>, SparseSlot<MapGen<C>, T>>,
 }
 
 impl<'a, T, C: MapConfig> Iterator for SparseSecondaryValues<'a, T, C> {
@@ -881,7 +894,7 @@ impl<T, C: MapConfig> Clone for SparseSecondaryValues<'_, T, C> {
 /// [`SparseSecondaryMap`], in arbitrary order. It is created using
 /// [`SparseSecondaryMap::values_mut`].
 pub struct SparseSecondaryValuesMut<'a, T, C: MapConfig> {
-    slots: hash_map::ValuesMut<'a, MapIdx<C>, SparseSlot<MapGen<C>, T>>,
+    slots: hash_map::ValuesMut<'a, NonMaxIdx<C>, SparseSlot<MapGen<C>, T>>,
 }
 
 impl<'a, T, C: MapConfig> Iterator for SparseSecondaryValuesMut<'a, T, C> {
@@ -905,7 +918,7 @@ impl<T, C: MapConfig> FusedIterator for SparseSecondaryValuesMut<'_, T, C> {}
 /// with its key, in arbitrary order. It is created using
 /// [`SparseSecondaryMap::drain`].
 pub struct SparseSecondaryDrain<'a, T, C: MapConfig> {
-    slots: hash_map::Drain<'a, MapIdx<C>, SparseSlot<MapGen<C>, T>>,
+    slots: hash_map::Drain<'a, NonMaxIdx<C>, SparseSlot<MapGen<C>, T>>,
 }
 
 impl<T, C: MapConfig> Iterator for SparseSecondaryDrain<'_, T, C> {
@@ -934,7 +947,7 @@ impl<T, C: MapConfig> FusedIterator for SparseSecondaryDrain<'_, T, C> {}
 /// its value, in arbitrary order. It is created by consuming the map with
 /// `into_iter`.
 pub struct SparseSecondaryIntoIter<T, C: MapConfig> {
-    slots: hash_map::IntoIter<MapIdx<C>, SparseSlot<MapGen<C>, T>>,
+    slots: hash_map::IntoIter<NonMaxIdx<C>, SparseSlot<MapGen<C>, T>>,
 }
 
 impl<T, C: MapConfig> Iterator for SparseSecondaryIntoIter<T, C> {
@@ -1036,8 +1049,7 @@ pub type SparseSecondaryMapSlot<T, C> = SparseSlot<MapGen<C>, T>;
 ///
 /// # Rules
 ///
-/// - No index in `slots` is above the largest index the map's keys can hold,
-///   or is the largest value of the index type.
+/// - No index in `slots` is above the largest index the map's keys can hold.
 /// - No slot has a generation above the largest one the map's keys can hold.
 ///
 /// # Examples
@@ -1052,8 +1064,7 @@ pub type SparseSecondaryMapSlot<T, C> = SparseSlot<MapGen<C>, T>;
 /// let mut slots = HashMap::new();
 /// slots.insert(alice.idx(), SparseSlot::new(alice.generation(), 30));
 /// // SAFETY: the index and the generation come from a key that a `GenMap`
-/// // handed out, so they fit the key config, and the index is not the
-/// // largest value of the index type.
+/// // handed out, so they fit the key config.
 /// let ages: SparseSecondaryMap<u32> =
 ///     unsafe { SparseSecondaryMap::from_raw_parts(SparseSecondaryMapRawParts { slots }) };
 /// assert_eq!(ages[alice], 30);
@@ -1070,7 +1081,7 @@ pub struct SparseSecondaryMapRawParts<
     /// The map keeps its values in this `HashMap`. It holds each value in a
     /// slot under the index of the value's key, and the slot holds the
     /// generation of that key.
-    pub slots: HashMap<MapIdx<C>, SparseSecondaryMapSlot<T, C>, S>,
+    pub slots: HashMap<<MapIdx<C> as KeyPiece>::NonMax, SparseSecondaryMapSlot<T, C>, S>,
 }
 
 impl<T, C: SparseSecondaryMapConfig, S> SparseSecondaryMap<T, C, S> {

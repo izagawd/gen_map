@@ -380,15 +380,10 @@ where
 }
 
 /// How many slots the keys of `C` let a map have, or `None` if that number
-/// doesn't fit in a `usize`. Every index a key can hold gets a slot, except
-/// the largest value of the index type.
+/// doesn't fit in a `usize`. Every index a key can hold gets a slot.
 fn slot_count_limit<C: GenMapConfig>() -> Option<usize> {
-    let max_idx = <MapKeyConfig<C> as KeyConfig>::max_idx().into_usize()?;
-    if Idx::<C>::MAX.into_usize() == Some(max_idx) {
-        Some(max_idx)
-    } else {
-        max_idx.checked_add(1)
-    }
+    let max_idx = Idx::<C>::from_non_max(<MapKeyConfig<C> as KeyConfig>::max_idx());
+    max_idx.into_usize()?.checked_add(1)
 }
 
 fn insert<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
@@ -449,7 +444,7 @@ fn assert_no_slot_is_free<C: GenMapConfig>(map: &GenMap<u32, C>, model: &Model<C
             .filter(|&position| {
                 let idx = Idx::<C>::from_usize(position).unwrap();
                 map.generation_at(idx) == Some(Gen::<C>::ZERO)
-                    && !model.detached.iter().any(|key| key.idx() == idx)
+                    && !model.detached.iter().any(|key| key.plain_idx() == idx)
             })
             .count()
     };
@@ -465,7 +460,7 @@ fn retire<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: 
     }
     let (key, value) = model.live.swap_remove(rng.below(model.live.len()));
     assert_eq!(map.retire(key), Some(value));
-    assert_eq!(map.generation_at(key.idx()), Some(Gen::<C>::ZERO));
+    assert_eq!(map.generation_at(key.plain_idx()), Some(Gen::<C>::ZERO));
     model.dead.push(key);
     model.retired += 1;
 }
@@ -621,7 +616,7 @@ fn get_disjoint<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>,
         Err(GetDisjointMutError::OverlappingKeys)
     );
     assert_eq!(
-        map.get_disjoint_mut_at([a.idx(), a.idx()]),
+        map.get_disjoint_mut_at([a.plain_idx(), a.plain_idx()]),
         Err(GetDisjointMutAtError::OverlappingIndices)
     );
 
@@ -629,7 +624,9 @@ fn get_disjoint<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>,
     assert_eq!((*x, *y), (value_a, value_b));
     core::mem::swap(x, y);
 
-    let [(key_b, y), (key_a, x)] = map.get_disjoint_mut_at([b.idx(), a.idx()]).unwrap();
+    let [(key_b, y), (key_a, x)] = map
+        .get_disjoint_mut_at([b.plain_idx(), a.plain_idx()])
+        .unwrap();
     assert_eq!((key_a, key_b), (a, b));
     assert_eq!((*x, *y), (value_b, value_a));
     model.live[i].1 = value_b;
@@ -643,7 +640,7 @@ fn look_up_by_index<C: GenMapConfig>(map: &GenMap<u32, C>, model: &Model<C>, rng
     let Some(idx) = Idx::<C>::from_usize(position) else {
         return;
     };
-    let expected = model.live.iter().find(|(key, _)| key.idx() == idx);
+    let expected = model.live.iter().find(|(key, _)| key.plain_idx() == idx);
     assert_eq!(map.key_at(idx), expected.map(|(key, _)| *key));
     assert_eq!(map.get_at(idx), expected.map(|(key, value)| (*key, value)));
     assert_eq!(map.generation_at(idx).is_some(), position < map.slots_len());
@@ -711,11 +708,11 @@ where
 
     for (key, value) in &model.live {
         assert_eq!(map.get(*key), Some(value));
-        assert_eq!(map.key_at(key.idx()), Some(*key));
+        assert_eq!(map.key_at(key.plain_idx()), Some(*key));
     }
     for key in &model.detached {
         assert!(map.get(*key).is_none());
-        assert!(map.key_at(key.idx()).is_none());
+        assert!(map.key_at(key.plain_idx()).is_none());
     }
     // Checking every removed key on every step would be slow, so a few are
     // picked at random, and all of them are checked at the end of the run.

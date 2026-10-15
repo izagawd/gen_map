@@ -419,7 +419,7 @@ fn check<C>(
             assert_eq!(map.values().len(), map.len());
             for (key, value) in map.keys().zip(map.values()) {
                 assert!(core::ptr::eq(map.get(key).unwrap(), value));
-                assert_eq!(map.key_at(key.idx()), Some(key));
+                assert_eq!(map.key_at(key.plain_idx()), Some(key));
             }
             let holding = (0..map.slots_len())
                 .filter(|&position| {

@@ -4,11 +4,14 @@ use crate::key::piece::KeyPiece;
 
 /// Stores the index and the generation as two fields, so a key is as large
 /// as the two put together, plus any padding their alignment needs. A key
-/// can hold any index of type `Idx` and any odd generation of type `Gen`.
+/// can hold any index of type `Idx` except the largest one, and any odd
+/// generation of type `Gen`.
 ///
 /// `Idx` and `Gen` can each be [`u1`](crate::u1), any unsigned integer from
-/// `u8` to `u128`, or `usize`. Both default to `u32`. A `u1` generation takes
-/// no space in a key, because one is the only odd `u1`.
+/// `u8` to `u128`, or `usize`. Both default to `u32`. A `u1` index takes no
+/// space in a key, because zero is the only `u1` that is not the largest
+/// value. A `u1` generation takes no space either, because one is the only odd
+/// `u1`.
 ///
 /// # Examples
 ///
@@ -18,10 +21,11 @@ use crate::key::piece::KeyPiece;
 /// assert_eq!(core::mem::size_of::<Key<Split<u16, u16>>>(), 4);
 /// assert_eq!(core::mem::size_of::<Key<Split>>(), 8);
 /// assert_eq!(core::mem::size_of::<Key<Split<u32, u1>>>(), 4);
+/// assert_eq!(core::mem::size_of::<Key<Split<u1, u32>>>(), 4);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Split<Idx = u32, Gen: KeyPiece = u32> {
-    idx: Idx,
+pub struct Split<Idx: KeyPiece = u32, Gen: KeyPiece = u32> {
+    idx: Idx::NonMax,
     /// An odd generation is never zero, and an [`Odd`] stores it as
     /// `Gen::NonZero`. Unless `Gen` is `u1`, that `NonZero` gives `Option<Key>`
     /// the size of `Key`.
@@ -36,8 +40,9 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
     type Gen = Gen;
 
     #[inline]
-    fn max_idx() -> Idx {
-        Idx::MAX
+    fn max_idx() -> Idx::NonMax {
+        // SAFETY: one less than the largest value is not the largest value.
+        unsafe { Idx::MAX.wrapping_sub(Idx::ONE).into_non_max_unchecked() }
     }
 
     #[inline]
@@ -47,12 +52,12 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
     }
 
     #[inline]
-    unsafe fn pack_unchecked(idx: Idx, generation: Odd<Gen>) -> Self {
+    unsafe fn pack_unchecked(idx: Idx::NonMax, generation: Odd<Gen>) -> Self {
         Self { idx, generation }
     }
 
     #[inline]
-    fn idx(self) -> Idx {
+    fn idx(self) -> Idx::NonMax {
         self.idx
     }
 
@@ -85,14 +90,13 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// | `Packed<u32, 16>` | `u16` | `u16` |
 /// | `Packed<u64, 40>` | `u32` | `u64` |
 ///
-/// The largest index is `(1 << (R::BITS - GEN_BITS)) - 1` and the largest
-/// generation is `(1 << GEN_BITS) - 1`. When the index bits fill the whole
-/// index type, as in `Packed<u32, 16>`, the largest index is also the largest
-/// value of that type. No map ever gives a slot that index, so such a map can
-/// hold one slot fewer than the index bits could address. When a value is
-/// removed from a slot that has the largest generation, the slot retires or
-/// its generation wraps back to zero, as the `WRAP_ON_OVERFLOW` of the map's
-/// config decides.
+/// The largest generation is `(1 << GEN_BITS) - 1`. The largest index is
+/// `(1 << (R::BITS - GEN_BITS)) - 1`, except when the index bits fill the
+/// whole index type, as in `Packed<u32, 16>`. That value is then the largest
+/// value of the index type, which no key can hold, so the largest index is one
+/// less. When a value is removed from a slot that has the largest generation,
+/// the slot retires or its generation wraps back to zero, as the
+/// `WRAP_ON_OVERFLOW` of the map's config decides.
 ///
 /// # Examples
 ///
@@ -116,7 +120,8 @@ unsafe impl<Idx: KeyPiece, Gen: KeyPiece> KeyConfig for Split<Idx, Gen> {
 /// let key = map.insert("a");
 /// assert_eq!(core::mem::size_of_val(&key), 4);
 /// assert_eq!(core::mem::size_of::<Option<Key<Packed<u32, 8>>>>(), 4);
-/// assert_eq!(key.idx(), 0);
+/// // `idx` returns a `NonMax<u32>`, and its `get` returns the `u32`.
+/// assert_eq!(key.idx().get(), 0);
 /// // `generation` returns an `Odd<u8>`. Its `get` returns a `NonZero<u8>`,
 /// // and that type's `get` returns the `u8`.
 /// assert_eq!(key.generation().get().get(), 1);
@@ -241,7 +246,7 @@ fn check_packed<Idx: KeyPiece, Gen: KeyPiece, R: KeyPiece, const GEN_BITS: u32>(
 /// Returns a `u128` with its lowest `bits` bits set. `bits` must be below
 /// 128.
 #[inline]
-fn low_bits(bits: u32) -> u128 {
+const fn low_bits(bits: u32) -> u128 {
     debug_assert!(bits < 128);
     (1u128 << bits) - 1
 }
@@ -258,11 +263,22 @@ where
     type Gen = <Self as sealed::PackedParts>::Generation;
 
     #[inline]
-    fn max_idx() -> Self::Idx {
+    fn max_idx() -> <Self::Idx as KeyPiece>::NonMax {
         check_packed::<Self::Idx, Self::Gen, R, GEN_BITS>();
+        let max = const {
+            let idx_bits = R::BITS - GEN_BITS;
+            // The largest value of the index field is the largest value of the
+            // index type only when the field has as many bits as the type.
+            if idx_bits == Self::Idx::BITS {
+                low_bits(idx_bits) - 1
+            } else {
+                low_bits(idx_bits)
+            }
+        };
         // SAFETY: the check makes sure the index type has at least as many
-        // bits as the index field.
-        unsafe { Self::Idx::from_u128_unchecked(low_bits(R::BITS - GEN_BITS)) }
+        // bits as the index field, so `max` fits in the index type, and `max`
+        // is below the largest value of the index type.
+        unsafe { Self::Idx::from_u128_unchecked(max).into_non_max_unchecked() }
     }
 
     #[inline]
@@ -275,10 +291,14 @@ where
     }
 
     #[inline]
-    unsafe fn pack_unchecked(idx: Self::Idx, generation: Odd<Self::Gen>) -> Self {
+    unsafe fn pack_unchecked(
+        idx: <Self::Idx as KeyPiece>::NonMax,
+        generation: Odd<Self::Gen>,
+    ) -> Self {
         check_packed::<Self::Idx, Self::Gen, R, GEN_BITS>();
         debug_assert!(idx <= Self::max_idx());
         debug_assert!(generation <= Self::max_generation());
+        let idx = Self::Idx::from_non_max(idx);
         let generation = Self::Gen::from_non_zero(generation.get());
         let bits = (idx.into_u128() << GEN_BITS) | generation.into_u128();
         // SAFETY: the caller promises that `idx` fits in the index field and
@@ -288,11 +308,16 @@ where
     }
 
     #[inline]
-    fn idx(self) -> Self::Idx {
+    fn idx(self) -> <Self::Idx as KeyPiece>::NonMax {
         check_packed::<Self::Idx, Self::Gen, R, GEN_BITS>();
         // SAFETY: the index field has at most as many bits as the index
-        // type, which the check makes sure of.
-        unsafe { Self::Idx::from_u128_unchecked(R::from_non_zero(self.0).into_u128() >> GEN_BITS) }
+        // type, which the check makes sure of. A `Packed` only comes from
+        // `pack_unchecked`, which only packs an index of at most `max_idx`,
+        // and `max_idx` is below the largest value of the index type.
+        unsafe {
+            Self::Idx::from_u128_unchecked(R::from_non_zero(self.0).into_u128() >> GEN_BITS)
+                .into_non_max_unchecked()
+        }
     }
 
     #[inline]

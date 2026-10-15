@@ -94,7 +94,7 @@ fn a_u1_index_gives_a_map_a_single_slot() {
     // at index zero.
     let mut map = GenMap::<i32, Cfg<u1, u8>>::new_with_config();
     let a = map.insert(1);
-    assert_eq!(a.idx(), u1::MIN);
+    assert_eq!(a.idx().get(), u1::MIN);
     assert!(matches!(
         map.try_insert(2),
         Err(InsertError::IndexExhausted(2))
@@ -102,7 +102,7 @@ fn a_u1_index_gives_a_map_a_single_slot() {
 
     map.remove(a);
     let b = map.insert(3);
-    assert_eq!(b.idx(), u1::MIN);
+    assert_eq!(b.idx().get(), u1::MIN);
     assert_eq!(b.generation().get().get(), 3);
     assert!(map.get(a).is_none());
     assert_eq!(map[b], 3);
@@ -122,7 +122,7 @@ fn every_integer_type_works_as_a_config() {
     let mut wide = GenMap::<i32, Wide>::default();
     let k = wide.insert(2);
     assert_eq!(wide[k], 2);
-    assert_eq!(k.idx(), 0u128);
+    assert_eq!(k.idx().get(), 0u128);
     assert_eq!(k.generation().get().get(), 1usize);
 }
 
@@ -142,7 +142,7 @@ fn an_index_that_does_not_fit_in_usize_matches_nothing() {
     let k = map.insert(1);
     // `too_wide` has the same low 64 bits as `k`'s index, so a conversion to
     // `usize` that truncated it would land on `k`'s slot.
-    let too_wide = (1u128 << 64) | k.idx();
+    let too_wide = (1u128 << 64) | k.idx().get();
     let bogus = key_from_parts::<MapKeyConfig<Wide>>(too_wide, k.generation().get().get());
 
     assert!(map.get(bogus).is_none());
@@ -158,14 +158,14 @@ fn idx_and_generation_read_the_parts_of_a_key() {
     let mut map = GenMap::new();
     let a = map.insert("a");
     let b = map.insert("b");
-    assert_eq!(a.idx(), 0);
-    assert_eq!(b.idx(), 1);
+    assert_eq!(a.idx().get(), 0);
+    assert_eq!(b.idx().get(), 1);
     assert_eq!(a.generation().get().get(), 1);
     assert_eq!(b.generation().get().get(), 1);
 
     map.remove(a);
     let c = map.insert("c");
-    assert_eq!(c.idx(), 0);
+    assert_eq!(c.idx().get(), 0);
     assert_eq!(c.generation().get().get(), 3);
 }
 
@@ -190,7 +190,7 @@ fn a_rebuilt_key_from_the_past_matches_nothing() {
     let new = map.insert(2);
     assert_eq!(new.idx(), old.idx());
 
-    let rebuilt = key_from_parts::<DefaultKeyConfig>(old.idx(), old.generation().get().get());
+    let rebuilt = key_from_parts::<DefaultKeyConfig>(old.idx().get(), old.generation().get().get());
     assert!(map.get(rebuilt).is_none());
     assert!(map.get_mut(rebuilt).is_none());
     assert!(map.remove(rebuilt).is_none());

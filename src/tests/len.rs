@@ -139,7 +139,7 @@ fn the_parts_of_a_gen_map_without_a_count_have_no_count() {
         len: (),
     } = map.into_raw_parts();
     assert_eq!(slots.len(), 2);
-    assert_eq!(next_free, a.idx());
+    assert_eq!(next_free, a.idx().get());
 
     let parts: GenMapRawParts<u32, Uncounted> = GenMapRawParts {
         slots,

@@ -42,7 +42,7 @@ fn reset_starts_keys_over() {
     assert!(map.get(k2).is_none());
 
     let k3 = map.insert(999);
-    assert_eq!(k3.idx(), 0);
+    assert_eq!(k3.idx().get(), 0);
     assert_eq!(k3.generation().get().get(), 1);
     assert_eq!(k3, k);
     // The key handed out before the reset now finds the new value, which is

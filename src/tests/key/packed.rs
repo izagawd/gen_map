@@ -1,7 +1,7 @@
 use crate::tests::Cfg;
 use crate::{
     FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, KeepLen, Key, KeyConfig, KeyPiece,
-    MapConfig, MapKeyConfig, Odd, Packed, Split,
+    MapConfig, MapKeyConfig, NonMax, Odd, Packed, Split,
 };
 use core::mem::size_of;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -78,10 +78,11 @@ fn key<K: KeyConfig>(idx: K::Idx, generation: K::Gen) -> Key<K> {
 #[test]
 fn pack_refuses_parts_that_do_not_fit() {
     let odd = |n: u8| Odd::new(n).unwrap();
-    assert!(Packed::<u16, 4>::pack(4095, odd(15)).is_some());
-    assert!(Packed::<u16, 4>::pack(4096, odd(15)).is_none());
-    assert!(Packed::<u16, 4>::pack(0, odd(17)).is_none());
-    assert!(Split::<u8, u8>::pack(u8::MAX, odd(u8::MAX)).is_some());
+    let idx = |n: u16| NonMax::<u16>::new(n).unwrap();
+    assert!(Packed::<u16, 4>::pack(idx(4095), odd(15)).is_some());
+    assert!(Packed::<u16, 4>::pack(idx(4096), odd(15)).is_none());
+    assert!(Packed::<u16, 4>::pack(idx(0), odd(17)).is_none());
+    assert!(Split::<u8, u8>::pack(NonMax::<u8>::new(u8::MAX - 1).unwrap(), odd(u8::MAX)).is_some());
 }
 
 #[test]
@@ -102,20 +103,23 @@ fn option_of_a_packed_key_costs_nothing_extra() {
 
 #[test]
 fn limits_follow_the_bit_counts() {
-    assert_eq!(Packed::<u32, 8>::max_idx(), (1 << 24) - 1);
+    assert_eq!(Packed::<u32, 8>::max_idx().get(), (1 << 24) - 1);
     assert_eq!(Packed::<u32, 8>::max_generation().get().get(), u8::MAX);
-    assert_eq!(Packed::<u16, 4>::max_idx(), 4095);
+    assert_eq!(Packed::<u16, 4>::max_idx().get(), 4095);
     assert_eq!(Packed::<u16, 4>::max_generation().get().get(), 15);
-    assert_eq!(Packed::<u8, 4>::max_idx(), 15);
-    assert_eq!(Packed::<u128, 64>::max_idx(), u64::MAX);
+    assert_eq!(Packed::<u8, 4>::max_idx().get(), 15);
+    // The index field fills the whole index type here, so the largest index is
+    // one less than the largest value of that type.
+    assert_eq!(Packed::<u32, 16>::max_idx().get(), u16::MAX - 1);
+    assert_eq!(Packed::<u128, 64>::max_idx().get(), u64::MAX - 1);
     assert_eq!(Packed::<u128, 64>::max_generation().get().get(), u64::MAX);
 }
 
 #[test]
-fn split_limits_are_the_integer_limits() {
-    assert_eq!(Split::<u8, u16>::max_idx(), u8::MAX);
+fn split_limits_come_from_the_integer_limits() {
+    assert_eq!(Split::<u8, u16>::max_idx().get(), u8::MAX - 1);
     assert_eq!(Split::<u8, u16>::max_generation().get().get(), u16::MAX);
-    assert_eq!(Split::<u128, usize>::max_idx(), u128::MAX);
+    assert_eq!(Split::<u128, usize>::max_idx().get(), u128::MAX - 1);
     assert_eq!(
         Split::<u128, usize>::max_generation().get().get(),
         usize::MAX
@@ -124,7 +128,7 @@ fn split_limits_are_the_integer_limits() {
 
 #[test]
 fn parts_round_trip_through_a_packed_key() {
-    let max_idx = Packed::<u32, 8>::max_idx();
+    let max_idx = Packed::<u32, 8>::max_idx().get();
     for (idx, generation) in [
         (0, 1),
         (1, 1),
@@ -134,16 +138,16 @@ fn parts_round_trip_through_a_packed_key() {
         (12345, 99),
     ] {
         let k = key::<Packed<u32, 8>>(idx, generation);
-        assert_eq!(k.idx(), idx);
+        assert_eq!(k.idx().get(), idx);
         assert_eq!(k.generation().get().get(), generation);
     }
 
-    let k = key::<Packed<u128, 64>>(u64::MAX, u64::MAX);
-    assert_eq!(k.idx(), u64::MAX);
+    let k = key::<Packed<u128, 64>>(u64::MAX - 1, u64::MAX);
+    assert_eq!(k.idx().get(), u64::MAX - 1);
     assert_eq!(k.generation().get().get(), u64::MAX);
 
     let k = key::<Packed<u8, 4>>(15, 15);
-    assert_eq!((k.idx(), k.generation().get().get()), (15, 15));
+    assert_eq!((k.idx().get(), k.generation().get().get()), (15, 15));
 }
 
 #[test]
@@ -151,8 +155,8 @@ fn packed_keys_work_with_the_map() {
     let mut map = GenMap::<&str, Compact>::new_with_config();
     let a = map.insert("a");
     let b = map.insert("b");
-    assert_eq!((a.idx(), a.generation().get().get()), (0, 1));
-    assert_eq!((b.idx(), b.generation().get().get()), (1, 1));
+    assert_eq!((a.idx().get(), a.generation().get().get()), (0, 1));
+    assert_eq!((b.idx().get(), b.generation().get().get()), (1, 1));
     assert_eq!(map[a], "a");
     assert_eq!(map.get(b), Some(&"b"));
 
@@ -161,13 +165,13 @@ fn packed_keys_work_with_the_map() {
     assert!(!map.contains_key(a));
 
     let c = map.insert("c");
-    assert_eq!((c.idx(), c.generation().get().get()), (0, 3));
+    assert_eq!((c.idx().get(), c.generation().get().get()), (0, 3));
     assert_ne!(c, a);
     assert!(map.get(a).is_none());
     assert_eq!(map[c], "c");
     assert_eq!(map.len(), 2);
 
-    let rebuilt = key::<Packed<u32, 8>>(c.idx(), c.generation().get().get());
+    let rebuilt = key::<Packed<u32, 8>>(c.idx().get(), c.generation().get().get());
     assert_eq!(rebuilt, c);
     assert_eq!(map.get(rebuilt), Some(&"c"));
 }
@@ -218,7 +222,7 @@ where
     let mut keys = Vec::new();
     for i in 0..8u32 {
         let key = map.insert(i);
-        assert_eq!(key.idx(), 0);
+        assert_eq!(key.idx().get(), 0);
         assert_eq!(key.generation().get().get(), (2 * i + 1) as u8);
         keys.push(key);
         if i < 7 {
@@ -241,7 +245,7 @@ fn a_slot_retires_when_the_generation_field_is_full() {
     assert_eq!(map.slots_len(), 1);
 
     let fresh = map.insert(100);
-    assert_eq!((fresh.idx(), fresh.generation().get().get()), (1, 1));
+    assert_eq!((fresh.idx().get(), fresh.generation().get().get()), (1, 1));
     assert_eq!(map.slots_len(), 2);
     for key in keys {
         assert!(map.get(key).is_none());
@@ -255,7 +259,7 @@ fn a_slot_wraps_when_the_generation_field_is_full_and_the_config_says_so() {
     assert_eq!(map.remove(keys[7]), Some(7));
 
     let again = map.insert(100);
-    assert_eq!((again.idx(), again.generation().get().get()), (0, 1));
+    assert_eq!((again.idx().get(), again.generation().get().get()), (0, 1));
     assert_eq!(map.slots_len(), 1);
     assert_eq!(again, keys[0]);
     assert_eq!(map.get(keys[0]), Some(&100));
@@ -290,7 +294,7 @@ fn the_index_field_limits_the_slot_count() {
     let mut map = GenMap::<u8, Byte>::new_with_config();
     let keys: Vec<_> = (0..16u8).map(|i| map.insert(i)).collect();
     for (i, key) in keys.iter().enumerate() {
-        assert_eq!(key.idx() as usize, i);
+        assert_eq!(key.idx().get() as usize, i);
         assert_eq!(map[*key], i as u8);
     }
     assert_eq!(map.slots_len(), 16);
@@ -305,7 +309,7 @@ fn the_index_field_limits_the_slot_count() {
 
     assert_eq!(map.remove(keys[5]), Some(5));
     let again = map.insert(50);
-    assert_eq!((again.idx(), again.generation().get().get()), (5, 3));
+    assert_eq!((again.idx().get(), again.generation().get().get()), (5, 3));
     assert_eq!(map.len(), 16);
 }
 
@@ -322,10 +326,10 @@ fn insert_panics_when_the_index_field_is_full() {
 fn packed_keys_on_u128_work_with_the_map() {
     let mut huge = GenMap::<i32, Huge>::new_with_config();
     let k = huge.insert(1);
-    assert_eq!((k.idx(), k.generation().get().get()), (0, 1));
+    assert_eq!((k.idx().get(), k.generation().get().get()), (0, 1));
     assert_eq!(huge.remove(k), Some(1));
     let k = huge.insert(2);
-    assert_eq!((k.idx(), k.generation().get().get()), (0, 3));
+    assert_eq!((k.idx().get(), k.generation().get().get()), (0, 3));
     assert_eq!(huge[k], 2);
 }
 
@@ -334,7 +338,7 @@ fn a_packed_key_for_a_missing_slot_matches_nothing() {
     let mut map = GenMap::<i32, Compact>::new_with_config();
     let k = map.insert(1);
     let missing = key::<Packed<u32, 8>>(1000, 1);
-    let stale = key::<Packed<u32, 8>>(k.idx(), 3);
+    let stale = key::<Packed<u32, 8>>(k.idx().get(), 3);
     assert!(map.get(missing).is_none());
     assert!(map.get(stale).is_none());
     assert!(map.remove(missing).is_none());
@@ -410,11 +414,19 @@ where
     Packed<R, GEN_BITS>: KeyConfig,
 {
     let idx_bits = R::BITS - GEN_BITS;
-    let max_idx = Packed::<R, GEN_BITS>::max_idx();
+    let max_idx =
+        <Packed<R, GEN_BITS> as KeyConfig>::Idx::from_non_max(Packed::<R, GEN_BITS>::max_idx());
     let max_generation = Packed::<R, GEN_BITS>::max_generation();
     let max_generation_value =
         <Packed<R, GEN_BITS> as KeyConfig>::Gen::from_non_zero(max_generation.get());
-    assert_eq!(max_idx.into_u128(), (1u128 << idx_bits) - 1);
+    // When the index field fills the whole index type, the largest value of
+    // the field is the largest value of the type, which no key holds.
+    let field_max = (1u128 << idx_bits) - 1;
+    if idx_bits == <<Packed<R, GEN_BITS> as KeyConfig>::Idx as KeyPiece>::BITS {
+        assert_eq!(max_idx.into_u128(), field_max - 1);
+    } else {
+        assert_eq!(max_idx.into_u128(), field_max);
+    }
     assert_eq!(max_generation_value.into_u128(), (1u128 << GEN_BITS) - 1);
     assert_eq!(size_of::<Key<Packed<R, GEN_BITS>>>(), size_of::<R>());
     assert_eq!(
@@ -423,17 +435,20 @@ where
     );
 
     let largest = key::<Packed<R, GEN_BITS>>(max_idx, max_generation_value);
-    assert_eq!(largest.idx(), max_idx);
+    assert_eq!(largest.plain_idx(), max_idx);
     assert_eq!(largest.generation(), max_generation);
     let smallest = key::<Packed<R, GEN_BITS>>(KeyPiece::ZERO, KeyPiece::ONE);
-    assert_eq!(smallest.idx().into_u128(), 0);
+    assert_eq!(smallest.plain_idx().into_u128(), 0);
     let smallest_generation =
         <Packed<R, GEN_BITS> as KeyConfig>::Gen::from_non_zero(smallest.generation().get());
     assert_eq!(smallest_generation.into_u128(), 1);
 
-    // A key has no room for an index one past the largest. The index type
-    // can only hold that index when the index field is narrower than the type.
-    if let Some(too_large) = max_idx.checked_add(KeyPiece::ONE) {
+    // A key has no room for an index one past the largest. That index only has
+    // a `NonMax` form when the index field is narrower than the index type.
+    if let Some(too_large) = max_idx
+        .checked_add(KeyPiece::ONE)
+        .and_then(KeyPiece::into_non_max)
+    {
         assert!(Packed::<R, GEN_BITS>::pack(too_large, max_generation).is_none());
     }
 }

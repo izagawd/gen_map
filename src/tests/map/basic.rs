@@ -98,7 +98,7 @@ fn remove_with_bogus_key_returns_none() {
     assert!(map.get(bogus).is_none());
 
     let k = map.insert(1);
-    let wrong_generation = key_from_parts(k.idx(), k.generation().get().get() + 2);
+    let wrong_generation = key_from_parts(k.idx().get(), k.generation().get().get() + 2);
     assert!(map.remove(wrong_generation).is_none());
     assert_eq!(map.len(), 1);
     assert_eq!(map[k], 1);
@@ -120,7 +120,7 @@ fn len_tracks_insert_remove_and_clear() {
     assert!(map.remove(k1).is_none());
     assert_eq!(map.len(), 1);
 
-    let stale = key_from_parts(k2.idx(), k2.generation().get().get() + 2);
+    let stale = key_from_parts(k2.idx().get(), k2.generation().get().get() + 2);
     assert!(map.remove(stale).is_none());
     assert_eq!(map.len(), 1);
 
@@ -185,7 +185,7 @@ fn try_insert_with_key_err_leaves_map_untouched_on_fresh_slot() {
     assert_eq!(map.slots_len(), 0);
 
     let k = map.insert(123);
-    assert_eq!(k.idx(), 0);
+    assert_eq!(k.idx().get(), 0);
     assert_eq!(k.generation().get().get(), 1);
     assert_eq!(map[k], 123);
 }
@@ -233,7 +233,7 @@ fn panic_inside_insert_with_key_leaves_map_untouched() {
     assert_eq!(map.slots_len(), 0);
 
     let k = map.insert(123);
-    assert_eq!(k.idx(), 0);
+    assert_eq!(k.idx().get(), 0);
     assert_eq!(map[k], 123);
     assert_eq!(map.len(), 1);
 }
