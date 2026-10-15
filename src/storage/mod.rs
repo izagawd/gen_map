@@ -22,7 +22,8 @@ use core::fmt;
 ///
 /// A storage whose capacity can grow past what it was created with also
 /// implements the [`ReserveStorage`] marker. A storage that can be created
-/// with room for a number of items chosen at runtime implements
+/// with no items and no arguments implements [`Empty`]. A storage that can be
+/// created with room for a number of items chosen at runtime implements
 /// [`WithCapacity`]. A storage that implements `IntoIterator` gives a map an
 /// owning `into_iter`, and a map implements `Clone` when its storages do.
 ///
@@ -65,8 +66,9 @@ use core::fmt;
 ///   `clear`, `clone` and `clone_from` may panic. `clear` may only panic when
 ///   dropping an item panics. The maps call the other methods partway through
 ///   changes that a panic would leave half done.
-/// - [`empty`](Self::empty) must return a storage with no items, and so must
-///   `with_capacity` if the storage implements [`WithCapacity`].
+/// - [`empty`](Empty::empty) must return a storage with no items if the
+///   storage implements [`Empty`], and so must `with_capacity` if the storage
+///   implements [`WithCapacity`].
 /// - If the storage implements `IntoIterator<Item = Self::Item>`, its
 ///   iterator must yield the same items as `as_slice`, in the same order. Its
 ///   `size_hint` must return the number of items not yet yielded as both its
@@ -89,9 +91,6 @@ pub unsafe trait SliceStorage {
 
     /// Why the storage could not make room for another item.
     type Error: fmt::Debug;
-
-    /// Creates a storage with no items.
-    fn empty() -> Self;
 
     /// How many items the storage can hold before it has to grow, or in
     /// total if it cannot grow.
@@ -150,6 +149,20 @@ pub unsafe trait SliceStorage {
 /// [`ReservePairStorage`](crate::ReservePairStorage) on its pair storage.
 pub trait ReserveStorage: SliceStorage {}
 
+/// A storage implements `Empty` when it can be created with no items and no
+/// arguments. A storage that needs an argument to be created, such as an
+/// allocator, does not implement it. A map has `new_with_config` and
+/// implements `Default` only when its storages implement this trait. To create
+/// a map whose storages do not implement it, use `with_storage` or
+/// `with_storages`.
+///
+/// The rules of [`SliceStorage`] and [`PairStorage`](crate::PairStorage)
+/// require `empty` to return a storage with no items.
+pub trait Empty {
+    /// Creates a storage with no items.
+    fn empty() -> Self;
+}
+
 /// A storage implements `WithCapacity` when it can be created with room for a
 /// number of items chosen at runtime. A storage whose type sets its capacity,
 /// such as an `ArrayVec`, does not implement it. A map has
@@ -192,11 +205,6 @@ impl<St: SliceStorage> Drop for ClearOnUnwind<'_, St> {
 unsafe impl<S> SliceStorage for Vec<S> {
     type Item = S;
     type Error = TryReserveError;
-
-    #[inline]
-    fn empty() -> Self {
-        Vec::new()
-    }
 
     #[inline]
     fn capacity(&self) -> usize {
@@ -246,6 +254,15 @@ unsafe impl<S> SliceStorage for Vec<S> {
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<S> ReserveStorage for Vec<S> {}
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+impl<S> Empty for Vec<S> {
+    #[inline]
+    fn empty() -> Self {
+        Vec::new()
+    }
+}
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
@@ -299,11 +316,6 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
     type Error = arrayvec::CapacityError;
 
     #[inline]
-    fn empty() -> Self {
-        arrayvec::ArrayVec::new()
-    }
-
-    #[inline]
     fn capacity(&self) -> usize {
         CAP
     }
@@ -343,6 +355,15 @@ unsafe impl<S, const CAP: usize> SliceStorage for arrayvec::ArrayVec<S, CAP> {
     #[inline]
     fn clear(&mut self) {
         arrayvec::ArrayVec::clear(self);
+    }
+}
+
+#[cfg(feature = "arrayvec")]
+#[cfg_attr(docsrs, doc(cfg(feature = "arrayvec")))]
+impl<S, const CAP: usize> Empty for arrayvec::ArrayVec<S, CAP> {
+    #[inline]
+    fn empty() -> Self {
+        arrayvec::ArrayVec::new()
     }
 }
 
@@ -390,11 +411,6 @@ unsafe impl<S, const N: usize> SliceStorage for smallvec::SmallVec<S, N> {
     type Error = smallvec::SmallVecError;
 
     #[inline]
-    fn empty() -> Self {
-        smallvec::SmallVec::new()
-    }
-
-    #[inline]
     fn capacity(&self) -> usize {
         smallvec::SmallVec::capacity(self)
     }
@@ -433,6 +449,15 @@ unsafe impl<S, const N: usize> SliceStorage for smallvec::SmallVec<S, N> {
 #[cfg(feature = "smallvec")]
 #[cfg_attr(docsrs, doc(cfg(feature = "smallvec")))]
 impl<S, const N: usize> ReserveStorage for smallvec::SmallVec<S, N> {}
+
+#[cfg(feature = "smallvec")]
+#[cfg_attr(docsrs, doc(cfg(feature = "smallvec")))]
+impl<S, const N: usize> Empty for smallvec::SmallVec<S, N> {
+    #[inline]
+    fn empty() -> Self {
+        smallvec::SmallVec::new()
+    }
+}
 
 #[cfg(feature = "smallvec")]
 #[cfg_attr(docsrs, doc(cfg(feature = "smallvec")))]

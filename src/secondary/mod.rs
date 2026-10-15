@@ -17,7 +17,7 @@ use crate::len::{KeepLen, Len};
 use crate::map::{decrement_len, increment_len, size_hint, MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
-use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
+use crate::storage::{ClearOnUnwind, Empty, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -283,7 +283,11 @@ impl<T, C: SecondaryMapConfig<Len = KeepLen>> SecondaryMap<T, C> {
     }
 }
 
-impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
+/// A map has this method only when its storage implements [`Empty`].
+impl<T, C: SecondaryMapConfig> SecondaryMap<T, C>
+where
+    Slots<T, C>: Empty,
+{
     /// Creates an empty map with config `C`.
     #[inline]
     #[must_use]
@@ -293,7 +297,9 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
             len: Counter::zero(),
         }
     }
+}
 
+impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// Creates an empty map with config `C` that keeps its slots in
     /// `storage`. This method lets the caller set up the storage, such as
     /// with a custom allocator.
@@ -917,7 +923,10 @@ where
     }
 }
 
-impl<T, C: SecondaryMapConfig> Default for SecondaryMap<T, C> {
+impl<T, C: SecondaryMapConfig> Default for SecondaryMap<T, C>
+where
+    Slots<T, C>: Empty,
+{
     #[inline]
     fn default() -> Self {
         Self::new_with_config()

@@ -2,7 +2,7 @@
 //! without a map, so the methods a map seldom calls are covered too.
 
 use crate::tests::{Bomb, DropItem, DropTracker};
-use crate::{ReserveStorage, SingleVec, SliceStorage, WithCapacity};
+use crate::{Empty, ReserveStorage, SingleVec, SliceStorage, WithCapacity};
 use std::vec::Vec;
 
 /// The ids of the items in `storage`, in order.
@@ -24,7 +24,7 @@ fn push<St: SliceStorage>(storage: &mut St, item: St::Item) {
 /// drops every one of them exactly once. `count` must fit the storage.
 fn check_storage<St>(count: u32)
 where
-    St: SliceStorage<Item = DropItem> + IntoIterator<Item = DropItem>,
+    St: SliceStorage<Item = DropItem> + Empty + IntoIterator<Item = DropItem>,
     St::IntoIter: DoubleEndedIterator,
 {
     let tracker = DropTracker::new();
@@ -60,7 +60,7 @@ where
 
 /// Checks that `pop` takes out the last item, and that a storage with no
 /// items hands back `None` and stays empty.
-fn check_pop<St: SliceStorage<Item = u32>>() {
+fn check_pop<St: SliceStorage<Item = u32> + Empty>() {
     let mut storage = St::empty();
     assert_eq!(storage.pop(), None);
     for i in 0..3 {
@@ -80,7 +80,7 @@ fn check_pop<St: SliceStorage<Item = u32>>() {
 /// exactly once. `count` items must fit the storage.
 fn check_clone<St>(count: u32)
 where
-    St: SliceStorage<Item = DropItem> + Clone,
+    St: SliceStorage<Item = DropItem> + Empty + Clone,
 {
     let tracker = DropTracker::new();
     let mut source = St::empty();
@@ -111,7 +111,7 @@ where
 /// Checks that a storage marked as one that can grow makes room for more
 /// items than it was created with, and that it holds every item pushed after
 /// that.
-fn check_growth<St: ReserveStorage<Item = u32>>() {
+fn check_growth<St: ReserveStorage<Item = u32> + Empty>() {
     let mut storage = St::empty();
     let wanted = storage.capacity() + 10;
     assert!(storage.ensure_room(wanted).is_ok());
@@ -207,7 +207,7 @@ fn a_small_vec_keeps_the_storage_contract() {
 /// Pushes `count` items, the second of which panics when it is dropped, and
 /// checks that `clear` leaves the storage empty although that drop panics.
 /// `count` must fit the storage and be at least two.
-fn check_clear_with_a_panicking_drop<St: SliceStorage<Item = Bomb>>(count: usize) {
+fn check_clear_with_a_panicking_drop<St: SliceStorage<Item = Bomb> + Empty>(count: usize) {
     let tracker = DropTracker::new();
     let mut storage = St::empty();
     for i in 0..count {

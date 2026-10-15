@@ -20,10 +20,6 @@ unsafe impl<S, const ITER: bool> SliceStorage for Bare<S, ITER> {
     type Item = S;
     type Error = TryReserveError;
 
-    fn empty() -> Self {
-        Bare(Vec::new())
-    }
-
     fn capacity(&self) -> usize {
         self.0.capacity()
     }
@@ -78,6 +74,18 @@ impl<S> IntoIterator for Bare<S, true> {
     fn into_iter(self) -> Forwards<S> {
         Forwards(self.0.into_iter())
     }
+}
+
+/// Returns a `Bare` with no items. `Bare` does not implement `Empty`, so the
+/// tests build their maps by passing empty `Bare`s to `with_storage` and
+/// `with_storages`.
+fn bare<S, const ITER: bool>() -> Bare<S, ITER> {
+    Bare(Vec::new())
+}
+
+/// Returns a `SplitPair` of two `Bare`s with no items.
+fn bare_pairs<A, B, const ITER: bool>() -> SplitPair<Bare<A, ITER>, Bare<B, ITER>> {
+    SplitPair::from_parts(bare(), bare()).unwrap()
 }
 
 /// Its storage has no owning iterator.
@@ -142,7 +150,7 @@ impl DenseSecondaryMapConfig for DenseForwardIter {
 
 #[test]
 fn a_map_works_without_an_owning_iterator() {
-    let mut map = GenMap::<u32, NoIter>::new_with_config();
+    let mut map = GenMap::<u32, NoIter>::with_storage(bare()).unwrap();
     let a = map.insert(1);
     let b = map.insert(2);
     assert_eq!(map.remove(a), Some(1));
@@ -158,7 +166,7 @@ fn a_map_works_without_an_owning_iterator() {
 
 #[test]
 fn a_dense_map_works_without_an_owning_iterator() {
-    let mut map = DenseGenMap::<u32, DenseNoIter>::new_with_config();
+    let mut map = DenseGenMap::<u32, DenseNoIter>::with_storages(bare(), bare_pairs()).unwrap();
     let a = map.insert(1);
     let b = map.insert(2);
     assert_eq!(map.remove(a), Some(1));
@@ -171,7 +179,8 @@ fn a_dense_map_works_without_an_owning_iterator() {
     let drained: Vec<_> = map.drain().collect();
     assert_eq!(drained, [(c, 3), (b, 2)]);
 
-    let mut secondary = DenseSecondaryMap::<u32, DenseNoIter>::new_with_config();
+    let mut secondary =
+        DenseSecondaryMap::<u32, DenseNoIter>::with_storages(bare(), bare_pairs()).unwrap();
     secondary.insert(c, 30).unwrap();
     secondary.insert(b, 20).unwrap();
     let drained: Vec<_> = secondary.drain().collect();
@@ -180,7 +189,8 @@ fn a_dense_map_works_without_an_owning_iterator() {
 
 #[test]
 fn dense_into_iter_works_when_the_storage_iterators_have_no_next_back() {
-    let mut map = DenseGenMap::<u32, DenseForwardIter>::new_with_config();
+    let mut map =
+        DenseGenMap::<u32, DenseForwardIter>::with_storages(bare(), bare_pairs()).unwrap();
     let keys: Vec<_> = (0..4).map(|i| map.insert(i)).collect();
     map.remove(keys[1]);
 
@@ -193,7 +203,8 @@ fn dense_into_iter_works_when_the_storage_iterators_have_no_next_back() {
     let rest: Vec<_> = iter.collect();
     assert_eq!(rest, [(keys[3], 3), (keys[2], 2)]);
 
-    let mut secondary = DenseSecondaryMap::<u32, DenseForwardIter>::new_with_config();
+    let mut secondary =
+        DenseSecondaryMap::<u32, DenseForwardIter>::with_storages(bare(), bare_pairs()).unwrap();
     secondary.insert(keys[2], 2).unwrap();
     secondary.insert(keys[0], 0).unwrap();
     let pairs: Vec<_> = secondary.into_iter().collect();
@@ -202,7 +213,7 @@ fn dense_into_iter_works_when_the_storage_iterators_have_no_next_back() {
 
 #[test]
 fn into_iter_works_when_the_storage_iterator_has_no_next_back() {
-    let mut map = GenMap::<u32, ForwardIter>::new_with_config();
+    let mut map = GenMap::<u32, ForwardIter>::with_storage(bare()).unwrap();
     let keys: Vec<_> = (0..4).map(|i| map.insert(i)).collect();
     map.remove(keys[1]);
 
