@@ -1,11 +1,12 @@
+use crate::slot::repr::{EnumSlot, Repr, UnionSlot};
 use core::fmt::{self, Debug, Display};
 use core::hash::Hash;
 use core::num::NonZero;
 use core::panic::{RefUnwindSafe, UnwindSafe};
 
-// A `Slot` reads one of its union fields based on what `is_odd` says about its
-// generation, and `SingleVec` and `PairVec` build slices from the lengths they
-// store in this type. So the crate's unsafe code relies on every method
+// A `UnionSlot` reads one of its union fields based on what `is_odd` says about
+// its generation, and `SingleVec` and `PairVec` build slices from the lengths
+// they store in this type. So the crate's unsafe code relies on every method
 // behaving exactly like it does for an unsigned integer with `BITS` bits. In
 // particular, `into_non_zero` returns `Some` for every value except `ZERO`, and
 // `into_non_max` returns `Some` for every value except `MAX`. `NON_MAX_ZERO` is
@@ -62,6 +63,12 @@ pub trait KeyPiece:
         + UnwindSafe
         + RefUnwindSafe
         + 'static;
+
+    /// `SlotRepr<T, U>` holds the generation and the value of a
+    /// [`Slot`](crate::Slot) whose generation has this type. It is `UnionSlot`
+    /// for `u8` to `u128` and `usize`, and `EnumSlot` for [`u1`].
+    #[doc(hidden)]
+    type SlotRepr<T, U>: Repr<Self, T, U>;
 
     /// The value zero.
     const ZERO: Self;
@@ -259,6 +266,7 @@ macro_rules! impl_key_piece {
             impl KeyPiece for $t {
                 type NonZero = NonZero<$t>;
                 type NonMax = NonMax<$t>;
+                type SlotRepr<T, U> = UnionSlot<$t, T, U>;
 
                 const ZERO: Self = 0;
                 const NON_MAX_ZERO: Self::NonMax = NonMax(0);
@@ -519,6 +527,7 @@ impl sealed::Sealed for u1 {}
 impl KeyPiece for u1 {
     type NonZero = NonZeroU1;
     type NonMax = NonMaxU1;
+    type SlotRepr<T, U> = EnumSlot<u1, T, U>;
 
     const ZERO: Self = Self(false);
     const NON_MAX_ZERO: Self::NonMax = NonMaxU1;
