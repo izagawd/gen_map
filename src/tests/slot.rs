@@ -1,5 +1,11 @@
-use super::DropTracker;
-use crate::{Even, Odd, Parity, ParityMut, ParityRef, Slot};
+use super::{Cfg, DropTracker};
+use crate::slot::repr::{EnumSlot, UnionSlot};
+use crate::{
+    u1, Even, KeyPiece, MapSlot, Odd, Parity, ParityMut, ParityRef, SecondaryMapSlot, Slot,
+};
+use core::mem::{size_of, ManuallyDrop};
+use core::panic::{RefUnwindSafe, UnwindSafe};
+use std::boxed::Box;
 use std::format;
 use std::string::String;
 
@@ -9,6 +15,11 @@ fn odd(n: u32) -> Odd<u32> {
 
 fn even(n: u32) -> Even<u32> {
     Even::new(n).unwrap()
+}
+
+/// Returns the only odd `u1`, which is one.
+fn one() -> Odd<u1> {
+    Odd::new(u1::MAX).unwrap()
 }
 
 #[test]
@@ -256,4 +267,203 @@ fn as_parity_mut_changes_the_generation_but_not_the_parity() {
         *value = 9;
     }
     assert_eq!(slot.as_parity(), ParityRef::Even(&even(8), &9));
+}
+
+#[test]
+fn a_slot_with_a_u1_generation_hands_out_references_to_it() {
+    let odd = Odd::new(u1::MAX).unwrap();
+    let mut slot = Slot::<u1, &str, u8>::new_odd(odd, "a");
+    assert_eq!(slot.as_parity(), ParityRef::Odd(&odd, &"a"));
+    // An `Odd<u1>` takes no space, so this write leaves the generation at one.
+    if let ParityMut::Odd(generation, value) = slot.as_parity_mut() {
+        *generation = odd;
+        *value = "b";
+    }
+    assert_eq!(slot.generation(), u1::MAX);
+    assert_eq!(format!("{slot:?}"), "Slot { generation: 1, value: \"b\" }");
+    assert_eq!(slot.into_parity(), Parity::Odd(odd, "b"));
+
+    let mut slot = Slot::<u1, &str, u8>::new_even(Even::ZERO, 7);
+    // An `Even<u1>` takes no space too, so this write leaves the generation at
+    // zero.
+    if let ParityMut::Even(generation, value) = slot.as_parity_mut() {
+        *generation = Even::ZERO;
+        *value = 9;
+    }
+    assert_eq!(slot.generation(), u1::MIN);
+    assert_eq!(slot.as_parity(), ParityRef::Even(&Even::ZERO, &9));
+    assert_eq!(slot.into_parity(), Parity::Even(Even::ZERO, 9));
+}
+
+#[test]
+fn a_u1_slot_only_hands_out_the_side_it_holds() {
+    let mut slot = Slot::<u1, &str, u8>::new_odd(one(), "a");
+    assert!(slot.is_odd() && !slot.is_even());
+    assert_eq!(slot.get_odd(one()), Some(&"a"));
+    assert_eq!(slot.get_even(Even::ZERO), None);
+    *slot.get_odd_mut(one()).unwrap() = "b";
+    assert!(slot.get_even_mut(Even::ZERO).is_none());
+    let slot = slot.into_even(Even::ZERO).unwrap_err();
+    assert_eq!(slot.into_odd(one()).ok(), Some("b"));
+
+    let mut slot = Slot::<u1, &str, u8>::new_even(Even::ZERO, 7);
+    assert!(slot.is_even() && !slot.is_odd());
+    assert_eq!(slot.get_even(Even::ZERO), Some(&7));
+    assert_eq!(slot.get_odd(one()), None);
+    *slot.get_even_mut(Even::ZERO).unwrap() = 8;
+    assert!(slot.get_odd_mut(one()).is_none());
+    let slot = slot.into_odd(one()).unwrap_err();
+    assert_eq!(slot.into_even(Even::ZERO).ok(), Some(8));
+}
+
+#[test]
+fn a_u1_slot_swaps_sides_and_returns_what_it_held() {
+    let mut slot = Slot::<u1, &str, Option<u32>>::new(Parity::Even(Even::ZERO, None));
+    assert_eq!(
+        slot.replace(Parity::Odd(one(), "a")),
+        Parity::Even(Even::ZERO, None)
+    );
+    assert_eq!(slot.set_odd(one(), "b"), Parity::Odd(one(), "a"));
+    assert_eq!(slot.set_even(Even::ZERO, Some(1)), Parity::Odd(one(), "b"));
+    assert_eq!(unsafe { slot.replace_even_unchecked(one(), "c") }, Some(1));
+    unsafe {
+        assert_eq!(*slot.get_odd_unchecked(), "c");
+        *slot.get_odd_unchecked_mut() = "d";
+    }
+    assert_eq!(
+        unsafe { slot.replace_odd_unchecked(Even::ZERO, Some(2)) },
+        "d"
+    );
+    unsafe {
+        assert_eq!(*slot.get_even_unchecked(), Some(2));
+        *slot.get_even_unchecked_mut() = Some(3);
+    }
+    assert_eq!(slot.as_parity(), ParityRef::Even(&Even::ZERO, &Some(3)));
+}
+
+#[test]
+fn a_u1_slot_drops_each_value_exactly_once() {
+    let tracker = DropTracker::new();
+    let mut slot = Slot::<u1, _, _>::new_even(Even::ZERO, tracker.make_item());
+    let old = slot.set_odd(one(), tracker.make_item());
+    tracker.assert_none_dropped();
+    drop(old);
+    let old = unsafe { slot.replace_odd_unchecked(Even::ZERO, tracker.make_item()) };
+    drop(old);
+    let old = unsafe { slot.replace_even_unchecked(one(), tracker.make_item()) };
+    drop(old);
+    let copy = slot.clone();
+    let Err(slot) = slot.into_even(Even::ZERO) else {
+        panic!("the slot holds a `T`, so `into_even` hands it back");
+    };
+    assert_eq!(tracker.total_dropped(), 3);
+    drop((slot, copy));
+    tracker.assert_all_dropped_exactly_once(5);
+
+    // The same checks run for a slot whose `U` takes no space.
+    let mut slot = Slot::<u1, _, ()>::new_odd(one(), tracker.make_item());
+    let old = unsafe { slot.replace_odd_unchecked(Even::ZERO, ()) };
+    drop(old);
+    assert!(matches!(
+        slot.set_odd(one(), tracker.make_item()),
+        Parity::Even(_, ())
+    ));
+    let copy = slot.clone();
+    drop((slot, copy));
+    tracker.assert_all_dropped_exactly_once(8);
+}
+
+#[test]
+fn a_u1_slot_clones_the_side_it_holds() {
+    let slot = Slot::<u1, String, i32>::new_odd(one(), String::from("a"));
+    assert_eq!(slot.clone().get_odd(one()).map(String::as_str), Some("a"));
+    let slot = Slot::<u1, String, i32>::new_even(Even::ZERO, 3);
+    assert_eq!(slot.clone().get_even(Even::ZERO), Some(&3));
+    assert_eq!(format!("{slot:?}"), "Slot { generation: 0, value: 3 }");
+}
+
+#[test]
+fn a_u1_slot_marks_its_side_in_a_bit_pattern_its_value_never_uses() {
+    assert_eq!(size_of::<Slot<u1, Box<u64>, ()>>(), size_of::<Box<u64>>());
+    assert_eq!(size_of::<Slot<u1, &str, ()>>(), size_of::<&str>());
+    assert_eq!(size_of::<Slot<u1, String, u32>>(), size_of::<String>());
+    assert_eq!(size_of::<Slot<u1, (u32, bool), u32>>(), 8);
+    // Neither the `T` nor the `U` of the slots below has a bit pattern to
+    // spare, so each of them is as large as a slot with a `u8` generation.
+    assert_eq!(
+        size_of::<Slot<u1, u64, u32>>(),
+        size_of::<Slot<u8, u64, u32>>()
+    );
+    assert_eq!(
+        size_of::<Slot<u1, u32, u32>>(),
+        size_of::<Slot<u8, u32, u32>>()
+    );
+}
+
+#[test]
+fn the_slots_of_maps_with_a_u1_generation_use_the_spare_bit_patterns() {
+    type U1Keys = Cfg<u32, u1>;
+    assert_eq!(size_of::<MapSlot<String, U1Keys>>(), size_of::<String>());
+    assert_eq!(
+        size_of::<SecondaryMapSlot<Box<u64>, U1Keys>>(),
+        size_of::<Box<u64>>()
+    );
+}
+
+#[test]
+fn integer_slots_keep_the_generation_next_to_the_value() {
+    /// A `Beside` has the layout that a slot with an integer generation
+    /// keeps, a generation next to a union of a `T` and a `U`.
+    #[allow(dead_code)]
+    struct Beside<G, T, U> {
+        generation: G,
+        value: Either<T, U>,
+    }
+
+    /// An `Either` holds a `T` or a `U` in the same place.
+    #[allow(dead_code)]
+    union Either<T, U> {
+        t: ManuallyDrop<T>,
+        u: ManuallyDrop<U>,
+    }
+
+    fn check<G: KeyPiece, T, U>() {
+        assert_eq!(size_of::<Slot<G, T, U>>(), size_of::<Beside<G, T, U>>());
+    }
+    check::<u8, u8, u8>();
+    check::<u32, u64, u32>();
+    check::<u32, Box<u64>, ()>();
+    check::<u64, u64, u64>();
+    check::<usize, String, usize>();
+}
+
+#[test]
+fn slots_keep_the_auto_traits_of_their_values_in_generic_code() {
+    fn assert_traits<S: Send + Sync + Unpin + UnwindSafe + RefUnwindSafe>() {}
+    fn check<G: KeyPiece, T, U>()
+    where
+        T: Send + Sync + Unpin + UnwindSafe + RefUnwindSafe,
+        U: Send + Sync + Unpin + UnwindSafe + RefUnwindSafe,
+    {
+        assert_traits::<Slot<G, T, U>>();
+    }
+    check::<u1, String, u32>();
+    check::<u32, String, u32>();
+}
+
+#[test]
+fn the_slot_representations_have_the_traits_that_slot_promises() {
+    // `Slot` implements these traits by hand, so this checks that both of its
+    // representations have them too, for every generation type.
+    fn assert_traits<S: Send + Sync + Unpin + UnwindSafe + RefUnwindSafe>() {}
+    fn check<G: KeyPiece, T, U>()
+    where
+        T: Send + Sync + Unpin + UnwindSafe + RefUnwindSafe,
+        U: Send + Sync + Unpin + UnwindSafe + RefUnwindSafe,
+    {
+        assert_traits::<UnionSlot<G, T, U>>();
+        assert_traits::<EnumSlot<G, T, U>>();
+    }
+    check::<u1, String, u32>();
+    check::<u32, String, u32>();
 }

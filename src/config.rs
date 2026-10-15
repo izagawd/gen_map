@@ -77,13 +77,13 @@ use core::hash::Hash;
     note = "`Split<Idx, Gen>` and `Packed<R, GEN_BITS>` are key configs. `Packed` needs `R` to be `u8`, `u16`, `u32`, `u64` or `u128`, and `GEN_BITS` to be at least 1 and less than the bits of `R`"
 )]
 pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
-    /// The integer type that represents the index of a slot. No map gives a
-    /// slot the largest value of this type. It can be `u8`, `u16`, `u32`,
-    /// `u64`, `u128` or `usize`.
+    /// `Idx` is the type that represents the index of a slot. No map gives a
+    /// slot the largest value of this type. It can be [`u1`](crate::u1), `u8`,
+    /// `u16`, `u32`, `u64`, `u128` or `usize`.
     type Idx: KeyPiece;
 
-    /// The integer type that represents the generation of a slot. It can be
-    /// `u8`, `u16`, `u32`, `u64`, `u128` or `usize`.
+    /// `Gen` is the type that represents the generation of a slot. It can be
+    /// [`u1`](crate::u1), `u8`, `u16`, `u32`, `u64`, `u128` or `usize`.
     type Gen: KeyPiece;
 
     /// The largest index a key can hold.

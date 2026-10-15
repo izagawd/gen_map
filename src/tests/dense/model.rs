@@ -6,10 +6,10 @@
 use crate::tests::model::Rng;
 use crate::tests::{key_from_parts, Cfg};
 use crate::{
-    DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, ExistingWins,
+    u1, DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, ExistingWins,
     FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeepLen, Key,
     KeyPiece, MapConfig, MapIdx, MapKeyConfig, Packed, PairVec, SecondaryInsertError, SecondaryMap,
-    SecondaryMapConfig, SecondarySlotItem, Split, SplitPair,
+    SecondaryMapConfig, SecondarySlotItem, SingleVec, Split, SplitPair,
 };
 use std::vec::Vec;
 
@@ -76,6 +76,47 @@ impl GenMapConfig for Tiny {
 impl DenseGenMapConfig for Tiny {
     type SlotStorage<S: GenSlotItem> = Vec<S>;
     type PairStorage<K, V> = PairVec<K, V>;
+}
+
+/// Maps with this config hand out keys with a `u1` generation and wrap
+/// generations, so they use a slot again as soon as its value is removed.
+struct U1Wrap;
+
+impl MapConfig for U1Wrap {
+    type KeyConfig = Split<u8, u1>;
+}
+
+impl GenMapConfig for U1Wrap {
+    const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
+    type Storage<S: GenSlotItem> = Vec<S>;
+}
+
+impl DenseGenMapConfig for U1Wrap {
+    const WRAP_ON_OVERFLOW: bool = true;
+    type SlotStorage<S: GenSlotItem> = Vec<S>;
+    type PairStorage<K, V> = PairVec<K, V>;
+}
+
+/// Maps with this config have a `u1` index, a `u1` generation and
+/// storages with a `u1` length, so they hold at most one value. They wrap a
+/// slot's generation once its value is removed.
+struct U1Everything;
+
+impl MapConfig for U1Everything {
+    type KeyConfig = Split<u1, u1>;
+}
+
+impl GenMapConfig for U1Everything {
+    const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
+    type Storage<S: GenSlotItem> = SingleVec<S, u1>;
+}
+
+impl DenseGenMapConfig for U1Everything {
+    const WRAP_ON_OVERFLOW: bool = true;
+    type SlotStorage<S: GenSlotItem> = SingleVec<S, u1>;
+    type PairStorage<K, V> = PairVec<K, V, u1>;
 }
 
 /// Four inline slots, values and keys, so the storages move to the heap as
@@ -181,6 +222,30 @@ fn a_dense_gen_map_whose_keys_run_out_agrees_with_a_gen_map() {
     let (seeds, steps) = seeds();
     for seed in 0..seeds {
         run_gen::<Tiny, Tiny>(seed, steps);
+    }
+}
+
+#[test]
+fn a_dense_gen_map_with_a_u1_generation_agrees_with_a_gen_map() {
+    let (seeds, steps) = seeds();
+    for seed in 0..seeds {
+        run_gen::<Cfg<u8, u1>, Cfg<u8, u1>>(seed, steps);
+    }
+}
+
+#[test]
+fn a_dense_gen_map_with_a_u1_generation_that_wraps_agrees_with_a_gen_map() {
+    let (seeds, steps) = seeds();
+    for seed in 0..seeds {
+        run_gen::<U1Wrap, U1Wrap>(seed, steps);
+    }
+}
+
+#[test]
+fn a_dense_gen_map_with_a_u1_index_generation_and_length_agrees_with_a_gen_map() {
+    let (seeds, steps) = seeds();
+    for seed in 0..seeds {
+        run_gen::<U1Everything, U1Everything>(seed, steps);
     }
 }
 

@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::vec::Vec;
 
-/// The keys of this config are a [`Split`] of the two integer types it is
+/// The keys of this config are a [`Split`] of the two [`KeyPiece`] types it is
 /// given. Every map except a `SparseSecondaryMap` keeps its slots in a `Vec`,
 /// the dense maps keep their keys and values in a `PairVec`, and the secondary
 /// maps use `NewerWins`. It is only used as a type parameter, never created as

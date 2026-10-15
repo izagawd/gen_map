@@ -7,9 +7,9 @@
 use crate::map::{Gen, Idx};
 use crate::tests::LenCheck;
 use crate::{
-    DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
+    u1, DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
     GetDisjointMutError, InsertError, InsertWithError, KeepLen, Key, KeyConfig, KeyPiece,
-    MapConfig, MapKeyConfig, NoLen, Packed, Split,
+    MapConfig, MapKeyConfig, NoLen, Packed, SingleVec, Split,
 };
 use std::vec::Vec;
 
@@ -115,6 +115,49 @@ impl GenMapConfig for Uncounted {
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
+/// Maps with this config have 255 slots and a `u1` generation, so they
+/// retire each slot once its value is removed, and the index runs out often.
+struct U1Retiring;
+
+impl MapConfig for U1Retiring {
+    type KeyConfig = Split<u8, u1>;
+}
+
+impl GenMapConfig for U1Retiring {
+    type Len = KeepLen;
+    type Storage<S: GenSlotItem> = Vec<S>;
+}
+
+/// Maps with this config work like those with [`U1Retiring`], but they wrap
+/// a slot's generation once its value is removed, so the key of the removed
+/// value matches the next value in the slot.
+struct U1Wrap;
+
+impl MapConfig for U1Wrap {
+    type KeyConfig = Split<u8, u1>;
+}
+
+impl GenMapConfig for U1Wrap {
+    const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
+    type Storage<S: GenSlotItem> = Vec<S>;
+}
+
+/// Maps with this config have a `u1` index, a `u1` generation and a
+/// `SingleVec` with a `u1` length, so they hold at most one value. They wrap
+/// a slot's generation once its value is removed.
+struct U1Everything;
+
+impl MapConfig for U1Everything {
+    type KeyConfig = Split<u1, u1>;
+}
+
+impl GenMapConfig for U1Everything {
+    const WRAP_ON_OVERFLOW: bool = true;
+    type Len = KeepLen;
+    type Storage<S: GenSlotItem> = SingleVec<S, u1>;
+}
+
 /// Maps with this config work like those with [`SmallWrap`], but keep no
 /// count of their values.
 struct SmallWrapUncounted;
@@ -147,6 +190,21 @@ fn a_small_packed_config_agrees_with_the_model() {
 #[test]
 fn a_small_packed_config_that_wraps_agrees_with_the_model() {
     run_seeds::<SmallWrap>();
+}
+
+#[test]
+fn a_u1_generation_that_retires_agrees_with_the_model() {
+    run_seeds::<U1Retiring>();
+}
+
+#[test]
+fn a_u1_generation_that_wraps_agrees_with_the_model() {
+    run_seeds::<U1Wrap>();
+}
+
+#[test]
+fn a_u1_index_generation_and_length_agree_with_the_model() {
+    run_seeds::<U1Everything>();
 }
 
 #[test]

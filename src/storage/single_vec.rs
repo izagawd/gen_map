@@ -16,7 +16,8 @@ use core::slice;
 /// A `SingleVec` keeps one slice of items in a buffer on the heap. It is a
 /// [`SliceStorage`] that works like a `Vec`, but it stores its length and
 /// capacity as its length type, the second type parameter. The length type
-/// can be `u8`, `u16`, `u32`, `u64`, `u128` or `usize`, which is the default.
+/// can be [`u1`](crate::u1), `u8`, `u16`, `u32`, `u64`, `u128` or `usize`,
+/// which is the default.
 /// A `SingleVec` never holds more items than its length type can count, and
 /// with a `u32` length type it takes 16 bytes on a 64-bit target, where a
 /// `Vec` takes 24. A `SingleVec` needs the `alloc` feature.
