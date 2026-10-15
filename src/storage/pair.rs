@@ -1,4 +1,4 @@
-use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
+use crate::storage::{ClearOnUnwind, Empty, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::FusedIterator;
 
@@ -18,10 +18,11 @@ use core::iter::FusedIterator;
 ///
 /// A pair storage whose capacity can grow past what it was created with also
 /// implements the [`ReservePairStorage`] marker. A pair storage that can be
-/// created with room for a number of pairs chosen at runtime implements
-/// [`WithCapacity`]. A pair storage that implements `IntoIterator` gives a
-/// dense map an owning `into_iter`, and a dense map implements `Clone` when
-/// its slot storage and its pair storage do.
+/// created with no pairs and no arguments implements [`Empty`]. A pair storage
+/// that can be created with room for a number of pairs chosen at runtime
+/// implements [`WithCapacity`]. A pair storage that implements `IntoIterator`
+/// gives a dense map an owning `into_iter`, and a dense map implements `Clone`
+/// when its slot storage and its pair storage do.
 ///
 /// # Safety
 ///
@@ -57,8 +58,9 @@ use core::iter::FusedIterator;
 ///   `clear`, `clone` and `clone_from` may panic. `clear` may only panic when
 ///   dropping an item panics. A dense map calls the other methods partway
 ///   through changes that a panic would leave half done.
-/// - [`empty`](Self::empty) must return a storage with no pairs, and so must
-///   `with_capacity` if the storage implements [`WithCapacity`].
+/// - [`empty`](Empty::empty) must return a storage with no pairs if the
+///   storage implements [`Empty`], and so must `with_capacity` if the storage
+///   implements [`WithCapacity`].
 /// - If the storage implements `IntoIterator<Item = (Self::First,
 ///   Self::Second)>`, its iterator must yield the same pairs as `slices`, in
 ///   the same order. Its `size_hint` must return the number of pairs not yet
@@ -84,9 +86,6 @@ pub unsafe trait PairStorage {
 
     /// Why the storage could not make room for another pair.
     type Error: fmt::Debug;
-
-    /// Creates a storage with no pairs.
-    fn empty() -> Self;
 
     /// How many pairs the storage can hold before it has to grow, or in total
     /// if it cannot grow.
@@ -193,8 +192,9 @@ impl<P: PairStorage> Drop for ClearPairsOnUnwind<'_, P> {
 ///
 /// The capacity of a `SplitPair` is the smaller of the capacities of its two
 /// storages. A `SplitPair` implements [`ReservePairStorage`] when both
-/// storages implement [`ReserveStorage`], [`WithCapacity`] when both storages
-/// implement `WithCapacity`, and `Clone` when both storages implement `Clone`.
+/// storages implement [`ReserveStorage`], [`Empty`] when both storages
+/// implement `Empty`, [`WithCapacity`] when both storages implement
+/// `WithCapacity`, and `Clone` when both storages implement `Clone`.
 ///
 /// # Examples
 ///
@@ -262,10 +262,10 @@ impl<A: SliceStorage + Clone, B: SliceStorage + Clone> Clone for SplitPair<A, B>
     }
 }
 
-// SAFETY: each slice is kept in a `SliceStorage`, which behaves like a
-// `Vec`, and every method keeps the two storages at the same length.
-// `from_parts` only accepts two storages of the same length. `with_capacity`
-// creates each storage with its own `with_capacity`, which the rules of
+// SAFETY: each slice is kept in a `SliceStorage`, which behaves like a `Vec`,
+// and every method keeps the two storages at the same length. `from_parts` only
+// accepts two storages of the same length. `empty` and `with_capacity` create
+// each storage with its own `empty` and `with_capacity`, which the rules of
 // `SliceStorage` require to return a storage with no items. Neither storage
 // panics outside `with_capacity`, `ensure_room`, `clear`, `clone` and
 // `clone_from`. So a `SplitPair` only panics in those same five methods, and
@@ -288,14 +288,6 @@ unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
     type First = A::Item;
     type Second = B::Item;
     type Error = SplitPairError<A::Error, B::Error>;
-
-    #[inline]
-    fn empty() -> Self {
-        Self {
-            first: A::empty(),
-            second: B::empty(),
-        }
-    }
 
     #[inline]
     fn capacity(&self) -> usize {
@@ -388,6 +380,16 @@ unsafe impl<A: SliceStorage, B: SliceStorage> PairStorage for SplitPair<A, B> {
 }
 
 impl<A: ReserveStorage, B: ReserveStorage> ReservePairStorage for SplitPair<A, B> {}
+
+impl<A: Empty, B: Empty> Empty for SplitPair<A, B> {
+    #[inline]
+    fn empty() -> Self {
+        Self {
+            first: A::empty(),
+            second: B::empty(),
+        }
+    }
+}
 
 impl<A: WithCapacity, B: WithCapacity> WithCapacity for SplitPair<A, B> {
     #[inline]

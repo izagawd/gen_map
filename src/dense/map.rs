@@ -14,7 +14,7 @@ use crate::map::{
 };
 use crate::slot::{ParityRef, Slot};
 use crate::storage::pair::{ClearPairsOnUnwind, PairStorage, ReservePairStorage};
-use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
+use crate::storage::{ClearOnUnwind, Empty, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
@@ -285,18 +285,26 @@ where
     }
 }
 
-impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
+/// A map has this method only when its slot storage and its pair storage
+/// implement [`Empty`].
+impl<T, C: DenseGenMapConfig> DenseGenMap<T, C>
+where
+    Slots<C>: Empty,
+    Pairs<T, C>: Empty,
+{
     /// Creates an empty map with config `C`.
     #[inline]
     #[must_use]
     pub fn new_with_config() -> Self {
         Self {
-            slots: <Slots<C> as SliceStorage>::empty(),
+            slots: <Slots<C> as Empty>::empty(),
             next_free: no_slot::<C>(),
-            pairs: <Pairs<T, C> as PairStorage>::empty(),
+            pairs: <Pairs<T, C> as Empty>::empty(),
         }
     }
+}
 
+impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// Creates an empty map with config `C` that keeps its slots in `slots`
     /// and its keys and values in `pairs`. This method lets the caller set up
     /// the storages, such as with a custom allocator.
@@ -1291,7 +1299,11 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     }
 }
 
-impl<T, C: DenseGenMapConfig> Default for DenseGenMap<T, C> {
+impl<T, C: DenseGenMapConfig> Default for DenseGenMap<T, C>
+where
+    Slots<C>: Empty,
+    Pairs<T, C>: Empty,
+{
     #[inline]
     fn default() -> Self {
         Self::new_with_config()

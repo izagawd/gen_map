@@ -3,9 +3,9 @@
 
 use crate::tests::key_from_parts;
 use crate::{
-    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeepLen, MapConfig,
-    NewerWins, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem,
-    SecondaryStorageError, SliceStorage, Split, StorageError,
+    Empty, FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeepLen,
+    MapConfig, NewerWins, SecondaryInsertError, SecondaryMap, SecondaryMapConfig,
+    SecondarySlotItem, SecondaryStorageError, SliceStorage, Split, StorageError,
 };
 use std::vec::Vec;
 
@@ -32,10 +32,6 @@ impl<S> IntoIterator for Capped<S> {
 unsafe impl<S> SliceStorage for Capped<S> {
     type Item = S;
     type Error = CapReached;
-
-    fn empty() -> Self {
-        Capped(Vec::new())
-    }
 
     fn capacity(&self) -> usize {
         CAP
@@ -68,6 +64,12 @@ unsafe impl<S> SliceStorage for Capped<S> {
 
     fn clear(&mut self) {
         self.0.clear();
+    }
+}
+
+impl<S> Empty for Capped<S> {
+    fn empty() -> Self {
+        Capped(Vec::new())
     }
 }
 

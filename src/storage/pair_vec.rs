@@ -5,7 +5,7 @@ use crate::storage::buffer::{
     saturating_usize, SetLenOnDrop,
 };
 use crate::storage::pair::{PairStorage, ReservePairStorage};
-use crate::storage::WithCapacity;
+use crate::storage::{Empty, WithCapacity};
 use core::alloc::Layout;
 use core::fmt;
 use core::iter::FusedIterator;
@@ -529,11 +529,6 @@ unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     type Error = ReserveError;
 
     #[inline]
-    fn empty() -> Self {
-        Self::new()
-    }
-
-    #[inline]
     fn capacity(&self) -> usize {
         self.buffer.capacity()
     }
@@ -637,6 +632,13 @@ unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
 }
 
 impl<A, B, L: KeyPiece> ReservePairStorage for PairVec<A, B, L> {}
+
+impl<A, B, L: KeyPiece> Empty for PairVec<A, B, L> {
+    #[inline]
+    fn empty() -> Self {
+        Self::new()
+    }
+}
 
 impl<A, B, L: KeyPiece> WithCapacity for PairVec<A, B, L> {
     #[inline]

@@ -237,10 +237,10 @@ where
         + SecondaryMapConfig<Len = KeepLen>
         + DenseGenMapConfig
         + DenseSecondaryMapConfig,
-    GenMap<Fragile, C>: Clone,
-    DenseGenMap<Fragile, C>: Clone,
-    SecondaryMap<Fragile, C>: Clone,
-    DenseSecondaryMap<Fragile, C>: Clone,
+    GenMap<Fragile, C>: Clone + Default,
+    DenseGenMap<Fragile, C>: Clone + Default,
+    SecondaryMap<Fragile, C>: Clone + Default,
+    DenseSecondaryMap<Fragile, C>: Clone + Default,
 {
     let tracker = DropTracker::new();
     let chaos = Rc::new(Chaos {
@@ -252,10 +252,10 @@ where
         chaos: chaos.clone(),
     };
     let mut rng = Rng(seed);
-    let mut sparse = GenMap::<Fragile, C>::new_with_config();
-    let mut dense = DenseGenMap::<Fragile, C>::new_with_config();
-    let mut secondary = SecondaryMap::<Fragile, C>::new_with_config();
-    let mut dense_secondary = DenseSecondaryMap::<Fragile, C>::new_with_config();
+    let mut sparse = GenMap::<Fragile, C>::default();
+    let mut dense = DenseGenMap::<Fragile, C>::default();
+    let mut secondary = SecondaryMap::<Fragile, C>::default();
+    let mut dense_secondary = DenseSecondaryMap::<Fragile, C>::default();
     // Every key either gen map has handed out, valid or not.
     let mut known: Vec<Key<MapKeyConfig<C>>> = Vec::new();
     for _ in 0..steps {

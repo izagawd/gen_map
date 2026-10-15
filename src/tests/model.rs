@@ -239,7 +239,7 @@ fn a_small_vec_agrees_with_the_model() {
 /// fewer and shorter runs.
 fn run_seeds<C: GenMapConfig>()
 where
-    GenMap<u32, C>: Clone,
+    GenMap<u32, C>: Clone + Default,
     C::Len: LenCheck,
 {
     let (seeds, steps) = if cfg!(miri) { (2, 300) } else { (48, 2000) };
@@ -326,11 +326,11 @@ impl Drop for Context {
 
 fn run<C: GenMapConfig>(seed: u64, steps: usize)
 where
-    GenMap<u32, C>: Clone,
+    GenMap<u32, C>: Clone + Default,
     C::Len: LenCheck,
 {
     let mut rng = Rng(seed);
-    let mut map = GenMap::<u32, C>::new_with_config();
+    let mut map = GenMap::<u32, C>::default();
     let mut model = Model::<C> {
         live: Vec::new(),
         detached: Vec::new(),
@@ -656,10 +656,10 @@ fn look_up_by_index<C: GenMapConfig>(map: &GenMap<u32, C>, model: &Model<C>, rng
 /// the same values and hand out the same key next.
 fn compare_clones<C: GenMapConfig>(map: &GenMap<u32, C>)
 where
-    GenMap<u32, C>: Clone,
+    GenMap<u32, C>: Clone + Default,
 {
     let mut copy = map.clone();
-    let mut target = GenMap::<u32, C>::new_with_config();
+    let mut target = GenMap::<u32, C>::default();
     target.insert(0);
     target.clone_from(map);
 

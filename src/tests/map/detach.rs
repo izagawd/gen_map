@@ -34,8 +34,11 @@ impl GenMapConfig for WrapU8 {
 
 /// A map whose only slot holds a value under the largest generation its key
 /// can hold, and the key of that value.
-fn at_the_largest_generation<C: GenMapConfig>() -> (GenMap<i32, C>, Key<MapKeyConfig<C>>) {
-    let mut map = GenMap::<i32, C>::new_with_config();
+fn at_the_largest_generation<C: GenMapConfig>() -> (GenMap<i32, C>, Key<MapKeyConfig<C>>)
+where
+    GenMap<i32, C>: Default,
+{
+    let mut map = GenMap::<i32, C>::default();
     let mut key = map.insert(0);
     while !key.is_max_generation() {
         map.remove(key);

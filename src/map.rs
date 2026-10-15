@@ -11,7 +11,7 @@ use crate::key::Key;
 use crate::len::sealed::Counter;
 use crate::len::{KeepLen, Len};
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
-use crate::storage::{ClearOnUnwind, ReserveStorage, SliceStorage, WithCapacity};
+use crate::storage::{ClearOnUnwind, Empty, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
 use core::ops::{Index, IndexMut};
@@ -441,7 +441,11 @@ impl<T, C: GenMapConfig<Len = KeepLen>> GenMap<T, C> {
     }
 }
 
-impl<T, C: GenMapConfig> GenMap<T, C> {
+/// A map has this method only when its storage implements [`Empty`].
+impl<T, C: GenMapConfig> GenMap<T, C>
+where
+    Slots<T, C>: Empty,
+{
     /// Creates an empty map with config `C`.
     ///
     /// ```
@@ -467,7 +471,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     pub fn new_with_config() -> Self {
         Self::with_slots(Slots::<T, C>::empty())
     }
+}
 
+impl<T, C: GenMapConfig> GenMap<T, C> {
     /// Creates an empty map with config `C` that keeps its slots in
     /// `storage`. This method lets the caller set up the storage, such as
     /// with a custom allocator.
@@ -1435,7 +1441,10 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     }
 }
 
-impl<T, C: GenMapConfig> Default for GenMap<T, C> {
+impl<T, C: GenMapConfig> Default for GenMap<T, C>
+where
+    Slots<T, C>: Empty,
+{
     #[inline]
     fn default() -> Self {
         Self::new_with_config()

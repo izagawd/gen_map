@@ -3,7 +3,7 @@ use crate::key::piece::KeyPiece;
 use crate::storage::buffer::{
     allocate, deallocate, grown_capacity, max_len, reallocate, saturating_usize, SetLenOnDrop,
 };
-use crate::storage::{ReserveStorage, SliceStorage, WithCapacity};
+use crate::storage::{Empty, ReserveStorage, SliceStorage, WithCapacity};
 use alloc::vec::Vec;
 use core::fmt;
 use core::iter::FusedIterator;
@@ -309,11 +309,6 @@ unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     type Error = ReserveError;
 
     #[inline]
-    fn empty() -> Self {
-        Self::new()
-    }
-
-    #[inline]
     fn capacity(&self) -> usize {
         self.buffer.capacity()
     }
@@ -374,6 +369,13 @@ unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
 }
 
 impl<T, L: KeyPiece> ReserveStorage for SingleVec<T, L> {}
+
+impl<T, L: KeyPiece> Empty for SingleVec<T, L> {
+    #[inline]
+    fn empty() -> Self {
+        Self::new()
+    }
+}
 
 impl<T, L: KeyPiece> WithCapacity for SingleVec<T, L> {
     #[inline]

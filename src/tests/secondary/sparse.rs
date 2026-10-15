@@ -555,9 +555,10 @@ where
     C: SecondaryMapConfig<KeyConfig = Split<u8, u8>, Len = KeepLen>
         + SparseSecondaryMapConfig<KeyConfig = Split<u8, u8>>,
     S: core::hash::BuildHasher + Default,
+    SecondaryMap<u32, C>: Default,
 {
     let mut rng = Rng(seed);
-    let mut secondary = SecondaryMap::<u32, C>::new_with_config();
+    let mut secondary = SecondaryMap::<u32, C>::default();
     let mut sparse = SparseSecondaryMap::<u32, C, S>::new_with_config();
     let mut known: Vec<Key<Split<u8, u8>>> = Vec::new();
     for (step, value) in (0..steps).zip(1u32..) {

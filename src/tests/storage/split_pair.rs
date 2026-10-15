@@ -3,7 +3,7 @@
 
 use crate::tests::{Bomb, CloneBomb, DropItem, DropTracker};
 use crate::{
-    DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenSlotItem,
+    DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, Empty, GenSlotItem,
     MapConfig, NewerWins, PairStorage, Split, SplitPair, SplitPairError, WithCapacity,
 };
 use std::format;

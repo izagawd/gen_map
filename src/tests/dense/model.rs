@@ -321,11 +321,13 @@ fn run_gen<G, D>(seed: u64, steps: usize)
 where
     G: GenMapConfig<Len = KeepLen>,
     D: DenseGenMapConfig<KeyConfig = G::KeyConfig>,
+    GenMap<u32, G>: Default,
+    DenseGenMap<u32, D>: Default,
 {
     assert_eq!(G::WRAP_ON_OVERFLOW, D::WRAP_ON_OVERFLOW);
     let mut rng = Rng(seed);
-    let mut sparse = GenMap::<u32, G>::new_with_config();
-    let mut dense = DenseGenMap::<u32, D>::new_with_config();
+    let mut sparse = GenMap::<u32, G>::default();
+    let mut dense = DenseGenMap::<u32, D>::default();
     // Every key either map has handed out, valid or not.
     let mut known: Vec<Key<MapKeyConfig<G>>> = Vec::new();
     for (step, value) in (0..steps).zip(1u32..) {
@@ -624,10 +626,12 @@ fn run_secondary<S, D>(seed: u64, steps: usize)
 where
     S: SecondaryMapConfig<KeyConfig = Split<u8, u8>, Len = KeepLen>,
     D: DenseSecondaryMapConfig<KeyConfig = Split<u8, u8>>,
+    SecondaryMap<u32, S>: Default,
+    DenseSecondaryMap<u32, D>: Default,
 {
     let mut rng = Rng(seed);
-    let mut sparse = SecondaryMap::<u32, S>::new_with_config();
-    let mut dense = DenseSecondaryMap::<u32, D>::new_with_config();
+    let mut sparse = SecondaryMap::<u32, S>::default();
+    let mut dense = DenseSecondaryMap::<u32, D>::default();
     let mut known: Vec<Key<Split<u8, u8>>> = Vec::new();
     for (step, value) in (0..steps).zip(1u32..) {
         let context = (seed, step);

@@ -533,6 +533,7 @@ fn follow_the_model<C>(capacity: Option<usize>)
 where
     C: SecondaryMapConfig + MapConfig<KeyConfig = DefaultKeyConfig>,
     C::Len: LenCheck,
+    SecondaryMap<u32, C>: Default,
 {
     let (seeds, steps) = if cfg!(miri) { (2, 300) } else { (8, 2000) };
     let mut coverage = Coverage::default();
@@ -556,12 +557,13 @@ fn run_model<C>(seed: u64, steps: u32, capacity: Option<usize>, coverage: &mut C
 where
     C: SecondaryMapConfig + MapConfig<KeyConfig = DefaultKeyConfig>,
     C::Len: LenCheck,
+    SecondaryMap<u32, C>: Default,
 {
     let mut rng = Rng(seed);
     let mut keys = GenMap::new();
     let mut live: Vec<Key> = Vec::new();
     let mut dead: Vec<Key> = Vec::new();
-    let mut map = SecondaryMap::<u32, C>::new_with_config();
+    let mut map = SecondaryMap::<u32, C>::default();
     let mut model: HashMap<u32, (u32, u32)> = HashMap::new();
 
     for step in 0..steps {
