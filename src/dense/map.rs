@@ -25,16 +25,22 @@ type Slots<C> = <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>;
 /// The storage a config gives the map for its keys and values.
 type Pairs<T, C> = <C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>;
 
+/// `StoredPosition<C>` is the `NonMax` form of the index type of `C`'s keys. A
+/// slot of a dense map with config `C` stores the position of its value as this
+/// type.
+pub(crate) type StoredPosition<C> = <MapIdx<C> as KeyPiece>::NonMax;
+
 /// A [`DenseGenMap`] keeps one [`Slot`] of this type for each index. While the
 /// slot holds a value, its generation is odd and it stores the position of that
-/// value in the pair storage. While it holds no value, its generation is even
-/// and it stores an index instead. A free slot stores the index of the next
-/// free slot, or the largest value of the index type if it is the last free
-/// slot. A detached slot stores its own index, which is how
-/// [`DenseGenMap::reattach`] tells a detached slot apart from a free or retired
-/// one. When the map retires a slot, it stores the largest value of the index
-/// type there, so the slot never looks detached.
-pub type DenseMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, MapIdx<C>>;
+/// value in the pair storage, in the [`NonMax`](KeyPiece::NonMax) form of the
+/// index type. While it holds no value, its generation is even and it stores an
+/// index instead. A free slot stores the index of the next free slot, or the
+/// largest value of the index type if it is the last free slot. A detached
+/// slot stores its own index, which is how [`DenseGenMap::reattach`] tells a
+/// detached slot apart from a free or retired one. When the map retires a slot,
+/// it stores the largest value of the index type there, so the slot never
+/// looks detached.
+pub type DenseMapSlot<C> = Slot<MapGen<C>, <MapIdx<C> as KeyPiece>::NonMax, MapIdx<C>>;
 
 /// The error a `DenseGenMap<T, C>` gives when one of its storages cannot make
 /// room for another value.
@@ -78,7 +84,8 @@ impl<C: MapConfig> Target<C> {
 /// `stored_position` must be a position the map stored in a slot. Every such
 /// position was made from a `usize` by [`to_stored`], so it fits in one.
 #[inline]
-pub(crate) unsafe fn to_position<C: MapConfig>(stored_position: MapIdx<C>) -> usize {
+pub(crate) unsafe fn to_position<C: MapConfig>(stored_position: StoredPosition<C>) -> usize {
+    let stored_position = MapIdx::<C>::from_non_max(stored_position);
     debug_assert!(stored_position.into_usize().is_some());
     // SAFETY: the caller promises that `stored_position` was made from a
     // `usize`.
@@ -89,15 +96,18 @@ pub(crate) unsafe fn to_position<C: MapConfig>(stored_position: MapIdx<C>) -> us
 ///
 /// # Safety
 ///
-/// `position` must be at most the number of values. A map never has more
-/// values than slots, nor more slots than the largest value of the index type,
-/// so such a position fits in the index type.
+/// `position` must be below the number of values, or equal to it when the map
+/// is about to add a value at that position. A map never has more values than
+/// slots, nor more slots than the largest value of the index type, so such a
+/// position is below that largest value.
 #[inline]
-pub(crate) unsafe fn to_stored<C: MapConfig>(position: usize) -> MapIdx<C> {
-    debug_assert!(MapIdx::<C>::from_usize(position).is_some());
-    // SAFETY: the caller promises that `position` is at most the number of
-    // values, which fits as explained above.
-    unsafe { MapIdx::<C>::from_usize_unchecked(position) }
+pub(crate) unsafe fn to_stored<C: MapConfig>(position: usize) -> StoredPosition<C> {
+    debug_assert!(MapIdx::<C>::from_usize(position)
+        .and_then(KeyPiece::into_non_max)
+        .is_some());
+    // SAFETY: the caller promises such a `position`, which is below the
+    // largest value of the index type as explained above.
+    unsafe { MapIdx::<C>::from_usize_unchecked(position).into_non_max_unchecked() }
 }
 
 /// Panics with the message `insert` gives for a full map. It is kept out of
@@ -749,7 +759,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     #[inline]
     unsafe fn values_at<X, const N: usize>(
         &mut self,
-        stored_positions: [(X, MapIdx<C>); N],
+        stored_positions: [(X, StoredPosition<C>); N],
     ) -> [(X, &mut T); N] {
         let values = self.pairs.second_slice_mut().as_mut_ptr();
         stored_positions.map(|(item, stored_position)| {
@@ -888,7 +898,8 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         if self.pairs.ensure_room(1).is_err() {
             return Err(value);
         }
-        // SAFETY: `self.pairs.len()` is the number of values.
+        // SAFETY: `self.pairs.len()` is the number of values, and the map is
+        // about to add `value` at that position.
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
         // SAFETY: a detached slot's generation is even.
         unsafe { slot.replace_even_unchecked(key.generation(), stored_position) };
@@ -1010,7 +1021,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// The position of the value corresponding to `key`, as its slot stores it,
     /// or `None` if the map has no value for `key`.
     #[inline]
-    fn stored_position(&self, key: Key<MapKeyConfig<C>>) -> Option<MapIdx<C>> {
+    fn stored_position(&self, key: Key<MapKeyConfig<C>>) -> Option<StoredPosition<C>> {
         self.slots
             .as_slice()
             .get(key.plain_idx().into_usize()?)?
@@ -1026,7 +1037,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     ///
     /// The slot at `slot_index` must hold a value.
     #[inline]
-    unsafe fn free_slot_at(&mut self, slot_index: usize) -> MapIdx<C> {
+    unsafe fn free_slot_at(&mut self, slot_index: usize) -> StoredPosition<C> {
         // SAFETY: the caller promises a slot at `slot_index` that holds a
         // value, so the position is in bounds, the slot's generation is odd,
         // and the position fits in the index type.
@@ -1093,7 +1104,8 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     #[inline]
     unsafe fn fill(&mut self, target: Target<C>, value: T) -> Key<MapKeyConfig<C>> {
         let key = target.key();
-        // SAFETY: `self.pairs.len()` is the number of values.
+        // SAFETY: `self.pairs.len()` is the number of values, and the map is
+        // about to add `value` at that position.
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
         // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this pair,
         // and no other `&mut` method of the pair storage has run since, so
@@ -1731,7 +1743,7 @@ impl<P: IntoIterator> FusedIterator for DenseIntoIter<P> {}
 /// # Examples
 ///
 /// ```
-/// use gen_map::{DenseGenMap, PairStorage};
+/// use gen_map::{DenseGenMap, NonMax, PairStorage};
 ///
 /// let mut map = DenseGenMap::new();
 /// let a = map.insert("a");
@@ -1743,8 +1755,10 @@ impl<P: IntoIterator> FusedIterator for DenseIntoIter<P> {}
 /// let (keys, values) = parts.pairs.slices_mut();
 /// keys.swap(0, 1);
 /// values.swap(0, 1);
-/// *parts.slots[0].get_odd_mut(a.generation()).unwrap() = 1;
-/// *parts.slots[1].get_odd_mut(b.generation()).unwrap() = 0;
+/// let zero = NonMax::<u32>::new(0).unwrap();
+/// let one = NonMax::<u32>::new(1).unwrap();
+/// *parts.slots[0].get_odd_mut(a.generation()).unwrap() = one;
+/// *parts.slots[1].get_odd_mut(b.generation()).unwrap() = zero;
 /// // SAFETY: each slot that holds a value stores the new position of its
 /// // value, and each key moved together with its value.
 /// let map = unsafe { DenseGenMap::from_raw_parts(parts) };

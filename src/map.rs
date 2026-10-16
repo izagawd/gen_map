@@ -107,7 +107,7 @@ type LenCount<C> = <<C as GenMapConfig>::Len as Len>::Count<Idx<C>>;
 /// [`no_slot`]. So the number of slots, and so the number of values, is at most
 /// the largest value of the index type. A `GenMap` that keeps a count of its
 /// values keeps it in that type, and a `DenseGenMap` stores the position of
-/// each value in it.
+/// each value in the `NonMax` form of that type.
 #[inline]
 pub(crate) fn max_slot_idx<C: MapConfig>() -> Idx<C> {
     Idx::<C>::from_non_max(<MapKeyConfig<C> as KeyConfig>::max_idx())

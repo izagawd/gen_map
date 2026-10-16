@@ -398,8 +398,8 @@ mod sealed {
 /// outside this crate can implement it.
 pub trait GenSlotItem: sealed::Sealed {
     /// The type of the value in the slot. For the slots of a `GenMap<T, C>`,
-    /// it is `T`, and for the slots of a dense map, it is the index type of the
-    /// map's keys.
+    /// it is `T`, and for the slots of a dense map, it is the `NonMax` form of
+    /// the index type of the map's keys.
     type Value;
 }
 
