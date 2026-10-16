@@ -5,8 +5,8 @@
 use super::{key_from_parts, Cfg, DropTracker};
 use crate::{
     DenseGenMap, DenseGenMapRawParts, DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap,
-    GenMapConfig, GenMapRawParts, GenSlotItem, KeepLen, Key, MapConfig, Odd, Packed, PairStorage,
-    Parity, ParityMut, ParityRef, SecondaryMap, SecondaryMapRawParts, Slot, Split,
+    GenMapConfig, GenMapRawParts, GenSlotItem, KeepLen, Key, MapConfig, NonMax, Odd, Packed,
+    PairStorage, Parity, ParityMut, ParityRef, SecondaryMap, SecondaryMapRawParts, Slot, Split,
 };
 use std::vec;
 use std::vec::Vec;
@@ -42,6 +42,11 @@ fn odd(generation: u8) -> Odd<u8> {
 /// Returns `generation` as an `Even`, and panics if `generation` is odd.
 fn even(generation: u8) -> Even<u8> {
     Even::new(generation).unwrap()
+}
+
+/// Returns `position` as a `NonMax`, and panics if `position` is `u8::MAX`.
+fn non_max(position: u8) -> NonMax<u8> {
+    NonMax::<u8>::new(position).unwrap()
 }
 
 /// Returns a copy of the generation and the value of `slot`.
@@ -219,8 +224,8 @@ fn the_parts_of_a_dense_gen_map_keep_its_values_keys_and_slots_in_step() {
         slots,
         [
             Parity::Even(even(2), u8::MAX),
-            Parity::Odd(odd(1), 1),
-            Parity::Odd(odd(1), 0),
+            Parity::Odd(odd(1), non_max(1)),
+            Parity::Odd(odd(1), non_max(0)),
         ]
     );
 
@@ -235,9 +240,9 @@ fn the_parts_of_a_dense_gen_map_keep_its_values_keys_and_slots_in_step() {
 fn a_dense_gen_map_built_by_hand_moves_its_last_value_on_remove() {
     let parts = DenseGenMapRawParts::<&str, Byte> {
         slots: vec![
-            Slot::new_odd(odd(1), 1),
+            Slot::new_odd(odd(1), non_max(1)),
             Slot::new_even(even(2), u8::MAX),
-            Slot::new_odd(odd(3), 0),
+            Slot::new_odd(odd(3), non_max(0)),
         ],
         next_free: 1,
         pairs: [(key(2, 3), "x"), (key(0, 1), "y")].into_iter().collect(),
@@ -312,8 +317,8 @@ fn the_parts_of_a_dense_secondary_map_keep_its_values_keys_and_slots_in_step() {
     assert_eq!(
         slots,
         [
-            Parity::Odd(odd(3), 1),
-            Parity::Odd(odd(1), 0),
+            Parity::Odd(odd(3), non_max(1)),
+            Parity::Odd(odd(1), non_max(0)),
             Parity::Even(even(0), ()),
         ]
     );
@@ -327,9 +332,9 @@ fn the_parts_of_a_dense_secondary_map_keep_its_values_keys_and_slots_in_step() {
 fn a_dense_secondary_map_built_by_hand_moves_its_last_value_on_remove() {
     let parts = DenseSecondaryMapRawParts::<&str, Byte> {
         slots: vec![
-            Slot::new_odd(odd(1), 1),
+            Slot::new_odd(odd(1), non_max(1)),
             Slot::new_even(Even::ZERO, ()),
-            Slot::new_odd(odd(3), 0),
+            Slot::new_odd(odd(3), non_max(0)),
         ],
         pairs: [(key(2, 3), "x"), (key(0, 1), "y")].into_iter().collect(),
     };

@@ -3,7 +3,7 @@ use crate::config::DefaultMapConfig;
 use crate::config::DenseSecondaryMapConfig;
 use crate::dense::map::{
     to_position, to_stored, DenseIntoIter, DenseIter, DenseIterMut, DenseKeys, DenseValues,
-    DenseValuesMut,
+    DenseValuesMut, StoredPosition,
 };
 use crate::error::{
     check_disjoint_idxs, check_disjoint_keys, DenseError, GetDisjointMutAtError,
@@ -34,16 +34,17 @@ type Pairs<T, C> = <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<
 /// A [`DenseSecondaryMap`] keeps one [`Slot`] of this type for each index.
 /// While the slot holds a value, its generation is the generation of the
 /// value's key, which is odd, and it stores the position of that value in the
-/// pair storage. While it holds no value, its generation is zero, which is
-/// even, and it stores `()` in place of a position.
-pub type DenseSecondaryMapSlot<C> = Slot<MapGen<C>, MapIdx<C>, ()>;
+/// pair storage, in the [`NonMax`](KeyPiece::NonMax) form of the index type.
+/// While it holds no value, its generation is zero, which is even, and it
+/// stores `()` in place of a position.
+pub type DenseSecondaryMapSlot<C> = Slot<MapGen<C>, <MapIdx<C> as KeyPiece>::NonMax, ()>;
 
 /// Returns the generation and the stored position of `slot` if it holds a
 /// value, or `None` if it holds none.
 #[inline]
 fn occupied<C: DenseSecondaryMapConfig>(
     slot: &DenseSecondaryMapSlot<C>,
-) -> Option<(Odd<MapGen<C>>, MapIdx<C>)> {
+) -> Option<(Odd<MapGen<C>>, StoredPosition<C>)> {
     match slot.as_parity() {
         ParityRef::Odd(&generation, &stored_position) => Some((generation, stored_position)),
         ParityRef::Even(..) => None,
@@ -625,7 +626,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     #[inline]
     unsafe fn values_at<X, const N: usize>(
         &mut self,
-        stored_positions: [(X, MapIdx<C>); N],
+        stored_positions: [(X, StoredPosition<C>); N],
     ) -> [(X, &mut T); N] {
         let values = self.pairs.second_slice_mut().as_mut_ptr();
         stored_positions.map(|(item, stored_position)| {
@@ -725,7 +726,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
                 DenseError::Pairs(error),
             ));
         }
-        // SAFETY: `self.pairs.len()` is the number of values.
+        // SAFETY: `self.pairs.len()` is the number of values, and the map is
+        // about to add `value` at that position.
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
         match get_or_grow_slot(&mut self.slots, key.plain_idx()) {
             Ok(slot) => {
@@ -828,7 +830,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// The position of the value stored under `key`, as its slot stores it, or
     /// `None` if no value is stored under `key`.
     #[inline]
-    fn stored_position(&self, key: Key<MapKeyConfig<C>>) -> Option<MapIdx<C>> {
+    fn stored_position(&self, key: Key<MapKeyConfig<C>>) -> Option<StoredPosition<C>> {
         let slot_index = key.plain_idx().into_usize()?;
         self.slots
             .as_slice()
@@ -1169,7 +1171,9 @@ impl<T, C: DenseSecondaryMapConfig> Drop for DenseSecondaryDrain<'_, T, C> {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap, PairVec, Slot};
+/// use gen_map::{
+///     DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap, NonMax, PairVec, Slot,
+/// };
 ///
 /// let mut people = GenMap::new();
 /// let alice = people.insert("Alice");
@@ -1178,8 +1182,9 @@ impl<T, C: DenseSecondaryMapConfig> Drop for DenseSecondaryDrain<'_, T, C> {
 /// // Only Bob has an age, so the slot at Alice's index holds no value.
 /// let mut pairs = PairVec::new();
 /// pairs.push(bob, 25);
+/// let zero = NonMax::<u32>::new(0).unwrap();
 /// let parts = DenseSecondaryMapRawParts {
-///     slots: [Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), 0)]
+///     slots: [Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), zero)]
 ///         .into_iter()
 ///         .collect(),
 ///     pairs,
