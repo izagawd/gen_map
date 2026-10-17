@@ -14,8 +14,8 @@ use crate::key::piece::KeyPiece;
 use crate::key::Key;
 use crate::map::{MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
-use crate::secondary::{get_or_grow_slot, key_from_parts_unchecked};
-use crate::slot::{ParityRef, Slot};
+use crate::secondary::{grow_to, key_from_parts_unchecked};
+use crate::slot::{ParityMut, ParityRef, Slot};
 use crate::storage::pair::{ClearPairsOnUnwind, PairStorage, ReservePairStorage};
 use crate::storage::{ClearOnUnwind, Empty, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
@@ -679,47 +679,45 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// assert_eq!(ages[bob], 25);
     /// ```
     pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
-        let new_generation = key.generation();
-        let existing = key
+        let generation = key.generation();
+        // The map reads the number of slots and looks up the slot before it
+        // makes room in the pair storage, so it does not have to read them
+        // again afterwards.
+        let slots_len = self.slots.len();
+        let mut slot = key
             .plain_idx()
             .into_usize()
-            .and_then(|slot_index| self.slots.as_slice().get(slot_index))
-            .and_then(occupied::<C>);
-        let Some((existing_generation, stored_position)) = existing else {
-            return self.insert_new(key, value);
-        };
-        if existing_generation != new_generation
-            && !<Strategy<C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
-                existing_generation,
-                new_generation,
-            )
+            .and_then(|slot_index| self.slots.as_mut_slice().get_mut(slot_index));
+        if let Some(ParityMut::Odd(current, &mut stored_position)) =
+            slot.as_deref_mut().map(Slot::as_parity_mut)
         {
-            return Err(SecondaryInsertError::Refused(value));
+            if *current != generation
+                && !<Strategy<C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
+                    *current, generation,
+                )
+            {
+                return Err(SecondaryInsertError::Refused(value));
+            }
+            // SAFETY: `stored_position` is the position the slot at the key's
+            // index stores.
+            let value_position = unsafe { to_position::<C>(stored_position) };
+            if *current != generation {
+                // The value keeps its place. Its slot now belongs to `key`, and
+                // `key` replaces the key stored for the value.
+                *current = generation;
+                let keys = self.pairs.first_slice_mut();
+                // SAFETY: the pair storage holds a key for each value, so it
+                // has a key at `value_position`, the position of a value.
+                unsafe { *keys.get_unchecked_mut(value_position) = key };
+            }
+            let values = self.pairs.second_slice_mut();
+            // SAFETY: `value_position` is the position of a value, which is
+            // below the number of values.
+            let stored_value = unsafe { values.get_unchecked_mut(value_position) };
+            return Ok(Some(core::mem::replace(stored_value, value)));
         }
-        // SAFETY: `stored_position` is the position the slot at the key's index
-        // stores.
-        let value_position = unsafe { to_position::<C>(stored_position) };
-        if existing_generation != new_generation {
-            // The value keeps its place. Its slot now belongs to `key`, and
-            // `key` replaces the key stored for the value.
-            // SAFETY: the slot at the key's index exists, since it was just
-            // read.
-            unsafe { self.slot_unchecked_mut(key) }.set_odd(new_generation, stored_position);
-            let keys = self.pairs.first_slice_mut();
-            // SAFETY: the pair storage holds a key for each value, so it has a
-            // key at `value_position`, the position of a value.
-            unsafe { *keys.get_unchecked_mut(value_position) = key };
-        }
-        let values = self.pairs.second_slice_mut();
-        // SAFETY: `value_position` is the position of a value, which is below
-        // the number of values.
-        let stored_value = unsafe { values.get_unchecked_mut(value_position) };
-        Ok(Some(core::mem::replace(stored_value, value)))
-    }
-
-    /// Stores `value` under `key`, at the end of the values, when no value is
-    /// stored at the key's index.
-    fn insert_new(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
+        // No value is stored at the key's index, so the value goes in at the
+        // end of the values.
         if let Err(error) = self.pairs.ensure_room(1) {
             return Err(SecondaryInsertError::StorageFull(
                 value,
@@ -729,16 +727,23 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         // SAFETY: `self.pairs.len()` is the number of values, and the map is
         // about to add `value` at that position.
         let stored_position = unsafe { to_stored::<C>(self.pairs.len()) };
-        match get_or_grow_slot(&mut self.slots, key.plain_idx()) {
-            Ok(slot) => {
-                slot.set_odd(key.generation(), stored_position);
-            }
-            Err(error) => {
+        if let Some(slot) = slot {
+            slot.set_odd(generation, stored_position);
+        } else {
+            // The slot storage has no slot at the key's index yet, so the
+            // position goes in a new slot there.
+            // SAFETY: the map has changed only the pair storage since it read
+            // `slots_len`, so `slots_len` is still the number of slots.
+            if let Err(error) = unsafe { grow_to(&mut self.slots, slots_len, key.plain_idx()) } {
                 return Err(SecondaryInsertError::StorageFull(
                     value,
                     DenseError::Slots(error),
                 ));
             }
+            let slot = Slot::new_odd(generation, stored_position);
+            // SAFETY: `grow_to` returned `Ok`, so the slot storage has room for
+            // this push, and the push puts the slot at the key's index.
+            unsafe { self.slots.push_unchecked(slot) };
         }
         // SAFETY: `ensure_room(1)` returned `Ok` above, and no other `&mut`
         // method of the pair storage has run since, so `PairStorage` promises

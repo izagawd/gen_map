@@ -85,18 +85,22 @@ pub(crate) fn empty_slot<G: KeyPiece, T>() -> Slot<G, T, ()> {
     Slot::new_even(Even::ZERO, ())
 }
 
-/// Returns the slot at `idx`. If the storage has no slot there yet, it
-/// first grows to hold every slot up to and including `idx`, which can
-/// allocate, and the new slots start out empty.
+/// Pushes empty slots onto `slots` until the next push puts a slot at `idx`,
+/// and makes room for that slot. `slots` must not have a slot at `idx` yet.
 ///
 /// # Errors
 ///
 /// Returns the storage's error, and adds no slots, if the storage cannot
 /// make room for all of them.
-pub(crate) fn get_or_grow_slot<St, G, X, I>(
+///
+/// # Safety
+///
+/// `len` must be the number of slots in `slots`.
+pub(crate) unsafe fn grow_to<St, G, X, I>(
     slots: &mut St,
+    len: usize,
     idx: I,
-) -> Result<&mut Slot<G, X, ()>, St::Error>
+) -> Result<(), St::Error>
 where
     St: SliceStorage<Item = Slot<G, X, ()>>,
     G: KeyPiece,
@@ -110,26 +114,19 @@ where
             .ensure_room(usize::MAX)
             .expect_err("no storage has room for `usize::MAX` more slots"));
     };
-    let len = slots.len();
-    if position >= len {
-        // `position - len + 1` slots are missing. That count overflows
-        // when `position` is `usize::MAX` and the storage is empty, so
-        // this function asks for `usize::MAX` slots instead, which no
-        // storage can hold either.
-        slots.ensure_room((position - len).saturating_add(1))?;
-        for _ in len..=position {
-            // SAFETY: `ensure_room` returned `Ok` for all of these pushes, and
-            // the loop runs no other `&mut` method of the storage, so
-            // `SliceStorage` promises room for each push.
-            unsafe { slots.push_unchecked(empty_slot()) };
-        }
+    debug_assert_eq!(len, slots.len());
+    debug_assert!(position >= len);
+    // `position - len + 1` slots are missing. That count overflows when
+    // `position` is `usize::MAX` and the storage is empty, so this function
+    // asks for `usize::MAX` slots instead, which no storage can hold either.
+    slots.ensure_room((position - len).saturating_add(1))?;
+    for _ in len..position {
+        // SAFETY: `ensure_room` returned `Ok` for these pushes and one more,
+        // and the loop runs no other `&mut` method of the storage, so
+        // `SliceStorage` promises room for each push.
+        unsafe { slots.push_unchecked(empty_slot()) };
     }
-    debug_assert!(position < slots.len());
-    // SAFETY: the storage either had a slot at `position` already, or
-    // the loop above pushed a slot for every position up to it.
-    // `SliceStorage` promises that each push adds one slot at the end,
-    // so `position` is in bounds.
-    Ok(unsafe { slots.as_mut_slice().get_unchecked_mut(position) })
+    Ok(())
 }
 
 /// The storage a config gives the map for its slots.
@@ -745,9 +742,23 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// ```
     pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
         let generation = key.generation();
-        let slot = match get_or_grow_slot(&mut self.slots, key.plain_idx()) {
-            Ok(slot) => slot,
-            Err(error) => return Err(SecondaryInsertError::StorageFull(value, error)),
+        let slot = key
+            .plain_idx()
+            .into_usize()
+            .and_then(|position| self.slots.as_mut_slice().get_mut(position));
+        let Some(slot) = slot else {
+            // The storage has no slot at the key's index yet, so the value goes
+            // in a new slot there.
+            let len = self.slots.len();
+            // SAFETY: `len` is the number of slots.
+            if let Err(error) = unsafe { grow_to(&mut self.slots, len, key.plain_idx()) } {
+                return Err(SecondaryInsertError::StorageFull(value, error));
+            }
+            // SAFETY: `grow_to` returned `Ok`, so the storage has room for this
+            // push, and the push puts the slot at the key's index.
+            unsafe { self.slots.push_unchecked(Slot::new_odd(generation, value)) };
+            increment_len(&mut self.len);
+            return Ok(None);
         };
         if let Some(old) = slot.get_odd_mut(generation) {
             return Ok(Some(core::mem::replace(old, value)));
