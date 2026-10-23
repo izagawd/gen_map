@@ -259,7 +259,7 @@ where
     // Every key either gen map has handed out, valid or not.
     let mut known: Vec<Key<MapKeyConfig<C>>> = Vec::new();
     for _ in 0..steps {
-        let operation = rng.below(16);
+        let operation = rng.below(17);
         let (a, b) = (pick(&known, &mut rng), pick(&known, &mut rng));
         let retain_panics = rng.chance(20);
         let taken = rng.below(4);
@@ -304,8 +304,8 @@ where
                 }
                 7 => {
                     if let Some(key) = a {
-                        drop(sparse.reattach(key, fragile()));
-                        drop(dense.reattach(key, fragile()));
+                        drop(sparse.attach(key, fragile()));
+                        drop(dense.attach(key, fragile()));
                     }
                 }
                 8 => {
@@ -358,6 +358,14 @@ where
                         if let Ok([p, q]) = dense_secondary.get_disjoint_mut([x, y]) {
                             core::mem::swap(p, q);
                         }
+                    }
+                }
+                15 => {
+                    if let Ok(key) = sparse.try_reserve_key() {
+                        known.push(key);
+                    }
+                    if let Ok(key) = dense.try_reserve_key() {
+                        known.push(key);
                     }
                 }
                 _ => {

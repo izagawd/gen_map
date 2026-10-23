@@ -79,6 +79,11 @@ fn a_full_array_vec_reports_storage_full() {
         Err(InsertError::StorageFull(4, _))
     ));
     assert!(matches!(map.vacant_entry(), Err(FullError::StorageFull(_))));
+    assert!(matches!(
+        map.try_reserve_key(),
+        Err(FullError::StorageFull(_))
+    ));
+    assert_eq!(map.slots_len(), 4);
     let mut called = false;
     let result = map.try_insert_with_key(|_| {
         called = true;

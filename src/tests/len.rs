@@ -58,7 +58,7 @@ fn a_gen_map_without_a_count_inserts_and_removes() {
     assert_eq!(map.remove(keys[0]), Some(0));
     assert_eq!(map.retire(keys[1]), Some(1));
     assert_eq!(map.detach(keys[2]), Some(2));
-    map.reattach(keys[2], 20).unwrap();
+    map.attach(keys[2], 20).unwrap();
     assert_eq!(map.detach(keys[3]), Some(3));
     assert!(map.release(keys[3]));
     map.retain(|_, value| *value != 4);

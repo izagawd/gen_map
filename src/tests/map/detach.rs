@@ -48,7 +48,7 @@ where
 }
 
 #[test]
-fn detach_takes_the_value_out_and_reattach_puts_one_back() {
+fn detach_takes_the_value_out_and_attach_puts_one_back() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     assert_eq!(map.detach(key), Some(1));
@@ -57,7 +57,7 @@ fn detach_takes_the_value_out_and_reattach_puts_one_back() {
     assert_eq!(map.len(), 0);
     assert_eq!(map.slots_len(), 1);
 
-    map.reattach(key, 2).unwrap();
+    map.attach(key, 2).unwrap();
     assert_eq!(map.get(key), Some(&2));
     assert_eq!(map.len(), 1);
 }
@@ -91,16 +91,16 @@ fn a_detached_slot_is_never_handed_out_by_insert() {
     for other in others {
         assert_ne!(other.idx(), key.idx());
     }
-    map.reattach(key, 1).unwrap();
+    map.attach(key, 1).unwrap();
     assert_eq!(map[key], 1);
 }
 
 #[test]
-fn a_detached_slot_is_reused_after_reattach_and_remove() {
+fn a_detached_slot_is_reused_after_attach_and_remove() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     let value = map.detach(key).unwrap();
-    map.reattach(key, value).unwrap();
+    map.attach(key, value).unwrap();
     map.remove(key);
     let reused = map.insert(2);
     assert_eq!(reused.idx(), key.idx());
@@ -115,31 +115,31 @@ fn remove_and_get_mut_ignore_a_detached_key() {
     assert_eq!(map.remove(key), None);
     assert!(map.get_mut(key).is_none());
     assert_eq!(map.len(), 0);
-    map.reattach(key, 5).unwrap();
+    map.attach(key, 5).unwrap();
     assert_eq!(map.remove(key), Some(5));
 }
 
 #[test]
-fn reattach_fails_for_a_live_key() {
+fn attach_fails_for_a_live_key() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     assert_not_detached(&mut map, key, 2);
 }
 
 #[test]
-fn reattach_fails_for_a_removed_key() {
+fn attach_fails_for_a_removed_key() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     map.remove(key);
     // Like a detached slot, the removed slot now has a generation one above
     // the key's. It is the only slot on the free list, so its link is the
     // largest value of the index type, which ends the list. A detached slot
-    // links to itself instead, which is how `reattach` tells the two apart.
+    // links to itself instead, which is how `attach` tells the two apart.
     assert_not_detached(&mut map, key, 2);
 }
 
 #[test]
-fn reattach_fails_for_a_removed_key_deeper_in_the_free_list() {
+fn attach_fails_for_a_removed_key_deeper_in_the_free_list() {
     let mut map = GenMap::new();
     let a = map.insert(1);
     let b = map.insert(2);
@@ -149,7 +149,7 @@ fn reattach_fails_for_a_removed_key_deeper_in_the_free_list() {
 }
 
 #[test]
-fn reattach_fails_for_a_reused_slot() {
+fn attach_fails_for_a_reused_slot() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     map.remove(key);
@@ -158,7 +158,7 @@ fn reattach_fails_for_a_reused_slot() {
 }
 
 #[test]
-fn reattach_fails_after_reset() {
+fn attach_fails_after_reset() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     map.detach(key).unwrap();
@@ -167,7 +167,7 @@ fn reattach_fails_after_reset() {
 }
 
 #[test]
-fn reattach_fails_with_the_wrong_generation_for_a_detached_slot() {
+fn attach_fails_with_the_wrong_generation_for_a_detached_slot() {
     let mut map = GenMap::new();
     let old = map.insert(1);
     map.remove(old);
@@ -176,12 +176,12 @@ fn reattach_fails_with_the_wrong_generation_for_a_detached_slot() {
     // `old` points at the same slot with an older generation.
     assert_not_detached(&mut map, old, 3);
     // The slot is still detached under `new`.
-    map.reattach(new, 4).unwrap();
+    map.attach(new, 4).unwrap();
     assert_eq!(map[new], 4);
 }
 
 #[test]
-fn detach_and_reattach_work_at_the_largest_generation() {
+fn detach_and_attach_work_at_the_largest_generation() {
     let (mut map, key) = at_the_largest_generation::<Cfg<u8, u8>>();
     assert_eq!(key.generation().get().get(), u8::MAX);
 
@@ -196,8 +196,8 @@ fn detach_and_reattach_work_at_the_largest_generation() {
     let other = map.insert(1);
     assert_ne!(other.idx(), key.idx());
 
-    // Reattaching gives the slot the key's generation back.
-    map.reattach(key, 5).unwrap();
+    // Attaching a value gives the slot the key's generation back.
+    map.attach(key, 5).unwrap();
     assert_eq!(map[key], 5);
     assert_eq!(map.generation_at(key.idx().get()), Some(u8::MAX));
     assert_eq!(map.len(), 2);
@@ -219,7 +219,7 @@ fn a_packed_key_detaches_at_the_largest_generation_of_its_key_config() {
     assert_eq!(map.detach(key), Some(0));
     assert_eq!(map.generation_at(key.idx().get()), Some(16));
     assert_eq!(map.get(key), None);
-    map.reattach(key, 7).unwrap();
+    map.attach(key, 7).unwrap();
     assert_eq!(map[key], 7);
     assert_eq!(map.generation_at(key.idx().get()), Some(15));
 
@@ -232,7 +232,7 @@ fn a_packed_key_detaches_at_the_largest_generation_of_its_key_config() {
 }
 
 #[test]
-fn reattach_fails_for_a_retired_slot_at_the_largest_generation() {
+fn attach_fails_for_a_retired_slot_at_the_largest_generation() {
     // A retired slot has generation zero, as a slot detached at the largest
     // generation does, but it links to no slot, so it is not detached.
     let (mut map, key) = at_the_largest_generation::<Cfg<u8, u8>>();
@@ -242,7 +242,7 @@ fn reattach_fails_for_a_retired_slot_at_the_largest_generation() {
 }
 
 #[test]
-fn reattach_fails_for_a_wrapped_slot_at_the_largest_generation() {
+fn attach_fails_for_a_wrapped_slot_at_the_largest_generation() {
     // A slot that wrapped has generation zero, the same as a slot detached at
     // the largest `u8`, but it is on the free list, which never makes it link
     // to itself.
@@ -253,7 +253,7 @@ fn reattach_fails_for_a_wrapped_slot_at_the_largest_generation() {
 }
 
 #[test]
-fn reattach_fails_for_another_key_of_a_slot_detached_at_the_largest_generation() {
+fn attach_fails_for_another_key_of_a_slot_detached_at_the_largest_generation() {
     let (mut map, key) = at_the_largest_generation::<Wrap4>();
     map.detach(key);
     // A key with the same index and an older generation does not own the
@@ -261,7 +261,7 @@ fn reattach_fails_for_another_key_of_a_slot_detached_at_the_largest_generation()
     let older = crate::tests::key_from_parts::<Packed<u16, 4>>(key.idx().get(), 13);
     assert_not_detached(&mut map, older, 1);
     // The slot is still detached under `key`.
-    map.reattach(key, 2).unwrap();
+    map.attach(key, 2).unwrap();
     assert_eq!(map[key], 2);
 }
 
@@ -273,7 +273,7 @@ fn release_frees_a_detached_slot() {
     assert!(map.release(key));
     assert_eq!(map.len(), 0);
     assert!(map.get(key).is_none());
-    assert_eq!(map.reattach(key, 2), Err(2));
+    assert_eq!(map.attach(key, 2), Err(2));
 
     // The freed slot heads the free list, so the next insert takes it under
     // a newer generation.
@@ -307,7 +307,7 @@ fn release_fails_for_another_key_of_a_detached_slot() {
     map.detach(new).unwrap();
     assert!(!map.release(old));
     // The slot is still detached under `new`.
-    map.reattach(new, 3).unwrap();
+    map.attach(new, 3).unwrap();
     assert_eq!(map[new], 3);
 }
 
@@ -340,7 +340,7 @@ fn release_retires_a_slot_whose_generation_ran_out() {
     map.detach(key).unwrap();
     assert!(map.release(key));
     assert_eq!(map.generation_at(key.idx().get()), Some(0));
-    assert_eq!(map.reattach(key, 1), Err(1));
+    assert_eq!(map.attach(key, 1), Err(1));
     // The retired slot is skipped, so the next value gets a new slot.
     assert_ne!(map.insert(1).idx(), key.idx());
 }
@@ -368,7 +368,7 @@ fn clear_and_retain_leave_a_detached_slot_alone() {
     assert_eq!(map.len(), 0);
     assert!(map.get(b).is_none());
 
-    map.reattach(a, value).unwrap();
+    map.attach(a, value).unwrap();
     assert_eq!(map[a], 1);
     assert_eq!(map.len(), 1);
 }
@@ -383,7 +383,7 @@ fn drain_and_iteration_skip_a_detached_slot() {
     assert_eq!(map.iter().map(|(k, _)| k).collect::<Vec<_>>(), [b]);
     assert_eq!(map.keys().count(), 1);
     assert_eq!(map.drain().collect::<Vec<_>>(), [(b, 2)]);
-    map.reattach(a, 1).unwrap();
+    map.attach(a, 1).unwrap();
     assert_eq!(map.into_iter().collect::<Vec<_>>(), [(a, 1)]);
 }
 
@@ -397,12 +397,12 @@ fn a_clone_keeps_the_slot_detached() {
     assert!(clone.get(a).is_none());
     let other = clone.insert(9);
     assert_ne!(other.idx(), a.idx());
-    clone.reattach(a, value).unwrap();
+    clone.attach(a, value).unwrap();
     assert_eq!(clone[a], 1);
 
     let mut copy = GenMap::new();
     copy.clone_from(&map);
-    copy.reattach(a, 7).unwrap();
+    copy.attach(a, 7).unwrap();
     assert_eq!(copy[a], 7);
 }
 
@@ -423,12 +423,12 @@ fn a_detached_value_is_dropped_once_and_only_by_its_owner() {
 }
 
 #[test]
-fn a_reattached_value_is_dropped_with_the_map() {
+fn an_attached_value_is_dropped_with_the_map() {
     let tracker = DropTracker::new();
     let mut map = GenMap::new();
     let a = map.insert(tracker.make_item());
     let value = map.detach(a).unwrap();
-    assert!(map.reattach(a, value).is_ok());
+    assert!(map.attach(a, value).is_ok());
     tracker.assert_none_dropped();
     drop(map);
     tracker.assert_all_dropped_exactly_once(1);
@@ -457,6 +457,6 @@ fn detach_lets_a_value_use_the_map() {
 
     let mut node = map.detach(root).unwrap();
     node.total = node.children.iter().map(|child| map[*child].total).sum();
-    assert!(map.reattach(root, node).is_ok());
+    assert!(map.attach(root, node).is_ok());
     assert_eq!(map[root].total, 3);
 }

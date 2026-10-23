@@ -97,7 +97,7 @@ fn the_parts_of_a_gen_map_hold_its_slots_free_list_and_count() {
     assert_eq!(map.insert("g").idx(), b.idx());
     assert_eq!(map.insert("h").idx().get(), 5);
     // The slot of `a` is still detached under `a`.
-    assert_eq!(map.reattach(a, "a"), Ok(()));
+    assert_eq!(map.attach(a, "a"), Ok(()));
     assert_eq!(map[a], "a");
 }
 
@@ -164,7 +164,7 @@ fn a_gen_map_built_by_hand_follows_its_free_list() {
     assert_eq!(map.insert("c"), key(3, 3));
     assert_eq!(map.insert("d"), key(5, 1));
     assert_eq!(map.generation_at(2), Some(0));
-    assert_eq!(map.reattach(key(4, 5), "e"), Ok(()));
+    assert_eq!(map.attach(key(4, 5), "e"), Ok(()));
     assert_eq!(map[key(4, 5)], "e");
     assert_eq!(map.len(), 5);
 }

@@ -7,9 +7,9 @@
 use crate::map::{Gen, Idx};
 use crate::tests::LenCheck;
 use crate::{
-    u1, DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
-    GetDisjointMutError, InsertError, InsertWithError, KeepLen, Key, KeyConfig, KeyPiece,
-    MapConfig, MapKeyConfig, NoLen, Packed, SingleVec, Split,
+    u1, DefaultMapConfig, FullError, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
+    GetDisjointMutError, InsertWithError, KeepLen, Key, KeyConfig, KeyPiece, MapConfig,
+    MapKeyConfig, NoLen, Packed, SingleVec, Split,
 };
 use std::vec::Vec;
 
@@ -276,7 +276,9 @@ impl Rng {
 struct Model<C: GenMapConfig> {
     /// Every valid key and the value under it.
     live: Vec<(Key<MapKeyConfig<C>>, u32)>,
-    /// Keys whose value was detached and not reattached yet.
+    /// Keys whose value `detach` took out, and keys that `reserve_key` or
+    /// `try_reserve_key` returned, until `attach` or `release` is called for
+    /// them.
     detached: Vec<Key<MapKeyConfig<C>>>,
     /// Keys whose value was removed. None of them may match anything, and a
     /// config that retires slots never hands one out again. A config that
@@ -349,8 +351,9 @@ where
             430..=449 => retire(&mut map, &mut model, &mut rng),
             450..=499 => look_up_invalid(&mut map, &mut model, &mut rng),
             500..=599 => overwrite(&mut map, &mut model, &mut rng),
-            600..=669 => detach(&mut map, &mut model, &mut rng),
-            670..=719 => reattach(&mut map, &mut model, &mut rng),
+            600..=649 => detach(&mut map, &mut model, &mut rng),
+            650..=669 => reserve(&mut map, &mut model, &mut rng),
+            670..=719 => attach(&mut map, &mut model, &mut rng),
             720..=739 => release(&mut map, &mut model, &mut rng),
             740..=769 => retain(&mut map, &mut model, &mut rng),
             770..=819 => get_disjoint(&mut map, &mut model, &mut rng),
@@ -403,33 +406,71 @@ fn insert<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: 
     match map.try_insert(value) {
         Ok(key) => {
             assert_eq!(Some(key), promised);
-            assert!(model.live.iter().all(|(live, _)| *live != key));
-            assert!(!model.detached.contains(&key));
-            if C::WRAP_ON_OVERFLOW {
-                model.dead.retain(|dead| *dead != key);
-            } else {
-                assert!(!model.dead.contains(&key));
-            }
+            check_new_key(model, key);
             model.live.push((key, value));
         }
-        Err(InsertError::IndexExhausted(back)) => {
+        Err(error) => {
+            let (full, back) = error.into_parts();
             assert_eq!(back, value);
             assert!(promised.is_none());
+            assert_full(map, model, &full);
+        }
+    }
+}
+
+fn reserve<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+    // A reserved key is the key the next insert would get.
+    let promised = map.vacant_entry().ok().map(|entry| entry.key());
+    // `reserve_key` panics when the map is full, so it only runs while the
+    // map has room.
+    let reserved = if promised.is_some() && rng.chance(50) {
+        Ok(map.reserve_key())
+    } else {
+        map.try_reserve_key()
+    };
+    match reserved {
+        Ok(key) => {
+            assert_eq!(Some(key), promised);
+            check_new_key(model, key);
+            model.detached.push(key);
+        }
+        Err(full) => {
+            assert!(promised.is_none());
+            assert_full(map, model, &full);
+        }
+    }
+}
+
+/// Checks that `key`, which the map just handed out, is not a valid, detached
+/// or removed key in the model. A config that wraps can hand out a removed key
+/// again, so for such a config, this function takes `key` out of `dead`
+/// instead of checking it.
+fn check_new_key<C: GenMapConfig>(model: &mut Model<C>, key: Key<MapKeyConfig<C>>) {
+    assert!(model.live.iter().all(|(live, _)| *live != key));
+    assert!(!model.detached.contains(&key));
+    if C::WRAP_ON_OVERFLOW {
+        model.dead.retain(|dead| *dead != key);
+    } else {
+        assert!(!model.dead.contains(&key));
+    }
+}
+
+/// Checks that the map is full for the reason that `full` gives.
+fn assert_full<C: GenMapConfig, E>(map: &GenMap<u32, C>, model: &Model<C>, full: &FullError<E>) {
+    match full {
+        FullError::IndexExhausted => {
             // Every slot the keys can address exists.
             assert_eq!(Some(map.slots_len()), slot_count_limit::<C>());
-            assert_no_slot_is_free(map, model);
         }
-        Err(InsertError::StorageFull(back, _)) => {
-            assert_eq!(back, value);
-            assert!(promised.is_none());
+        FullError::StorageFull(_) => {
             // The storage holds as many slots as it can. The index has not
             // run out as well, because when both run out, the map reports
             // the index.
             assert_eq!(map.slots_len(), map.capacity());
             assert!(slot_count_limit::<C>().is_none_or(|limit| map.slots_len() < limit));
-            assert_no_slot_is_free(map, model);
         }
     }
+    assert_no_slot_is_free(map, model);
 }
 
 /// Checks that every slot holds a value, is detached or is retired, so none
@@ -516,7 +557,7 @@ fn detach<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: 
     model.detached.push(key);
 }
 
-fn reattach<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
+fn attach<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng: &mut Rng) {
     // Now and then the key is a live or dead one instead. The map must hand
     // the value back, and `check` then confirms that nothing changed.
     if rng.chance(20) {
@@ -530,7 +571,7 @@ fn reattach<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng
             None => model.dead[i - model.live.len()],
         };
         let value = model.fresh_value();
-        assert_eq!(map.reattach(key, value), Err(value));
+        assert_eq!(map.attach(key, value), Err(value));
         return;
     }
     if model.detached.is_empty() {
@@ -538,7 +579,7 @@ fn reattach<C: GenMapConfig>(map: &mut GenMap<u32, C>, model: &mut Model<C>, rng
     }
     let key = model.detached.swap_remove(rng.below(model.detached.len()));
     let value = model.fresh_value();
-    map.reattach(key, value).unwrap();
+    map.attach(key, value).unwrap();
     model.live.push((key, value));
 }
 

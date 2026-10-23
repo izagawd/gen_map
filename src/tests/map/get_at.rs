@@ -49,7 +49,7 @@ fn get_at_is_none_for_a_detached_slot() {
     let key = map.insert(1);
     let value = map.detach(key).unwrap();
     assert_eq!(map.get_at(key.idx().get()), None);
-    map.reattach(key, value).unwrap();
+    map.attach(key, value).unwrap();
     assert_eq!(map.get_at(key.idx().get()), Some((key, &1)));
 }
 
@@ -168,7 +168,7 @@ fn generation_at_follows_the_life_of_a_slot() {
 
     let value = map.detach(key).unwrap();
     assert_eq!(map.generation_at(0), Some(4));
-    map.reattach(key, value).unwrap();
+    map.attach(key, value).unwrap();
     assert_eq!(map.generation_at(0), Some(3));
 
     assert_eq!(map.generation_at(1), None);
@@ -262,7 +262,7 @@ fn get_disjoint_mut_at_rejects_a_vacant_detached_or_retired_slot() {
         map.get_disjoint_mut_at([a.idx().get(), c.idx().get()]),
         Err(GetDisjointMutAtError::NoValue)
     );
-    map.reattach(c, value).unwrap();
+    map.attach(c, value).unwrap();
     assert!(map
         .get_disjoint_mut_at([a.idx().get(), c.idx().get()])
         .is_ok());

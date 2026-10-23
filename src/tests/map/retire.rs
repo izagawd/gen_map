@@ -58,7 +58,7 @@ fn retire_with_an_invalid_key_is_none_and_changes_nothing() {
     assert_eq!(map[live], 2);
 
     // The detached slot was left alone, so its key still works.
-    map.reattach(detached, 30).unwrap();
+    map.attach(detached, 30).unwrap();
     assert_eq!(map[detached], 30);
 
     assert_eq!(map.retire(live), Some(2));
@@ -135,7 +135,7 @@ fn a_retired_slot_stays_retired_until_reset() {
 }
 
 #[test]
-fn reattach_fails_for_a_retired_key() {
+fn attach_fails_for_a_retired_key() {
     let mut map = GenMap::new();
     let key = map.insert(1);
     map.retire(key);

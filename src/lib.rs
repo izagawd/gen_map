@@ -112,7 +112,7 @@
 //! Two methods also let a key match a value other than the one it was handed
 //! out for. [`reset`](GenMap::reset) removes every slot and starts the
 //! generations over, so a key from before the reset can match a value inserted
-//! after it. [`reattach`](GenMap::reattach) puts any value under a key whose
+//! after it. [`attach`](GenMap::attach) puts any value under a key whose
 //! value [`detach`](GenMap::detach) took out, and the key then matches that
 //! value.
 //!

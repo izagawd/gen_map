@@ -23,7 +23,7 @@ fn unit_values_work_like_any_other() {
 
     assert_eq!(map.detach(again), Some(()));
     assert!(map.get(again).is_none());
-    map.reattach(again, ()).unwrap();
+    map.attach(again, ()).unwrap();
     assert_eq!(map.get(again), Some(&()));
 
     assert!(map.get_disjoint_mut([keys[0], keys[1]]).is_ok());
@@ -75,7 +75,7 @@ fn a_dense_map_of_unit_values_keeps_a_key_for_each_value() {
     assert_eq!(map.remove(keys[2]), Some(()));
     assert!(map.get(keys[2]).is_none());
     assert_eq!(map.detach(keys[4]), Some(()));
-    map.reattach(keys[4], ()).unwrap();
+    map.attach(keys[4], ()).unwrap();
     map.retain(|key, _| key != keys[7]);
     assert_eq!(map.len(), 8);
 

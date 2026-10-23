@@ -5,8 +5,8 @@
 
 use crate::tests::{Bomb, Cfg, CloneBomb, DropTracker};
 use crate::{
-    DenseError, DenseGenMap, DenseGenMapConfig, GenSlotItem, InsertError, InsertWithError, Key,
-    MapConfig, Packed, PairVec,
+    DenseError, DenseGenMap, DenseGenMapConfig, FullError, GenSlotItem, InsertError,
+    InsertWithError, Key, MapConfig, Packed, PairVec,
 };
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -67,7 +67,7 @@ fn a_freed_slot_is_reused_under_a_newer_key() {
 }
 
 #[test]
-fn detach_reattach_and_release_move_values_like_remove_and_insert() {
+fn detach_attach_and_release_move_values_like_remove_and_insert() {
     let mut map = DenseGenMap::new();
     let a = map.insert(1);
     let b = map.insert(2);
@@ -80,17 +80,50 @@ fn detach_reattach_and_release_move_values_like_remove_and_insert() {
     assert_ne!(d.idx(), a.idx());
 
     // The value goes back at the end of the values.
-    map.reattach(a, 10).unwrap();
+    map.attach(a, 10).unwrap();
     assert_eq!(values(&map), [3, 2, 4, 10]);
     assert_eq!(map[a], 10);
-    assert_eq!(map.reattach(a, 11), Err(11));
+    assert_eq!(map.attach(a, 11), Err(11));
 
     assert_eq!(map.detach(b), Some(2));
     assert!(map.release(b));
     assert!(!map.release(b));
-    assert_eq!(map.reattach(b, 12), Err(12));
+    assert_eq!(map.attach(b, 12), Err(12));
     assert_eq!(map.insert(5).idx(), b.idx());
     assert_eq!(map[c], 3);
+}
+
+#[test]
+fn a_reserved_key_gets_a_slot_but_no_value_until_attach() {
+    let mut map = DenseGenMap::new();
+    let a = map.reserve_key();
+    let b = map.insert(1);
+    assert_ne!(b.idx(), a.idx());
+    assert_eq!(map.len(), 1);
+    assert_eq!(map.slots_len(), 2);
+    assert!(map.get(a).is_none());
+
+    // The value goes at the end of the values.
+    map.attach(a, 2).unwrap();
+    assert_eq!(values(&map), [1, 2]);
+    assert_eq!(map.keys().collect::<Vec<_>>(), [b, a]);
+    assert_eq!(map.attach(a, 3), Err(3));
+
+    let c = map.reserve_key();
+    assert!(map.release(c));
+    assert_eq!(map.insert(4).idx(), c.idx());
+    assert!(map.get(c).is_none());
+}
+
+#[test]
+fn try_reserve_key_reports_index_exhausted() {
+    let mut map = DenseGenMap::<u32, Small>::new_with_config();
+    for _ in 0..255 {
+        map.reserve_key();
+    }
+    assert_eq!(map.try_reserve_key(), Err(FullError::IndexExhausted));
+    assert!(map.is_empty());
+    assert_eq!(map.slots_len(), 255);
 }
 
 #[test]
@@ -103,7 +136,7 @@ fn clear_keeps_the_slots_and_leaves_a_detached_slot_detached() {
     assert!(map.is_empty());
     assert_eq!(map.slots_len(), 2);
     assert!(map.get(a).is_none());
-    map.reattach(b, 3).unwrap();
+    map.attach(b, 3).unwrap();
     assert_eq!(map[b], 3);
     assert_eq!(values(&map), [3]);
 
@@ -533,25 +566,57 @@ mod capped {
     }
 
     #[test]
-    fn reattach_hands_the_value_back_when_the_keys_are_full() {
+    fn attach_hands_the_value_back_when_the_keys_are_full() {
         let mut map = DenseGenMap::<u32, Caps<4, 4, 2>>::new_with_config();
         let a = map.insert(1);
         map.insert(2);
         map.detach(a).unwrap();
         map.insert(3);
-        assert_eq!(map.reattach(a, 4), Err(4));
+        assert_eq!(map.attach(a, 4), Err(4));
         assert!(map.release(a));
     }
 
     #[test]
-    fn reattach_hands_the_value_back_when_the_values_are_full() {
+    fn attach_hands_the_value_back_when_the_values_are_full() {
         let mut map = DenseGenMap::<u32, Caps<4, 2, 4>>::new_with_config();
         let a = map.insert(1);
         map.insert(2);
         map.detach(a).unwrap();
         map.insert(3);
-        assert_eq!(map.reattach(a, 4), Err(4));
+        assert_eq!(map.attach(a, 4), Err(4));
         assert!(map.release(a));
+    }
+
+    #[test]
+    fn reserve_key_only_needs_room_for_a_slot() {
+        let mut map = DenseGenMap::<u32, Caps<4, 2, 4>>::new_with_config();
+        let a = map.insert(1);
+        map.insert(2);
+        // The values are full, but the slot storage still has room.
+        let key = map.try_reserve_key().unwrap();
+        assert_eq!(map.attach(key, 3), Err(3));
+        map.remove(a);
+        map.attach(key, 3).unwrap();
+        assert_eq!(map[key], 3);
+    }
+
+    #[test]
+    fn try_reserve_key_returns_the_slot_storages_own_error() {
+        let mut map = DenseGenMap::<u32, Caps<2, 4, 4>>::new_with_config();
+        map.reserve_key();
+        map.reserve_key();
+        let error: FullError<arrayvec::CapacityError> = map.try_reserve_key().unwrap_err();
+        assert!(matches!(error, FullError::StorageFull(_)));
+        assert_eq!(map.slots_len(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "DenseGenMap is full")]
+    fn reserve_key_panics_when_the_slot_storage_is_full() {
+        let mut map = DenseGenMap::<u32, Caps<2, 4, 4>>::new_with_config();
+        for _ in 0..3 {
+            map.reserve_key();
+        }
     }
 }
 
