@@ -281,7 +281,8 @@ where
     }
 
     /// The fallible form of [`reserve`](Self::reserve). After it returns `Ok`,
-    /// the next `additional` inserts cannot fail for lack of storage.
+    /// the next `additional` calls that insert a value, reserve a key or attach
+    /// a value cannot fail for lack of storage.
     ///
     /// # Errors
     ///
@@ -885,8 +886,9 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
 
     /// Puts a value under a detached key, which is a key whose value
     /// [`detach`](Self::detach) took out or a key that
-    /// [`reserve_key`](Self::reserve_key) returned. Afterwards, the map has a
-    /// value for the key, at the end of the values.
+    /// [`reserve_key`](Self::reserve_key) or
+    /// [`try_reserve_key`](Self::try_reserve_key) returned. Afterwards, the map
+    /// has a value for the key, at the end of the values.
     ///
     /// # Errors
     ///
@@ -916,9 +918,10 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
 
     /// Frees the slot of a detached key, which is a key whose value
     /// [`detach`](Self::detach) took out or a key that
-    /// [`reserve_key`](Self::reserve_key) returned. It works the same way as
-    /// [`GenMap::release`](crate::GenMap::release). Returns `false`, and leaves
-    /// the map as it was, if the key is not detached.
+    /// [`reserve_key`](Self::reserve_key) or
+    /// [`try_reserve_key`](Self::try_reserve_key) returned. It works the same
+    /// way as [`GenMap::release`](crate::GenMap::release). Returns `false`, and
+    /// leaves the map as it was, if the key is not detached.
     #[inline]
     pub fn release(&mut self, key: Key<MapKeyConfig<C>>) -> bool {
         let Some(slot) = detached_slot::<_, C>(self.slots.as_mut_slice(), key) else {

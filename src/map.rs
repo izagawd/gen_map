@@ -412,7 +412,8 @@ where
     }
 
     /// The fallible form of [`reserve`](Self::reserve). After it returns `Ok`,
-    /// the next `additional` inserts cannot fail for lack of storage.
+    /// the next `additional` calls that insert a value or reserve a key cannot
+    /// fail for lack of storage.
     ///
     /// # Errors
     ///
@@ -1276,8 +1277,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
 
     /// Puts a value under a detached key, which is a key whose value
     /// [`detach`](Self::detach) took out or a key that
-    /// [`reserve_key`](Self::reserve_key) returned. Afterwards, the map has a
-    /// value for the key.
+    /// [`reserve_key`](Self::reserve_key) or
+    /// [`try_reserve_key`](Self::try_reserve_key) returned. Afterwards, the map
+    /// has a value for the key.
     ///
     /// # Errors
     ///
@@ -1297,10 +1299,11 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
 
     /// Frees the slot of a detached key, which is a key whose value
     /// [`detach`](Self::detach) took out or a key that
-    /// [`reserve_key`](Self::reserve_key) returned. The slot goes on the free
-    /// list or retires, as a slot does when its value is removed, so
-    /// [`attach`](Self::attach) fails for the key. Returns `false`, and
-    /// leaves the map as it was, if the key is not detached.
+    /// [`reserve_key`](Self::reserve_key) or
+    /// [`try_reserve_key`](Self::try_reserve_key) returned. The slot goes on
+    /// the free list or retires, as a slot does when its value is removed, so
+    /// [`attach`](Self::attach) fails for the key. Returns `false`, and leaves
+    /// the map as it was, if the key is not detached.
     ///
     /// # Examples
     ///
@@ -1335,9 +1338,10 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     }
 
     /// Returns a new key without putting a value under it. The key is
-    /// detached, as if [`detach`](Self::detach) had taken its value out, so no
-    /// insert uses its slot until [`attach`](Self::attach) puts a value under
-    /// the key or [`release`](Self::release) frees the slot.
+    /// detached, as if [`detach`](Self::detach) had taken its value out, so its
+    /// slot stays reserved for it until [`attach`](Self::attach) puts a value
+    /// under the key, [`release`](Self::release) frees the slot or
+    /// [`reset`](Self::reset) removes it.
     ///
     /// # Panics
     ///

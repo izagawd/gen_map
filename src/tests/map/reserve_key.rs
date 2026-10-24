@@ -20,8 +20,8 @@ impl GenMapConfig for Wrap4 {
     type Storage<S: GenSlotItem> = Vec<S>;
 }
 
-/// A map whose only slot is free, with the generation that gives the next key
-/// the largest generation its key config can hold.
+/// A map with no values, whose next key gets the largest generation its key
+/// config can hold.
 fn before_the_largest_generation<C: GenMapConfig>() -> GenMap<i32, C>
 where
     GenMap<i32, C>: Default,

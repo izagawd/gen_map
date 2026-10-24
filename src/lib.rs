@@ -79,8 +79,8 @@
 //!
 //! # How it works
 //!
-//! A key holds the index of its value's slot and the generation that slot had
-//! when the key was handed out. A key only matches its slot while the slot's
+//! A key holds the index of its value's slot and the generation that slot has
+//! while it holds the value. A key only matches its slot while the slot's
 //! generation equals the key's. A new slot starts at generation zero, and the
 //! map adds one to a slot's generation when it inserts a value into the slot
 //! and again when [`remove`](GenMap::remove) takes the value out. So the
