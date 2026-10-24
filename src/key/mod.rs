@@ -30,8 +30,8 @@ impl<K: KeyConfig> Key<K> {
         K::Idx::from_non_max(self.idx())
     }
 
-    /// The generation the key's slot had when the key was handed out. The
-    /// key matches the slot only while the slot still has this generation.
+    /// The generation the key's slot has while the slot holds the key's value.
+    /// The key matches the slot only while the slot has this generation.
     #[inline]
     pub fn generation(&self) -> Odd<K::Gen> {
         self.repr.generation()

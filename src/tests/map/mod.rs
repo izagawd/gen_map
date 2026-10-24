@@ -7,6 +7,7 @@ mod get_at;
 mod iter;
 mod key_at;
 mod overflow;
+mod reserve_key;
 mod reset;
 mod retain;
 mod retire;

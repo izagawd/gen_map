@@ -35,7 +35,7 @@ pub(crate) type Gen<C> = MapGen<C>;
 /// stores the index of the next free slot, or the largest value of the index
 /// type if it is the last free slot. No slot ever has that index, so it can't
 /// be mistaken for the index of a real slot. A detached slot stores its own
-/// index, which is how [`GenMap::reattach`] tells a detached slot apart from a
+/// index, which is how [`GenMap::attach`] tells a detached slot apart from a
 /// free or retired one. When the map retires a slot, it stores the largest
 /// value of the index type there, so the slot never looks detached.
 pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
@@ -204,12 +204,12 @@ pub(crate) fn detached_generation<C: MapConfig>(generation: Odd<Gen<C>>) -> Even
     generation.wrapping_next()
 }
 
-/// Returns the slot at the index of `key` if the value of `key` is detached
-/// from it, or `None` if it is not.
+/// Returns the slot at the index of `key` if the slot is detached under `key`,
+/// or `None` if it is not.
 ///
-/// When a key's value is detached, the slot's generation is set to what
-/// [`detached_generation`] returns for the key's generation, and the slot's
-/// `U` is set to the slot's own index. A slot on the free list has another
+/// When a map detaches a slot under a key, it sets the slot's generation to
+/// what [`detached_generation`] returns for the key's generation, and the
+/// slot's `U` to the slot's own index. A slot on the free list has another
 /// slot's index or [`no_slot`] in its `U`, and a retired slot has `no_slot`.
 /// So a slot is detached under a key only if it has that generation and its
 /// own index in its `U`.
@@ -252,8 +252,7 @@ pub(crate) fn freed_parts<C: MapConfig>(
 /// `CapacityError` for an `ArrayVec` and `SmallVecError` for a `SmallVec`.
 pub type StorageError<T, C> = <<C as GenMapConfig>::Storage<MapSlot<T, C>> as SliceStorage>::Error;
 
-/// Where the next inserted value will go, worked out before anything is
-/// written.
+/// The slot the next key points at, worked out before anything is written.
 struct Target<C: MapConfig> {
     idx: Idx<C>,
     /// The generation the new key gets.
@@ -264,7 +263,7 @@ struct Target<C: MapConfig> {
 }
 
 impl<C: MapConfig> Target<C> {
-    /// The key that a value gets when it is put at this target.
+    /// The key that points at this target.
     #[inline]
     fn key(&self) -> Key<MapKeyConfig<C>> {
         // SAFETY: a `Target` only ever comes from `next_target`, which picks an
@@ -413,7 +412,8 @@ where
     }
 
     /// The fallible form of [`reserve`](Self::reserve). After it returns `Ok`,
-    /// the next `additional` inserts cannot fail for lack of storage.
+    /// the next `additional` calls that insert a value or reserve a key cannot
+    /// fail for lack of storage.
     ///
     /// # Errors
     ///
@@ -1061,9 +1061,10 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         Ok(VacantEntry { map: self, target })
     }
 
-    /// Works out where the next value goes without writing any slot. When a
-    /// slot has to be pushed, this makes sure there is room for it, so that
-    /// the push in [`fill`](Self::fill) cannot fail.
+    /// Works out the slot the next key points at, without writing any slot.
+    /// When a slot has to be pushed, this makes sure there is room for it, so
+    /// that the push in [`fill`](Self::fill) or
+    /// [`try_reserve_key`](Self::try_reserve_key) cannot fail.
     ///
     /// When the keys have no index left for a new slot and the storage is
     /// also full, the error is `IndexExhausted`.
@@ -1224,10 +1225,10 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     }
 
     /// Takes the value out of the map while keeping its slot reserved for
-    /// `key`, so that [`reattach`](Self::reattach) can put a value back under
+    /// `key`, so that [`attach`](Self::attach) can put a value back under
     /// the same key. Returns `None` if there is no value for `key`.
     ///
-    /// Until `reattach` puts a value back or [`release`](Self::release) frees
+    /// Until `attach` puts a value back or [`release`](Self::release) frees
     /// the slot, [`contains_key`](Self::contains_key) returns `false` for the
     /// key, and [`len`](Self::len) does not count the value if the config keeps
     /// a count. The slot is not on the free list in the meantime, so no insert
@@ -1236,11 +1237,11 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// While the slot is detached, its generation is one more than the key's
     /// generation, or zero if the key's generation is the largest value of the
     /// generation type. That generation is even, so no key matches it, and
-    /// `reattach` gives the slot the key's generation back.
+    /// `attach` gives the slot the key's generation back.
     ///
     /// [`clear`](Self::clear) and [`retain`](Self::retain) leave a detached
     /// slot as it is, since it holds no value. [`reset`](Self::reset) removes
-    /// every slot, detached ones included, so `reattach` fails for a key that
+    /// every slot, detached ones included, so `attach` fails for a key that
     /// was detached before the reset.
     ///
     /// # Examples
@@ -1257,7 +1258,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// let other = map.insert(2);
     /// assert_ne!(other.idx(), key.idx());
     ///
-    /// map.reattach(key, value + 10).unwrap();
+    /// map.attach(key, value + 10).unwrap();
     /// assert_eq!(map[key], 11);
     /// ```
     #[inline]
@@ -1274,8 +1275,11 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         Some(unsafe { slot.replace_odd_unchecked(detached, key.plain_idx()) })
     }
 
-    /// Puts a value back under a key whose value [`detach`](Self::detach)
-    /// took out. Afterwards, the map has a value for the key again.
+    /// Puts a value under a detached key, which is a key whose value
+    /// [`detach`](Self::detach) took out or a key that
+    /// [`reserve_key`](Self::reserve_key) or
+    /// [`try_reserve_key`](Self::try_reserve_key) returned. Afterwards, the map
+    /// has a value for the key.
     ///
     /// # Errors
     ///
@@ -1283,7 +1287,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// detached, or was detached and its slot has since been freed by
     /// [`release`](Self::release) or removed by [`reset`](Self::reset).
     #[inline]
-    pub fn reattach(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> Result<(), T> {
+    pub fn attach(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> Result<(), T> {
         let Some(slot) = detached_slot::<T, C>(self.slots.as_mut_slice(), key) else {
             return Err(value);
         };
@@ -1293,11 +1297,13 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         Ok(())
     }
 
-    /// Frees the slot of a key whose value [`detach`](Self::detach) took out,
-    /// without putting a value back. The slot goes on the free list or retires,
-    /// just as it would if the value had been removed, so
-    /// [`reattach`](Self::reattach) fails for the key. Returns `false`, and
-    /// leaves the map as it was, if the key is not detached.
+    /// Frees the slot of a detached key, which is a key whose value
+    /// [`detach`](Self::detach) took out or a key that
+    /// [`reserve_key`](Self::reserve_key) or
+    /// [`try_reserve_key`](Self::try_reserve_key) returned. The slot goes on
+    /// the free list or retires, as a slot does when its value is removed, so
+    /// [`attach`](Self::attach) fails for the key. Returns `false`, and leaves
+    /// the map as it was, if the key is not detached.
     ///
     /// # Examples
     ///
@@ -1309,7 +1315,7 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// map.detach(key).unwrap();
     ///
     /// assert!(map.release(key));
-    /// assert_eq!(map.reattach(key, 2), Err(2));
+    /// assert_eq!(map.attach(key, 2), Err(2));
     ///
     /// // The next insert reuses the freed slot under a newer key.
     /// let other = map.insert(3);
@@ -1329,6 +1335,83 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
         );
         slot.set_even(next, link);
         true
+    }
+
+    /// Returns a new key without putting a value under it. The key is
+    /// detached, as if [`detach`](Self::detach) had taken its value out, so its
+    /// slot stays reserved for it until [`attach`](Self::attach) puts a value
+    /// under the key, [`release`](Self::release) frees the slot or
+    /// [`reset`](Self::reset) removes it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the map is full, meaning none of the slots are free and
+    /// either its keys have no index left for a new slot or the storage cannot
+    /// make room for one. Use [`try_reserve_key`](Self::try_reserve_key) to get
+    /// an error instead.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::GenMap;
+    ///
+    /// // Each value holds the key of the other, so both keys have to exist
+    /// // before either value does.
+    /// let mut map = GenMap::new();
+    /// let a = map.reserve_key();
+    /// let b = map.reserve_key();
+    /// assert!(map.get(a).is_none());
+    ///
+    /// map.attach(a, b).unwrap();
+    /// map.attach(b, a).unwrap();
+    /// assert_eq!(map[a], b);
+    /// assert_eq!(map[b], a);
+    /// ```
+    #[inline]
+    pub fn reserve_key(&mut self) -> Key<MapKeyConfig<C>> {
+        match self.try_reserve_key() {
+            Ok(key) => key,
+            Err(full) => panic_full::<T, C>(full, self.slots.len()),
+        }
+    }
+
+    /// Like [`reserve_key`](Self::reserve_key), but a full map is an error
+    /// rather than a panic.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FullError::IndexExhausted`] if none of the slots are free
+    /// and the map's keys have no index left for a new one, and
+    /// [`FullError::StorageFull`] if none of them are free and the storage
+    /// cannot make room for another one.
+    #[inline]
+    pub fn try_reserve_key(
+        &mut self,
+    ) -> Result<Key<MapKeyConfig<C>>, FullError<StorageError<T, C>>> {
+        let target = self.next_target()?;
+        let detached = detached_generation::<C>(target.generation);
+        // A detached slot stores its own index, which `detached_slot` checks.
+        if target.from_free_list {
+            // SAFETY: `target.idx` is the index of the slot that was first on
+            // the free list when `next_target` looked, and nothing has changed
+            // since, so that slot still exists.
+            let slot = unsafe {
+                self.slots
+                    .as_mut_slice()
+                    .get_unchecked_mut(position_of::<C>(target.idx))
+            };
+            // SAFETY: the slot is first on the free list, so it holds no value
+            // and its generation is even.
+            self.next_free = unsafe { *slot.get_even_unchecked() };
+            slot.set_even(detached, target.idx);
+        } else {
+            let slot = Slot::new_even(detached, target.idx);
+            // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this
+            // slot, and no other `&mut` method of the storage has run since,
+            // so `SliceStorage` promises room for this push.
+            unsafe { self.slots.push_unchecked(slot) };
+        }
+        Ok(target.key())
     }
 
     /// Removes every value. The slots stay, and old keys stop matching just

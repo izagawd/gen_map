@@ -65,7 +65,7 @@ impl<Idx: KeyPiece, Gen: KeyPiece> crate::SparseSecondaryMapConfig for Cfg<Idx, 
     type ReplaceStrategy = NewerWins;
 }
 
-/// Checks that `reattach` refuses `key` because nothing is detached under
+/// Checks that `attach` refuses `key` because nothing is detached under
 /// it, hands `value` back, and leaves the map's length and the generation of
 /// the key's slot as they were.
 pub(crate) fn assert_not_detached<C: GenMapConfig<Len = KeepLen>>(
@@ -75,7 +75,7 @@ pub(crate) fn assert_not_detached<C: GenMapConfig<Len = KeepLen>>(
 ) {
     let len = map.len();
     let generation = map.generation_at(key.plain_idx());
-    assert_eq!(map.reattach(key, value), Err(value));
+    assert_eq!(map.attach(key, value), Err(value));
     assert_eq!(map.len(), len);
     assert_eq!(map.generation_at(key.plain_idx()), generation);
 }

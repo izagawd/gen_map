@@ -208,9 +208,9 @@ fn is_max_generation_is_true_only_at_the_last_generation() {
         key = map.insert(0);
     }
     assert!(key.is_max_generation());
-    // Detaching and reattaching leaves the key at the last generation.
+    // Detaching and attaching leaves the key at the last generation.
     let value = map.detach(key).unwrap();
-    map.reattach(key, value).unwrap();
+    map.attach(key, value).unwrap();
     assert!(map.contains_key(key));
 
     // The slot retires when its last value is removed, so the next value

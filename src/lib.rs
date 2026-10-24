@@ -79,8 +79,8 @@
 //!
 //! # How it works
 //!
-//! A key holds the index of its value's slot and the generation that slot had
-//! when the key was handed out. A key only matches its slot while the slot's
+//! A key holds the index of its value's slot and the generation that slot has
+//! while it holds the value. A key only matches its slot while the slot's
 //! generation equals the key's. A new slot starts at generation zero, and the
 //! map adds one to a slot's generation when it inserts a value into the slot
 //! and again when [`remove`](GenMap::remove) takes the value out. So the
@@ -112,7 +112,7 @@
 //! Two methods also let a key match a value other than the one it was handed
 //! out for. [`reset`](GenMap::reset) removes every slot and starts the
 //! generations over, so a key from before the reset can match a value inserted
-//! after it. [`reattach`](GenMap::reattach) puts any value under a key whose
+//! after it. [`attach`](GenMap::attach) puts any value under a key whose
 //! value [`detach`](GenMap::detach) took out, and the key then matches that
 //! value.
 //!

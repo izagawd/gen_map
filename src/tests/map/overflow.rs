@@ -164,7 +164,7 @@ fn a_u1_generation_that_wraps_lets_a_key_match_the_next_value_in_its_slot() {
 }
 
 #[test]
-fn a_u1_generation_detaches_and_reattaches() {
+fn a_u1_generation_detaches_and_attaches() {
     let mut map = GenMap::<u32, WrapU1>::new_with_config();
     let key = map.insert(1);
     assert_eq!(map.detach(key), Some(1));
@@ -174,7 +174,7 @@ fn a_u1_generation_detaches_and_reattaches() {
     let other = map.insert(2);
     assert_ne!(other.idx(), key.idx());
 
-    map.reattach(key, 3).unwrap();
+    map.attach(key, 3).unwrap();
     assert_eq!(map[key], 3);
     assert_eq!(map.detach(key), Some(3));
     assert!(map.release(key));

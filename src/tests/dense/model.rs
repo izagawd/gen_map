@@ -376,16 +376,27 @@ where
                     assert_eq!(sparse.retire(key), dense.retire(key), "{context:?}");
                 }
             }
-            54..=62 => {
+            54..=58 => {
                 if let Some(key) = pick(&known, &mut rng) {
                     assert_eq!(sparse.detach(key), dense.detach(key), "{context:?}");
                 }
             }
+            59..=62 => match (sparse.try_reserve_key(), dense.try_reserve_key()) {
+                (Ok(a), Ok(b)) => {
+                    assert_eq!(a, b, "{context:?}");
+                    if !known.contains(&a) {
+                        known.push(a);
+                    }
+                }
+                (Err(FullError::IndexExhausted), Err(FullError::IndexExhausted))
+                | (Err(FullError::StorageFull(_)), Err(FullError::StorageFull(_))) => {}
+                _ => panic!("the maps disagree on a reserved key at {context:?}"),
+            },
             63..=70 => {
                 if let Some(key) = pick(&known, &mut rng) {
                     assert_eq!(
-                        sparse.reattach(key, value),
-                        dense.reattach(key, value),
+                        sparse.attach(key, value),
+                        dense.attach(key, value),
                         "{context:?}"
                     );
                 }
