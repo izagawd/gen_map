@@ -126,17 +126,16 @@ fn slots_mut_and_set_len_remove_a_value_together() {
     let mut map = SecondaryMap::<u32>::new();
     map.insert(a, 1).unwrap();
     map.insert(b, 2).unwrap();
-    let len = map.len();
     let index = <<DefaultKeyConfig as KeyConfig>::Idx as KeyPiece>::from_non_max(b.idx())
         .into_usize()
         .unwrap();
 
     // SAFETY: the slot of `b` becomes a slot without a value and with
-    // generation zero, and the count drops by one, before the map is used
+    // generation zero, and the count drops to one, before the map is used
     // through any other method.
     unsafe {
         map.slots_mut()[index] = Slot::new_even(Even::ZERO, ());
-        map.set_len(len - 1);
+        map.set_len(1);
     }
     assert_eq!(map.len(), 1);
     assert_eq!(map.get(a), Some(&1));

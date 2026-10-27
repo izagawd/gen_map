@@ -444,14 +444,13 @@ impl<T, C: GenMapConfig<Len = KeepLen>> GenMap<T, C> {
     ///
     /// # Safety
     ///
-    /// `len` must fit in the index type of the map's keys. By the time the map
-    /// is used again through a method other than [`slots`](Self::slots),
-    /// [`slots_mut`](Self::slots_mut) and [`set_len`](Self::set_len), the count
-    /// must follow the rules that [`GenMapRawParts`] lists.
+    /// By the time the map is used again through a method other than
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut) and
+    /// [`set_len`](Self::set_len), the count must follow the rules that
+    /// [`GenMapRawParts`] lists.
     #[inline]
-    pub unsafe fn set_len(&mut self, len: usize) {
-        // SAFETY: the caller promises that `len` fits in the index type.
-        self.len = unsafe { Idx::<C>::from_usize_unchecked(len) };
+    pub unsafe fn set_len(&mut self, len: MapIdx<C>) {
+        self.len = len;
     }
 }
 

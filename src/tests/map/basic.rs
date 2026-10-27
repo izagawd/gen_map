@@ -31,17 +31,16 @@ fn slots_mut_and_set_len_remove_a_value_together() {
     let mut map = GenMap::new();
     let a = map.insert(1u32);
     let b = map.insert(2);
-    let len = map.len();
     let index = <<DefaultKeyConfig as KeyConfig>::Idx as KeyPiece>::from_non_max(b.idx())
         .into_usize()
         .unwrap();
     let retired = <<DefaultKeyConfig as KeyConfig>::Idx as KeyPiece>::MAX;
 
-    // SAFETY: the slot of `b` becomes a retired slot, and the count drops by
+    // SAFETY: the slot of `b` becomes a retired slot, and the count drops to
     // one, before the map is used through any other method.
     unsafe {
         map.slots_mut()[index] = Slot::new_even(Even::ZERO, retired);
-        map.set_len(len - 1);
+        map.set_len(1);
     }
     assert_eq!(map.len(), 1);
     assert_eq!(map.get(a), Some(&1));
