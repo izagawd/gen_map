@@ -49,7 +49,8 @@ use core::iter::FusedIterator;
 ///   leave the storage as it was if it has no pairs.
 /// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n` pairs,
 ///   the storage must have room for the next `n` calls of `push_unchecked`,
-///   as long as no other `&mut self` method of this trait runs in between.
+///   as long as nothing but those calls adds pairs to the storage or changes
+///   its capacity in between.
 /// - When the rule above promises room, `push_unchecked` must append both
 ///   items.
 /// - `clear` must drop every item and leave the storage empty. It must leave
@@ -255,8 +256,10 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
     ///
     /// # Safety
     ///
-    /// By the time the `SplitPair` is used again, the storage must hold as many
-    /// items as the storage of the second items.
+    /// By the time the `SplitPair` is used again through a method other than
+    /// [`first`](Self::first), `first_mut`, [`second`](Self::second) and
+    /// [`second_mut`](Self::second_mut), the storage must hold as many items as
+    /// the storage of the second items.
     #[inline]
     pub unsafe fn first_mut(&mut self) -> &mut A {
         &mut self.first
@@ -277,7 +280,9 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
     ///
     /// # Safety
     ///
-    /// By the time the `SplitPair` is used again, the storage must hold as many
+    /// By the time the `SplitPair` is used again through a method other than
+    /// [`first`](Self::first), [`first_mut`](Self::first_mut),
+    /// [`second`](Self::second) and `second_mut`, the storage must hold as many
     /// items as the storage of the first items.
     #[inline]
     pub unsafe fn second_mut(&mut self) -> &mut B {

@@ -352,9 +352,10 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// By the time the map is used again, the slots must follow the rules that
-    /// [`SecondaryMapRawParts`] lists, with the other fields of the map as they
-    /// are.
+    /// By the time the map is used again through a method other than
+    /// [`slots`](Self::slots) and `slots_mut`, the slots must follow the rules
+    /// that [`SecondaryMapRawParts`] lists, with the other fields of the map as
+    /// they are.
     #[inline]
     pub unsafe fn slots_mut(
         &mut self,

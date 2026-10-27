@@ -542,8 +542,9 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// let bob = people.insert("Bob");
     /// ages.insert(bob, 25).unwrap();
     ///
-    /// // The slot at index 1 holds Bob's age, which sits at position zero.
-    /// // The slot at index 0 belongs to Alice, who has no age.
+    /// // The slot at index 1 holds Bob's age, which sits at position zero. The
+    /// // slot at index 0, which is Alice's index, holds no value because Alice
+    /// // has no age.
     /// assert_eq!(ages.position_at(1), Some(0));
     /// assert_eq!(ages.position_at(0), None);
     /// ```
@@ -953,7 +954,9 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// By the time the map is used again, the slots must follow the rules that
+    /// By the time the map is used again through a method other than
+    /// [`slots`](Self::slots), `slots_mut`, [`pairs`](Self::pairs) and
+    /// [`pairs_mut`](Self::pairs_mut), the slots must follow the rules that
     /// [`DenseSecondaryMapRawParts`] lists, with the other fields of the map as
     /// they are.
     #[inline]
@@ -987,9 +990,11 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// By the time the map is used again, the pairs must follow the rules that
-    /// [`DenseSecondaryMapRawParts`] lists, with the other fields of the map as
-    /// they are.
+    /// By the time the map is used again through a method other than
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut),
+    /// [`pairs`](Self::pairs) and `pairs_mut`, the pairs must follow the rules
+    /// that [`DenseSecondaryMapRawParts`] lists, with the other fields of the
+    /// map as they are.
     #[inline]
     pub unsafe fn pairs_mut(
         &mut self,
