@@ -1197,9 +1197,10 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     ///
     /// # Safety
     ///
-    /// Changes made through the returned reference must keep the slots
-    /// following the rules that [`DenseGenMapRawParts`] lists, with the other
-    /// fields of the map as they are.
+    /// By the time the map is used again through a method other than
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut),
+    /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the slots
+    /// must follow the rules that [`DenseGenMapRawParts`] lists.
     #[inline]
     pub unsafe fn slots(&self) -> &<C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>> {
         &self.slots
@@ -1212,10 +1213,9 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// # Safety
     ///
     /// By the time the map is used again through a method other than
-    /// [`slots`](Self::slots), `slots_mut`, [`pairs`](Self::pairs) and
-    /// [`pairs_mut`](Self::pairs_mut), the slots must follow the rules that
-    /// [`DenseGenMapRawParts`] lists, with the other fields of the map as they
-    /// are.
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut),
+    /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the slots
+    /// must follow the rules that [`DenseGenMapRawParts`] lists.
     #[inline]
     pub unsafe fn slots_mut(
         &mut self,
@@ -1230,9 +1230,10 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     ///
     /// # Safety
     ///
-    /// Changes made through the returned reference must keep the pairs
-    /// following the rules that [`DenseGenMapRawParts`] lists, with the other
-    /// fields of the map as they are.
+    /// By the time the map is used again through a method other than
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut),
+    /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the pairs
+    /// must follow the rules that [`DenseGenMapRawParts`] lists.
     #[inline]
     pub unsafe fn pairs(&self) -> &<C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> {
         &self.pairs
@@ -1247,9 +1248,8 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     ///
     /// By the time the map is used again through a method other than
     /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut),
-    /// [`pairs`](Self::pairs) and `pairs_mut`, the pairs must follow the rules
-    /// that [`DenseGenMapRawParts`] lists, with the other fields of the map as
-    /// they are.
+    /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the pairs
+    /// must follow the rules that [`DenseGenMapRawParts`] lists.
     #[inline]
     pub unsafe fn pairs_mut(
         &mut self,

@@ -245,8 +245,10 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
     ///
     /// # Safety
     ///
-    /// Changes made through the returned reference must keep the storage
-    /// holding as many items as the storage of the second items.
+    /// By the time the `SplitPair` is used again through a method other than
+    /// [`first`](Self::first), [`first_mut`](Self::first_mut),
+    /// [`second`](Self::second) and [`second_mut`](Self::second_mut), the
+    /// storage must hold as many items as the storage of the second items.
     #[inline]
     pub unsafe fn first(&self) -> &A {
         &self.first
@@ -257,9 +259,9 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
     /// # Safety
     ///
     /// By the time the `SplitPair` is used again through a method other than
-    /// [`first`](Self::first), `first_mut`, [`second`](Self::second) and
-    /// [`second_mut`](Self::second_mut), the storage must hold as many items as
-    /// the storage of the second items.
+    /// [`first`](Self::first), [`first_mut`](Self::first_mut),
+    /// [`second`](Self::second) and [`second_mut`](Self::second_mut), the
+    /// storage must hold as many items as the storage of the second items.
     #[inline]
     pub unsafe fn first_mut(&mut self) -> &mut A {
         &mut self.first
@@ -269,8 +271,10 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
     ///
     /// # Safety
     ///
-    /// Changes made through the returned reference must keep the storage
-    /// holding as many items as the storage of the first items.
+    /// By the time the `SplitPair` is used again through a method other than
+    /// [`first`](Self::first), [`first_mut`](Self::first_mut),
+    /// [`second`](Self::second) and [`second_mut`](Self::second_mut), the
+    /// storage must hold as many items as the storage of the first items.
     #[inline]
     pub unsafe fn second(&self) -> &B {
         &self.second
@@ -282,8 +286,8 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
     ///
     /// By the time the `SplitPair` is used again through a method other than
     /// [`first`](Self::first), [`first_mut`](Self::first_mut),
-    /// [`second`](Self::second) and `second_mut`, the storage must hold as many
-    /// items as the storage of the first items.
+    /// [`second`](Self::second) and [`second_mut`](Self::second_mut), the
+    /// storage must hold as many items as the storage of the first items.
     #[inline]
     pub unsafe fn second_mut(&mut self) -> &mut B {
         &mut self.second
