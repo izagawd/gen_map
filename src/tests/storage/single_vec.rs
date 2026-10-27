@@ -49,6 +49,30 @@ fn as_non_null_reaches_each_item_without_borrowing_the_others() {
 }
 
 #[test]
+fn set_len_takes_and_gives_up_items_written_through_as_non_null() {
+    let mut items = SingleVec::<String, u16>::with_capacity(4);
+    items.push(String::from("a"));
+    let pointer = items.as_non_null();
+    // SAFETY: the buffer has room for four items, and the new length covers the
+    // two items written after the first one.
+    unsafe {
+        pointer.add(1).write(String::from("b"));
+        pointer.add(2).write(String::from("c"));
+        items.set_len(3);
+    }
+    assert_eq!(items[..], ["a", "b", "c"]);
+
+    // SAFETY: the new length leaves out the last two items, which are read out
+    // once each.
+    let rest = unsafe {
+        items.set_len(1);
+        [pointer.add(1).read(), pointer.add(2).read()]
+    };
+    assert_eq!(rest, ["b", "c"]);
+    assert_eq!(items[..], ["a"]);
+}
+
+#[test]
 fn growing_moves_every_item_into_the_new_buffer() {
     let mut items = SingleVec::<_, u32>::with_capacity(3);
     let capacity = items.capacity();

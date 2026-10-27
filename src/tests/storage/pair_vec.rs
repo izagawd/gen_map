@@ -50,6 +50,32 @@ fn the_non_null_pointers_reach_each_item_without_borrowing_the_others() {
 }
 
 #[test]
+fn set_len_takes_and_gives_up_pairs_written_through_the_non_null_pointers() {
+    let mut pairs = PairVec::<u32, String, u16>::with_capacity(4);
+    pairs.push(0, String::from("a"));
+    let first = pairs.first_non_null();
+    let second = pairs.second_non_null();
+    // SAFETY: both slices have room for four items, and the new length covers
+    // the pair written after the first one.
+    unsafe {
+        first.add(1).write(1);
+        second.add(1).write(String::from("b"));
+        pairs.set_len(2);
+    }
+    assert_eq!(pairs.first_slice(), [0, 1]);
+    assert_eq!(pairs.second_slice(), ["a", "b"]);
+
+    // SAFETY: the new length leaves out the last pair, whose items are read out
+    // once each.
+    let last = unsafe {
+        pairs.set_len(1);
+        (first.add(1).read(), second.add(1).read())
+    };
+    assert_eq!(last, (1, String::from("b")));
+    assert_eq!(pairs.len(), 1);
+}
+
+#[test]
 fn the_mutable_slices_change_the_pairs_in_place() {
     let mut pairs: PairVec<u32, u64> = (0..4).map(|i| (i, u64::from(i) * 10)).collect();
     let (firsts, seconds) = pairs.slices_mut();

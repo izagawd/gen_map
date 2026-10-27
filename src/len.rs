@@ -13,7 +13,7 @@ pub trait Len: sealed::Sealed {
 }
 
 /// A map whose config picks `KeepLen` keeps a count of its values. The map
-/// has `len` and `is_empty`, and its iterators implement
+/// has `len`, `is_empty` and `set_len`, and its iterators implement
 /// `ExactSizeIterator`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct KeepLen;
@@ -25,7 +25,7 @@ impl Len for KeepLen {
 }
 
 /// A map whose config picks `NoLen` keeps no count of its values. The map has
-/// no `len` or `is_empty`, and its iterators do not implement
+/// no `len`, `is_empty` or `set_len`, and its iterators do not implement
 /// `ExactSizeIterator`.
 ///
 /// # Examples
@@ -59,9 +59,9 @@ impl Len for NoLen {
     type Count<I: KeyPiece> = ();
 }
 
-/// A map whose config picks [`NoLen`] has no `len` or `is_empty`, and its
-/// iterators do not implement `ExactSizeIterator`. Each example below must
-/// fail to compile.
+/// A map whose config picks [`NoLen`] has no `len`, `is_empty` or `set_len`,
+/// and its iterators do not implement `ExactSizeIterator`. Each example below
+/// must fail to compile.
 ///
 /// ```compile_fail,E0599
 /// # use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, NoLen, Split};
@@ -89,6 +89,20 @@ impl Len for NoLen {
 /// # }
 /// let map = GenMap::<u32, Uncounted>::new_with_config();
 /// map.is_empty();
+/// ```
+///
+/// ```compile_fail,E0599
+/// # use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, NoLen, Split};
+/// # struct Uncounted;
+/// # impl MapConfig for Uncounted {
+/// #     type KeyConfig = Split<u32, u32>;
+/// # }
+/// # impl GenMapConfig for Uncounted {
+/// #     type Len = NoLen;
+/// #     type Storage<S: GenSlotItem> = Vec<S>;
+/// # }
+/// let mut map = GenMap::<u32, Uncounted>::new_with_config();
+/// unsafe { map.set_len(0) };
 /// ```
 ///
 /// ```compile_fail,E0599
@@ -137,6 +151,23 @@ impl Len for NoLen {
 /// # }
 /// let map = SecondaryMap::<u32, Uncounted>::new_with_config();
 /// map.is_empty();
+/// ```
+///
+/// ```compile_fail,E0599
+/// # use gen_map::{
+/// #     MapConfig, NewerWins, NoLen, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Split,
+/// # };
+/// # struct Uncounted;
+/// # impl MapConfig for Uncounted {
+/// #     type KeyConfig = Split<u32, u32>;
+/// # }
+/// # impl SecondaryMapConfig for Uncounted {
+/// #     type ReplaceStrategy = NewerWins;
+/// #     type Len = NoLen;
+/// #     type Storage<S: SecondarySlotItem> = Vec<S>;
+/// # }
+/// let mut map = SecondaryMap::<u32, Uncounted>::new_with_config();
+/// unsafe { map.set_len(0) };
 /// ```
 ///
 /// ```compile_fail,E0599

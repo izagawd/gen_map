@@ -278,6 +278,19 @@ impl<T, C: SecondaryMapConfig<Len = KeepLen>> SecondaryMap<T, C> {
     pub fn is_empty(&self) -> bool {
         self.len == MapIdx::<C>::ZERO
     }
+
+    /// Sets the map's count of its values to `len`.
+    ///
+    /// # Safety
+    ///
+    /// By the time the map is used again through a method other than
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut) and
+    /// [`set_len`](Self::set_len), the count must follow the rules that
+    /// [`SecondaryMapRawParts`] lists.
+    #[inline]
+    pub unsafe fn set_len(&mut self, len: MapIdx<C>) {
+        self.len = len;
+    }
 }
 
 /// A map has this method only when its storage implements [`Empty`].
@@ -340,8 +353,9 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// # Safety
     ///
     /// By the time the map is used again through a method other than
-    /// [`slots`](Self::slots) and [`slots_mut`](Self::slots_mut), the slots
-    /// must follow the rules that [`SecondaryMapRawParts`] lists.
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut) and
+    /// [`set_len`](Self::set_len), the slots must follow the rules that
+    /// [`SecondaryMapRawParts`] lists.
     #[inline]
     pub unsafe fn slots(&self) -> &<C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>> {
         &self.slots
@@ -353,8 +367,9 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// # Safety
     ///
     /// By the time the map is used again through a method other than
-    /// [`slots`](Self::slots) and [`slots_mut`](Self::slots_mut), the slots
-    /// must follow the rules that [`SecondaryMapRawParts`] lists.
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut) and
+    /// [`set_len`](Self::set_len), the slots must follow the rules that
+    /// [`SecondaryMapRawParts`] lists.
     #[inline]
     pub unsafe fn slots_mut(
         &mut self,
