@@ -332,6 +332,28 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         Some(unsafe { to_position::<C>(stored_position) })
     }
 
+    /// Returns the position of the value stored under `key`, like
+    /// [`position`](Self::position), but without checking that there is one.
+    ///
+    /// # Safety
+    ///
+    /// A value must be stored under `key`, meaning
+    /// [`contains_key`](Self::contains_key) returns `true` for it.
+    #[inline]
+    pub unsafe fn position_unchecked(&self, key: Key<MapKeyConfig<C>>) -> usize {
+        debug_assert!(self.contains_key(key));
+        // SAFETY: the caller promises that a value is stored under `key`, so
+        // the key's index is the position of a slot that holds a value, and the
+        // map made the position that slot stores from a `usize`.
+        unsafe {
+            let slot = self
+                .slots
+                .as_slice()
+                .get_unchecked(key.plain_idx().into_usize_unchecked());
+            to_position::<C>(*slot.get_odd_unchecked())
+        }
+    }
+
     /// Returns a reference to the value stored under `key`, like
     /// [`get`](Self::get), but without checking that there is one.
     ///
@@ -864,8 +886,9 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// The caller must not change the storage or its slots through the
-    /// returned reference.
+    /// Changes made through the returned reference must keep the slots
+    /// following the rules that [`DenseSecondaryMapRawParts`] lists, with the
+    /// other fields of the map as they are.
     #[inline]
     pub unsafe fn slots(
         &self,
@@ -879,7 +902,9 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// The caller must not change the storage or any of its slots.
+    /// By the time the map is used again, the slots must follow the rules that
+    /// [`DenseSecondaryMapRawParts`] lists, with the other fields of the map as
+    /// they are.
     #[inline]
     pub unsafe fn slots_mut(
         &mut self,
@@ -894,8 +919,9 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// The caller must not change the storage, its pairs or its keys through
-    /// the returned reference, apart from the values.
+    /// Changes made through the returned reference must keep the pairs
+    /// following the rules that [`DenseSecondaryMapRawParts`] lists, with the
+    /// other fields of the map as they are.
     #[inline]
     pub unsafe fn pairs(
         &self,
@@ -910,8 +936,9 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// The caller may only change the values. It must not change the keys, and
-    /// it must not add, remove or reorder pairs.
+    /// By the time the map is used again, the pairs must follow the rules that
+    /// [`DenseSecondaryMapRawParts`] lists, with the other fields of the map as
+    /// they are.
     #[inline]
     pub unsafe fn pairs_mut(
         &mut self,

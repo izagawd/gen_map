@@ -1,11 +1,30 @@
 use crate::tests::{key_from_parts, Bomb, DropTracker};
-use crate::{GenMap, InsertWithError, Key};
+use crate::{DefaultKeyConfig, GenMap, InsertWithError, Key, KeyConfig, KeyPiece};
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::String;
 use std::vec::Vec;
 
 type Map<T> = GenMap<T>;
+
+#[test]
+fn slots_and_slots_mut_reach_a_value_in_place() {
+    let mut map = GenMap::new();
+    let a = map.insert(1u32);
+    let b = map.insert(2);
+    let index = <<DefaultKeyConfig as KeyConfig>::Idx as KeyPiece>::from_non_max(b.idx())
+        .into_usize()
+        .unwrap();
+
+    // SAFETY: only the value in the slot of `b` changes.
+    let slots = unsafe { map.slots_mut() };
+    *slots[index].get_odd_mut(b.generation()).unwrap() += 10;
+    assert_eq!((map[a], map[b]), (1, 12));
+
+    // SAFETY: the slots are only read.
+    let slots = unsafe { map.slots() };
+    assert_eq!(slots[index].get_odd(b.generation()), Some(&12));
+}
 
 #[test]
 fn new_map_is_empty() {

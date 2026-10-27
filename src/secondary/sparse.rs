@@ -222,6 +222,36 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         self.slots.is_empty()
     }
 
+    /// Returns the `HashMap` that holds the slots of the map, with each slot
+    /// under the index of its value's key.
+    ///
+    /// # Safety
+    ///
+    /// Changes made through the returned reference must keep the slots
+    /// following the rules that [`SparseSecondaryMapRawParts`] lists, with the
+    /// other fields of the map as they are.
+    #[inline]
+    pub unsafe fn slots(
+        &self,
+    ) -> &HashMap<<MapIdx<C> as KeyPiece>::NonMax, SparseSecondaryMapSlot<T, C>, S> {
+        &self.slots
+    }
+
+    /// Returns the `HashMap` that holds the slots of the map, with each slot
+    /// under the index of its value's key.
+    ///
+    /// # Safety
+    ///
+    /// By the time the map is used again, the slots must follow the rules that
+    /// [`SparseSecondaryMapRawParts`] lists, with the other fields of the map
+    /// as they are.
+    #[inline]
+    pub unsafe fn slots_mut(
+        &mut self,
+    ) -> &mut HashMap<<MapIdx<C> as KeyPiece>::NonMax, SparseSecondaryMapSlot<T, C>, S> {
+        &mut self.slots
+    }
+
     /// Returns `true` if a value is stored under `key`.
     #[inline]
     pub fn contains_key(&self, key: Key<MapKeyConfig<C>>) -> bool {

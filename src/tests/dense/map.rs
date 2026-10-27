@@ -6,7 +6,7 @@
 use crate::tests::{Bomb, Cfg, CloneBomb, DropTracker};
 use crate::{
     DenseError, DenseGenMap, DenseGenMapConfig, FullError, GenSlotItem, InsertError,
-    InsertWithError, Key, MapConfig, Packed, PairVec,
+    InsertWithError, Key, MapConfig, Packed, PairStorage, PairVec,
 };
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -30,6 +30,37 @@ impl DenseGenMapConfig for Retiring {
 
 fn values<T: Copy, C: DenseGenMapConfig>(map: &DenseGenMap<T, C>) -> Vec<T> {
     map.values().copied().collect()
+}
+
+#[test]
+fn position_and_the_storages_reach_a_value_in_place() {
+    let mut map = DenseGenMap::new();
+    let a = map.insert(1u32);
+    let b = map.insert(2);
+    assert_eq!(map.position(b), Some(1));
+    // SAFETY: the map has a value for `b`.
+    assert_eq!(unsafe { map.position_unchecked(b) }, 1);
+    // Removing `a` moves the value of `b` into position zero.
+    map.remove(a);
+    assert_eq!(map.position(a), None);
+    let position = map.position(b).unwrap();
+    assert_eq!(position, 0);
+    assert_eq!(map.as_slices().1[position], 2);
+
+    // SAFETY: only the value of `b` changes.
+    let pairs = unsafe { map.pairs_mut() };
+    // SAFETY: `position` is below the number of values.
+    let value = unsafe { pairs.second_non_null().add(position).as_mut() };
+    *value += 10;
+    assert_eq!(map[b], 12);
+
+    // SAFETY: the keys and the values are only read.
+    let (keys, values) = unsafe { map.pairs() }.slices();
+    assert_eq!((keys[position], values[position]), (b, 12));
+    // SAFETY: the slots are only read.
+    assert_eq!(unsafe { map.slots() }.len(), 2);
+    // SAFETY: the same as above.
+    assert_eq!(unsafe { map.slots_mut() }.len(), 2);
 }
 
 #[test]

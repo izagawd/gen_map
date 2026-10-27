@@ -239,6 +239,50 @@ impl<A: SliceStorage, B: SliceStorage> SplitPair<A, B> {
     pub fn into_parts(self) -> (A, B) {
         (self.first, self.second)
     }
+
+    /// Returns the storage of the first items of the pairs.
+    ///
+    /// # Safety
+    ///
+    /// Changes made through the returned reference must keep the storage
+    /// holding as many items as the storage of the second items.
+    #[inline]
+    pub unsafe fn first(&self) -> &A {
+        &self.first
+    }
+
+    /// Returns the storage of the first items of the pairs.
+    ///
+    /// # Safety
+    ///
+    /// By the time the `SplitPair` is used again, the storage must hold as many
+    /// items as the storage of the second items.
+    #[inline]
+    pub unsafe fn first_mut(&mut self) -> &mut A {
+        &mut self.first
+    }
+
+    /// Returns the storage of the second items of the pairs.
+    ///
+    /// # Safety
+    ///
+    /// Changes made through the returned reference must keep the storage
+    /// holding as many items as the storage of the first items.
+    #[inline]
+    pub unsafe fn second(&self) -> &B {
+        &self.second
+    }
+
+    /// Returns the storage of the second items of the pairs.
+    ///
+    /// # Safety
+    ///
+    /// By the time the `SplitPair` is used again, the storage must hold as many
+    /// items as the storage of the first items.
+    #[inline]
+    pub unsafe fn second_mut(&mut self) -> &mut B {
+        &mut self.second
+    }
 }
 
 impl<A: SliceStorage + Clone, B: SliceStorage + Clone> Clone for SplitPair<A, B> {

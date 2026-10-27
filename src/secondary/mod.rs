@@ -339,8 +339,9 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// The caller must not change the storage or its slots through the
-    /// returned reference, apart from the values that the slots hold.
+    /// Changes made through the returned reference must keep the slots
+    /// following the rules that [`SecondaryMapRawParts`] lists, with the other
+    /// fields of the map as they are.
     #[inline]
     pub unsafe fn slots(&self) -> &<C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>> {
         &self.slots
@@ -351,9 +352,9 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// The caller may only change the values that the slots hold. It must not
-    /// add, remove, move or replace slots, and it must not change which slots
-    /// hold a value or the generation of any slot.
+    /// By the time the map is used again, the slots must follow the rules that
+    /// [`SecondaryMapRawParts`] lists, with the other fields of the map as they
+    /// are.
     #[inline]
     pub unsafe fn slots_mut(
         &mut self,

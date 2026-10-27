@@ -28,6 +28,8 @@ fn position_and_the_storages_reach_a_value_in_place() {
     let position = map.position(k[1]).unwrap();
     assert_eq!(map.as_slices().1[position], 2);
     assert_eq!(map.position(k[2]), None);
+    // SAFETY: a value is stored under `k[1]`.
+    assert_eq!(unsafe { map.position_unchecked(k[1]) }, position);
 
     // SAFETY: only the value under `k[1]` changes.
     let pairs = unsafe { map.pairs_mut() };

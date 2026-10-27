@@ -22,6 +22,22 @@ fn push_pair<P: PairStorage>(pairs: &mut P, first: P::First, second: P::Second) 
 }
 
 #[test]
+fn the_two_storages_can_be_reached_in_place() {
+    let mut pairs = SplitPair::from_parts(vec![1u32, 2], vec![10u32, 20]).unwrap();
+    // SAFETY: no item is added or removed.
+    let first = unsafe { pairs.first_mut() };
+    first[0] = 5;
+    // SAFETY: the same as above.
+    let second = unsafe { pairs.second_mut() };
+    second[1] = 50;
+    // SAFETY: the storages are only read.
+    let (first, second) = unsafe { (pairs.first(), pairs.second()) };
+    assert_eq!(first[..], [5, 2]);
+    assert_eq!(second[..], [10, 50]);
+    assert_eq!(pairs.slices(), (&[5, 2][..], &[10, 50][..]));
+}
+
+#[test]
 fn from_parts_needs_two_storages_of_the_same_length() {
     assert!(SplitPair::from_parts(vec![1, 2], vec!["a"]).is_none());
     let pairs = SplitPair::from_parts(vec![1, 2], vec!["a", "b"]).unwrap();
