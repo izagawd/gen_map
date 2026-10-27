@@ -1,5 +1,5 @@
 use crate::tests::{key_from_parts, Bomb, DropTracker};
-use crate::{DefaultKeyConfig, GenMap, InsertWithError, Key, KeyConfig, KeyPiece};
+use crate::{DefaultKeyConfig, Even, GenMap, InsertWithError, Key, KeyConfig, KeyPiece, Slot};
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::String;
@@ -24,6 +24,28 @@ fn slots_and_slots_mut_reach_a_value_in_place() {
     // SAFETY: the slots are only read.
     let slots = unsafe { map.slots() };
     assert_eq!(slots[index].get_odd(b.generation()), Some(&12));
+}
+
+#[test]
+fn slots_mut_and_set_len_remove_a_value_together() {
+    let mut map = GenMap::new();
+    let a = map.insert(1u32);
+    let b = map.insert(2);
+    let len = map.len();
+    let index = <<DefaultKeyConfig as KeyConfig>::Idx as KeyPiece>::from_non_max(b.idx())
+        .into_usize()
+        .unwrap();
+    let retired = <<DefaultKeyConfig as KeyConfig>::Idx as KeyPiece>::MAX;
+
+    // SAFETY: the slot of `b` becomes a retired slot, and the count drops by
+    // one, before the map is used through any other method.
+    unsafe {
+        map.slots_mut()[index] = Slot::new_even(Even::ZERO, retired);
+        map.set_len(len - 1);
+    }
+    assert_eq!(map.len(), 1);
+    assert_eq!(map.get(a), Some(&1));
+    assert_eq!(map.get(b), None);
 }
 
 #[test]

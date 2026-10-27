@@ -3,10 +3,10 @@
 use crate::tests::model::Rng;
 use crate::tests::{key_from_parts, Bomb, Cfg, CloneBomb, DropItem, DropTracker, LenCheck};
 use crate::{
-    u1, DefaultKeyConfig, ExistingWins, GenMap, GenMapConfig, GenSlotItem, GetDisjointMutAtError,
-    GetDisjointMutError, KeepLen, Key, KeyConfig, KeyPiece, MapConfig, MapKeyConfig, NewerWins,
-    NoLen, Odd, Packed, ReplaceStrategy, SecondaryInsertError, SecondaryMap, SecondaryMapConfig,
-    SecondarySlotItem, Split,
+    u1, DefaultKeyConfig, Even, ExistingWins, GenMap, GenMapConfig, GenSlotItem,
+    GetDisjointMutAtError, GetDisjointMutError, KeepLen, Key, KeyConfig, KeyPiece, MapConfig,
+    MapKeyConfig, NewerWins, NoLen, Odd, Packed, ReplaceStrategy, SecondaryInsertError,
+    SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Slot, Split,
 };
 use core::marker::PhantomData;
 use std::collections::HashMap;
@@ -116,6 +116,31 @@ fn slots_and_slots_mut_reach_a_value_in_place() {
     // SAFETY: the slots are only read.
     let slots = unsafe { map.slots() };
     assert_eq!(slots[index].get_odd(b.generation()), Some(&12));
+}
+
+#[test]
+fn slots_mut_and_set_len_remove_a_value_together() {
+    let mut keys = GenMap::new();
+    let a = keys.insert(());
+    let b = keys.insert(());
+    let mut map = SecondaryMap::<u32>::new();
+    map.insert(a, 1).unwrap();
+    map.insert(b, 2).unwrap();
+    let len = map.len();
+    let index = <<DefaultKeyConfig as KeyConfig>::Idx as KeyPiece>::from_non_max(b.idx())
+        .into_usize()
+        .unwrap();
+
+    // SAFETY: the slot of `b` becomes a slot without a value and with
+    // generation zero, and the count drops by one, before the map is used
+    // through any other method.
+    unsafe {
+        map.slots_mut()[index] = Slot::new_even(Even::ZERO, ());
+        map.set_len(len - 1);
+    }
+    assert_eq!(map.len(), 1);
+    assert_eq!(map.get(a), Some(&1));
+    assert_eq!(map.get(b), None);
 }
 
 #[test]

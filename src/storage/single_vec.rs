@@ -196,6 +196,20 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
         self.buffer.len == L::ZERO
     }
 
+    /// Sets the length of the `SingleVec` to `len`.
+    ///
+    /// # Safety
+    ///
+    /// `len` must fit in the length type. By the time the `SingleVec` is used
+    /// again through a method other than [`as_non_null`](Self::as_non_null) and
+    /// [`set_len`](Self::set_len), the length must follow the rules that
+    /// [`SingleVecRawParts`] lists.
+    #[inline]
+    pub unsafe fn set_len(&mut self, len: usize) {
+        // SAFETY: the caller promises that `len` fits in the length type.
+        self.buffer.len = unsafe { L::from_usize_unchecked(len) };
+    }
+
     /// Makes room for at least `additional` more items, and grows the buffer
     /// when it is too small.
     #[inline]

@@ -335,6 +335,22 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
         self.buffer.second
     }
 
+    /// Sets the length of the `PairVec` to `len`.
+    ///
+    /// # Safety
+    ///
+    /// `len` must fit in the length type. By the time the `PairVec` is used
+    /// again through a method other than
+    /// [`first_non_null`](Self::first_non_null),
+    /// [`second_non_null`](Self::second_non_null) and
+    /// [`set_len`](Self::set_len), the length must follow the rules that
+    /// [`PairVecRawParts`] lists.
+    #[inline]
+    pub unsafe fn set_len(&mut self, len: usize) {
+        // SAFETY: the caller promises that `len` fits in the length type.
+        self.buffer.len = unsafe { L::from_usize_unchecked(len) };
+    }
+
     /// Makes room for at least `additional` more pairs, and grows the buffer
     /// when it is too small.
     #[inline]

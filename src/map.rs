@@ -439,6 +439,20 @@ impl<T, C: GenMapConfig<Len = KeepLen>> GenMap<T, C> {
     pub fn is_empty(&self) -> bool {
         self.len == Idx::<C>::ZERO
     }
+
+    /// Sets the map's count of its values to `len`.
+    ///
+    /// # Safety
+    ///
+    /// `len` must fit in the index type of the map's keys. By the time the map
+    /// is used again through a method other than [`slots`](Self::slots),
+    /// [`slots_mut`](Self::slots_mut) and [`set_len`](Self::set_len), the count
+    /// must follow the rules that [`GenMapRawParts`] lists.
+    #[inline]
+    pub unsafe fn set_len(&mut self, len: usize) {
+        // SAFETY: the caller promises that `len` fits in the index type.
+        self.len = unsafe { Idx::<C>::from_usize_unchecked(len) };
+    }
 }
 
 /// A map has this method only when its storage implements [`Empty`].
@@ -553,8 +567,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// # Safety
     ///
     /// By the time the map is used again through a method other than
-    /// [`slots`](Self::slots) and [`slots_mut`](Self::slots_mut), the slots
-    /// must follow the rules that [`GenMapRawParts`] lists.
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut) and
+    /// [`set_len`](Self::set_len), the slots must follow the rules that
+    /// [`GenMapRawParts`] lists.
     #[inline]
     pub unsafe fn slots(&self) -> &<C as GenMapConfig>::Storage<MapSlot<T, C>> {
         &self.slots
@@ -566,8 +581,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
     /// # Safety
     ///
     /// By the time the map is used again through a method other than
-    /// [`slots`](Self::slots) and [`slots_mut`](Self::slots_mut), the slots
-    /// must follow the rules that [`GenMapRawParts`] lists.
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut) and
+    /// [`set_len`](Self::set_len), the slots must follow the rules that
+    /// [`GenMapRawParts`] lists.
     #[inline]
     pub unsafe fn slots_mut(&mut self) -> &mut <C as GenMapConfig>::Storage<MapSlot<T, C>> {
         &mut self.slots
