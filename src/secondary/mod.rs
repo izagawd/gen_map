@@ -334,6 +334,33 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         self.slots.len()
     }
 
+    /// Returns the storage that holds the slots of the map, with each slot at
+    /// the index of its key.
+    ///
+    /// # Safety
+    ///
+    /// The caller must not change the storage or its slots through the
+    /// returned reference, apart from the values that the slots hold.
+    #[inline]
+    pub unsafe fn slots(&self) -> &<C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>> {
+        &self.slots
+    }
+
+    /// Returns the storage that holds the slots of the map, with each slot at
+    /// the index of its key.
+    ///
+    /// # Safety
+    ///
+    /// The caller may only change the values that the slots hold. It must not
+    /// add, remove, move or replace slots, and it must not change which slots
+    /// hold a value or the generation of any slot.
+    #[inline]
+    pub unsafe fn slots_mut(
+        &mut self,
+    ) -> &mut <C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>> {
+        &mut self.slots
+    }
+
     /// Returns `true` if a value is stored under `key`.
     #[inline]
     pub fn contains_key(&self, key: Key<MapKeyConfig<C>>) -> bool {

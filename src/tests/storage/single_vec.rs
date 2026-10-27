@@ -35,6 +35,20 @@ fn the_slice_it_derefs_to_changes_the_items_in_place() {
 }
 
 #[test]
+fn as_non_null_reaches_each_item_without_borrowing_the_others() {
+    let mut items: SingleVec<u32, u16> = (0..4).collect();
+    // SAFETY: `as_non_null` points at the first of four items, and the two
+    // references point at different items.
+    let first = unsafe { items.as_non_null().as_mut() };
+    // SAFETY: the same as above.
+    let last = unsafe { items.as_non_null().add(3).as_mut() };
+    *first += 10;
+    *last += 10;
+    assert_eq!(items[..], [10, 1, 2, 13]);
+    assert_eq!(SingleVec::<u32>::new().as_non_null(), NonNull::dangling());
+}
+
+#[test]
 fn growing_moves_every_item_into_the_new_buffer() {
     let mut items = SingleVec::<_, u32>::with_capacity(3);
     let capacity = items.capacity();

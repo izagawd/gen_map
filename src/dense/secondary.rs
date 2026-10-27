@@ -306,6 +306,32 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         })
     }
 
+    /// Returns the position of the value stored under `key` in the second slice
+    /// of [`as_slices`](Self::as_slices), or `None` if no value is stored under
+    /// `key`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{DenseSecondaryMap, GenMap};
+    ///
+    /// let mut people = GenMap::new();
+    /// let mut ages = DenseSecondaryMap::new();
+    /// let alice = people.insert("Alice");
+    /// let bob = people.insert("Bob");
+    /// ages.insert(alice, 30).unwrap();
+    /// ages.insert(bob, 25).unwrap();
+    ///
+    /// let position = ages.position(bob).unwrap();
+    /// assert_eq!(ages.as_slices().1[position], 25);
+    /// ```
+    #[inline]
+    pub fn position(&self, key: Key<MapKeyConfig<C>>) -> Option<usize> {
+        let stored_position = self.stored_position(key)?;
+        // SAFETY: the map makes every stored position from a `usize`.
+        Some(unsafe { to_position::<C>(stored_position) })
+    }
+
     /// Returns a reference to the value stored under `key`, like
     /// [`get`](Self::get), but without checking that there is one.
     ///
@@ -830,6 +856,67 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     pub fn as_slices_mut(&mut self) -> (&[Key<MapKeyConfig<C>>], &mut [T]) {
         let (keys, values) = self.pairs.slices_mut();
         (keys, values)
+    }
+
+    /// Returns the storage that holds the slots of the map, with each slot at
+    /// the index of its key. A slot that holds a value stores the generation of
+    /// the value's key and the position of the value.
+    ///
+    /// # Safety
+    ///
+    /// The caller must not change the storage or its slots through the
+    /// returned reference.
+    #[inline]
+    pub unsafe fn slots(
+        &self,
+    ) -> &<C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>> {
+        &self.slots
+    }
+
+    /// Returns the storage that holds the slots of the map, with each slot at
+    /// the index of its key. A slot that holds a value stores the generation of
+    /// the value's key and the position of the value.
+    ///
+    /// # Safety
+    ///
+    /// The caller must not change the storage or any of its slots.
+    #[inline]
+    pub unsafe fn slots_mut(
+        &mut self,
+    ) -> &mut <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>> {
+        &mut self.slots
+    }
+
+    /// Returns the storage that holds the keys and the values of the map. Each
+    /// value sits in the second slice at the position that
+    /// [`position`](Self::position) returns for its key, and the key sits at
+    /// the same position in the first slice.
+    ///
+    /// # Safety
+    ///
+    /// The caller must not change the storage, its pairs or its keys through
+    /// the returned reference, apart from the values.
+    #[inline]
+    pub unsafe fn pairs(
+        &self,
+    ) -> &<C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> {
+        &self.pairs
+    }
+
+    /// Returns the storage that holds the keys and the values of the map. Each
+    /// value sits in the second slice at the position that
+    /// [`position`](Self::position) returns for its key, and the key sits at
+    /// the same position in the first slice.
+    ///
+    /// # Safety
+    ///
+    /// The caller may only change the values. It must not change the keys, and
+    /// it must not add, remove or reorder pairs.
+    #[inline]
+    pub unsafe fn pairs_mut(
+        &mut self,
+    ) -> &mut <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> {
+        &mut self.pairs
     }
 
     /// The position of the value stored under `key`, as its slot stores it, or

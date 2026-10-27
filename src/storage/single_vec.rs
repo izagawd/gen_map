@@ -173,6 +173,16 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
         Ok(())
     }
 
+    /// Returns a pointer to the first item, which can be written through. It
+    /// does not borrow the items, so the references made from earlier pointers
+    /// stay valid. The pointer stops being valid when the `SingleVec` moves its
+    /// items to a new buffer or is dropped, and it dangles while the
+    /// `SingleVec` has no room for items.
+    #[inline]
+    pub fn as_non_null(&mut self) -> NonNull<T> {
+        self.buffer.pointer
+    }
+
     /// Makes room for at least `additional` more items, and grows the buffer
     /// when it is too small.
     #[inline]
