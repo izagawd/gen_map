@@ -20,6 +20,21 @@ fn keys(n: usize) -> Vec<Key> {
 }
 
 #[test]
+fn position_at_finds_the_value_in_a_slot_that_holds_one() {
+    let k = keys(3);
+    let mut map = DenseSecondaryMap::new();
+    map.insert(k[1], 10u32).unwrap();
+    map.insert(k[2], 20).unwrap();
+    // The slot at index 0 exists, but it holds no value.
+    assert_eq!(map.position_at(0), None);
+    assert_eq!(map.position_at(1), Some(0));
+    assert_eq!(map.position_at(2), Some(1));
+    assert_eq!(map.position_at(3), None);
+    // SAFETY: the slot at index 2 holds a value.
+    assert_eq!(unsafe { map.position_at_unchecked(2) }, 1);
+}
+
+#[test]
 fn position_and_the_storages_reach_a_value_in_place() {
     let k = keys(3);
     let mut map = DenseSecondaryMap::new();

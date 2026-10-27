@@ -33,6 +33,26 @@ fn values<T: Copy, C: DenseGenMapConfig>(map: &DenseGenMap<T, C>) -> Vec<T> {
 }
 
 #[test]
+fn position_at_finds_the_value_in_a_slot_that_holds_one() {
+    let mut map = DenseGenMap::new();
+    let a = map.insert(1u32);
+    let b = map.insert(2);
+    assert_eq!(map.position_at(0), Some(0));
+    assert_eq!(map.position_at(1), Some(1));
+    assert_eq!(map.position_at(2), None);
+    // Removing `a` frees its slot and moves the value of `b` into position
+    // zero.
+    map.remove(a);
+    assert_eq!(map.position_at(0), None);
+    assert_eq!(map.position_at(1), Some(0));
+    // SAFETY: the slot at index 1 holds the value of `b`.
+    assert_eq!(
+        unsafe { map.position_at_unchecked(1) },
+        map.position(b).unwrap()
+    );
+}
+
+#[test]
 fn position_and_the_storages_reach_a_value_in_place() {
     let mut map = DenseGenMap::new();
     let a = map.insert(1u32);

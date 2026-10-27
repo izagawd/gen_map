@@ -651,6 +651,57 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         }
     }
 
+    /// Returns the position of the value in the slot at `idx` in the second
+    /// slice of [`as_slices`](Self::as_slices), or `None` if there is no slot
+    /// at `idx` or the slot holds no value. A slot holds no value while it is
+    /// vacant, detached or retired.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::DenseGenMap;
+    ///
+    /// let mut map = DenseGenMap::new();
+    /// let a = map.insert("a");
+    /// map.insert("b");
+    /// map.remove(a);
+    ///
+    /// // The slot at index 1 holds "b", which moved into position zero when
+    /// // "a" was removed. The slot at index 0 holds no value anymore.
+    /// assert_eq!(map.position_at(1), Some(0));
+    /// assert_eq!(map.position_at(0), None);
+    /// ```
+    #[inline]
+    pub fn position_at(&self, idx: MapIdx<C>) -> Option<usize> {
+        match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
+            ParityRef::Odd(_, &stored_position) => {
+                // SAFETY: the map makes every stored position from a `usize`.
+                Some(unsafe { to_position::<C>(stored_position) })
+            }
+            ParityRef::Even(..) => None,
+        }
+    }
+
+    /// Returns the position of the value in the slot at `idx`, like
+    /// [`position_at`](Self::position_at), but without checking that there is
+    /// a slot at `idx` or that it holds a value.
+    ///
+    /// # Safety
+    ///
+    /// There must be a slot at `idx` and it must hold a value, meaning
+    /// [`position_at`](Self::position_at) returns `Some` for it.
+    #[inline]
+    pub unsafe fn position_at_unchecked(&self, idx: MapIdx<C>) -> usize {
+        debug_assert!(self.position_at(idx).is_some());
+        // SAFETY: the caller promises a slot at `idx` that holds a value, so
+        // `idx` is the position of a slot in bounds, the slot's generation is
+        // odd, and the map made the position it stores from a `usize`.
+        unsafe {
+            let slot = self.slots.as_slice().get_unchecked(slot_index_of::<C>(idx));
+            to_position::<C>(*slot.get_odd_unchecked())
+        }
+    }
+
     /// Returns the generation of the slot at `idx`, or `None` if there is no
     /// slot at `idx`. It works the same way as
     /// [`GenMap::generation_at`](crate::GenMap::generation_at).

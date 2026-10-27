@@ -527,6 +527,57 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         }
     }
 
+    /// Returns the position of the value in the slot at `idx` in the second
+    /// slice of [`as_slices`](Self::as_slices), or `None` if there is no slot
+    /// at `idx` or the slot holds no value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{DenseSecondaryMap, GenMap};
+    ///
+    /// let mut people = GenMap::new();
+    /// let mut ages = DenseSecondaryMap::new();
+    /// people.insert("Alice");
+    /// let bob = people.insert("Bob");
+    /// ages.insert(bob, 25).unwrap();
+    ///
+    /// // The slot at index 1 holds Bob's age, which sits at position zero.
+    /// // The slot at index 0 belongs to Alice, who has no age.
+    /// assert_eq!(ages.position_at(1), Some(0));
+    /// assert_eq!(ages.position_at(0), None);
+    /// ```
+    #[inline]
+    pub fn position_at(&self, idx: MapIdx<C>) -> Option<usize> {
+        let (_, stored_position) = occupied::<C>(self.slots.as_slice().get(idx.into_usize()?)?)?;
+        // SAFETY: the map makes every stored position from a `usize`.
+        Some(unsafe { to_position::<C>(stored_position) })
+    }
+
+    /// Returns the position of the value in the slot at `idx`, like
+    /// [`position_at`](Self::position_at), but without checking that there is
+    /// a slot at `idx` or that it holds a value.
+    ///
+    /// # Safety
+    ///
+    /// There must be a slot at `idx` and it must hold a value, meaning
+    /// [`position_at`](Self::position_at) returns `Some` for it.
+    #[inline]
+    pub unsafe fn position_at_unchecked(&self, idx: MapIdx<C>) -> usize {
+        debug_assert!(self.position_at(idx).is_some());
+        // SAFETY: the caller promises a slot at `idx` that holds a value. So
+        // `idx` fits in `usize` and points at a slot in bounds, the slot's
+        // generation is odd, and the map made the position it stores from a
+        // `usize`.
+        unsafe {
+            let slot = self
+                .slots
+                .as_slice()
+                .get_unchecked(idx.into_usize_unchecked());
+            to_position::<C>(*slot.get_odd_unchecked())
+        }
+    }
+
     /// Returns the generation of the slot at `idx`, or `None` if there is no
     /// slot at `idx`. It works the same way as
     /// [`SecondaryMap::generation_at`](crate::SecondaryMap::generation_at).
