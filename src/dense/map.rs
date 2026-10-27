@@ -436,6 +436,52 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
         })
     }
 
+    /// Returns the position of the value corresponding to `key` in the second
+    /// slice of [`as_slices`](Self::as_slices), or `None` if the map has no
+    /// value for `key`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::DenseGenMap;
+    ///
+    /// let mut map = DenseGenMap::new();
+    /// let a = map.insert("a");
+    /// let b = map.insert("b");
+    ///
+    /// let position = map.position(b).unwrap();
+    /// assert_eq!(map.as_slices().1[position], "b");
+    /// ```
+    #[inline]
+    pub fn position(&self, key: Key<MapKeyConfig<C>>) -> Option<usize> {
+        let stored_position = self.stored_position(key)?;
+        // SAFETY: the map makes every stored position from a `usize`.
+        Some(unsafe { to_position::<C>(stored_position) })
+    }
+
+    /// Returns the position of the value corresponding to `key`, like
+    /// [`position`](Self::position), but without checking that the key's slot
+    /// exists or that the slot's generation matches the key's.
+    ///
+    /// # Safety
+    ///
+    /// The map must have a value for `key`, meaning
+    /// [`contains_key`](Self::contains_key) returns `true` for it.
+    #[inline]
+    pub unsafe fn position_unchecked(&self, key: Key<MapKeyConfig<C>>) -> usize {
+        debug_assert!(self.contains_key(key));
+        // SAFETY: the caller promises that the map has a value for `key`, so
+        // the key's index is the position of a slot that holds a value, and the
+        // map made the position that slot stores from a `usize`.
+        unsafe {
+            let slot = self
+                .slots
+                .as_slice()
+                .get_unchecked(slot_index_of::<C>(key.plain_idx()));
+            to_position::<C>(*slot.get_odd_unchecked())
+        }
+    }
+
     /// Returns a reference to the value corresponding to `key`, like
     /// [`get`](Self::get), but without checking that the key's slot exists or
     /// that the slot's generation matches the key's.
@@ -602,6 +648,57 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
                 key,
                 self.pairs.second_slice_mut().get_unchecked_mut(position),
             )
+        }
+    }
+
+    /// Returns the position of the value in the slot at `idx` in the second
+    /// slice of [`as_slices`](Self::as_slices), or `None` if there is no slot
+    /// at `idx` or the slot holds no value. A slot holds no value while it is
+    /// vacant, detached or retired.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::DenseGenMap;
+    ///
+    /// let mut map = DenseGenMap::new();
+    /// let a = map.insert("a");
+    /// map.insert("b");
+    /// map.remove(a);
+    ///
+    /// // The slot at index 1 holds "b", which moved into position zero when
+    /// // "a" was removed. The slot at index 0 holds no value anymore.
+    /// assert_eq!(map.position_at(1), Some(0));
+    /// assert_eq!(map.position_at(0), None);
+    /// ```
+    #[inline]
+    pub fn position_at(&self, idx: MapIdx<C>) -> Option<usize> {
+        match self.slots.as_slice().get(idx.into_usize()?)?.as_parity() {
+            ParityRef::Odd(_, &stored_position) => {
+                // SAFETY: the map makes every stored position from a `usize`.
+                Some(unsafe { to_position::<C>(stored_position) })
+            }
+            ParityRef::Even(..) => None,
+        }
+    }
+
+    /// Returns the position of the value in the slot at `idx`, like
+    /// [`position_at`](Self::position_at), but without checking that there is
+    /// a slot at `idx` or that it holds a value.
+    ///
+    /// # Safety
+    ///
+    /// There must be a slot at `idx` and it must hold a value, meaning
+    /// [`position_at`](Self::position_at) returns `Some` for it.
+    #[inline]
+    pub unsafe fn position_at_unchecked(&self, idx: MapIdx<C>) -> usize {
+        debug_assert!(self.position_at(idx).is_some());
+        // SAFETY: the caller promises a slot at `idx` that holds a value, so
+        // `idx` is the position of a slot in bounds, the slot's generation is
+        // odd, and the map made the position it stores from a `usize`.
+        unsafe {
+            let slot = self.slots.as_slice().get_unchecked(slot_index_of::<C>(idx));
+            to_position::<C>(*slot.get_odd_unchecked())
         }
     }
 
@@ -1092,6 +1189,72 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     pub fn as_slices_mut(&mut self) -> (&[Key<MapKeyConfig<C>>], &mut [T]) {
         let (keys, values) = self.pairs.slices_mut();
         (keys, values)
+    }
+
+    /// Returns the storage that holds the slots of the map, with each slot at
+    /// the index of its key. A slot that holds a value stores the generation of
+    /// the value's key and the position of the value.
+    ///
+    /// # Safety
+    ///
+    /// Changes made through the returned reference must keep the slots
+    /// following the rules that [`DenseGenMapRawParts`] lists, with the other
+    /// fields of the map as they are.
+    #[inline]
+    pub unsafe fn slots(&self) -> &<C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>> {
+        &self.slots
+    }
+
+    /// Returns the storage that holds the slots of the map, with each slot at
+    /// the index of its key. A slot that holds a value stores the generation of
+    /// the value's key and the position of the value.
+    ///
+    /// # Safety
+    ///
+    /// By the time the map is used again through a method other than
+    /// [`slots`](Self::slots), `slots_mut`, [`pairs`](Self::pairs) and
+    /// [`pairs_mut`](Self::pairs_mut), the slots must follow the rules that
+    /// [`DenseGenMapRawParts`] lists, with the other fields of the map as they
+    /// are.
+    #[inline]
+    pub unsafe fn slots_mut(
+        &mut self,
+    ) -> &mut <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>> {
+        &mut self.slots
+    }
+
+    /// Returns the storage that holds the keys and the values of the map. Each
+    /// value sits in the second slice at the position that
+    /// [`position`](Self::position) returns for its key, and the key sits at
+    /// the same position in the first slice.
+    ///
+    /// # Safety
+    ///
+    /// Changes made through the returned reference must keep the pairs
+    /// following the rules that [`DenseGenMapRawParts`] lists, with the other
+    /// fields of the map as they are.
+    #[inline]
+    pub unsafe fn pairs(&self) -> &<C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> {
+        &self.pairs
+    }
+
+    /// Returns the storage that holds the keys and the values of the map. Each
+    /// value sits in the second slice at the position that
+    /// [`position`](Self::position) returns for its key, and the key sits at
+    /// the same position in the first slice.
+    ///
+    /// # Safety
+    ///
+    /// By the time the map is used again through a method other than
+    /// [`slots`](Self::slots), [`slots_mut`](Self::slots_mut),
+    /// [`pairs`](Self::pairs) and `pairs_mut`, the pairs must follow the rules
+    /// that [`DenseGenMapRawParts`] lists, with the other fields of the map as
+    /// they are.
+    #[inline]
+    pub unsafe fn pairs_mut(
+        &mut self,
+    ) -> &mut <C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> {
+        &mut self.pairs
     }
 
     /// The position of the value corresponding to `key`, as its slot stores it,

@@ -111,6 +111,26 @@ fn key8(idx: u8, generation: u8) -> Key<Split<u8, u8>> {
 }
 
 #[test]
+fn slots_and_slots_mut_reach_a_value_in_place() {
+    let mut keys = GenMap::new();
+    let a = keys.insert(());
+    let b = keys.insert(());
+    let mut map = SparseSecondaryMap::new();
+    map.insert(a, 1u32).unwrap();
+    map.insert(b, 2).unwrap();
+
+    // SAFETY: only the value of `b` changes.
+    let slots = unsafe { map.slots_mut() };
+    *slots.get_mut(&b.idx()).unwrap().value_mut() += 10;
+    assert_eq!((map[a], map[b]), (1, 12));
+
+    // SAFETY: the slots are only read.
+    let slots = unsafe { map.slots() };
+    assert_eq!(slots[&b.idx()].generation(), b.generation());
+    assert_eq!(slots.len(), 2);
+}
+
+#[test]
 fn a_newer_key_replaces_the_value_and_an_older_key_is_refused() {
     let mut map = SparseSecondaryMap::<&str, Newer>::new_with_config();
     let old = key8(3, 1);

@@ -313,6 +313,28 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
         Ok(())
     }
 
+    /// Returns a pointer to the first item of the first pair, which can be
+    /// written through. It does not borrow the items, so the references made
+    /// from earlier pointers stay valid. The pointer stops being valid when the
+    /// `PairVec` is dropped or might reallocate its buffer, such as when it
+    /// grows, even if the buffer keeps its address. It dangles while the
+    /// `PairVec` has no room for pairs.
+    #[inline]
+    pub fn first_non_null(&mut self) -> NonNull<A> {
+        self.buffer.first
+    }
+
+    /// Returns a pointer to the second item of the first pair, which can be
+    /// written through. It does not borrow the items, so the references made
+    /// from earlier pointers stay valid. The pointer stops being valid when the
+    /// `PairVec` is dropped or might reallocate its buffer, such as when it
+    /// grows, even if the buffer keeps its address. It dangles while the
+    /// `PairVec` has no room for pairs.
+    #[inline]
+    pub fn second_non_null(&mut self) -> NonNull<B> {
+        self.buffer.second
+    }
+
     /// Makes room for at least `additional` more pairs, and grows the buffer
     /// when it is too small.
     #[inline]

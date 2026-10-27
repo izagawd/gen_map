@@ -55,8 +55,8 @@ use core::fmt;
 ///   `None` and leave the storage as it was if it has no items.
 /// - Once [`ensure_room`](Self::ensure_room) has returned `Ok` for `n`
 ///   items, the storage must have room for the next `n` calls of
-///   `push_unchecked`, as long as no other `&mut self` method of this trait
-///   runs in between.
+///   `push_unchecked`, as long as nothing but those calls adds items to the
+///   storage or changes its capacity in between.
 /// - When the rule above promises room, `push_unchecked` must append the item
 ///   at the end.
 /// - `clear` must drop every item and leave the storage empty. It must leave
@@ -247,6 +247,16 @@ unsafe impl<S> SliceStorage for Vec<S> {
     #[inline]
     fn clear(&mut self) {
         Vec::clear(self)
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        Vec::is_empty(self)
     }
 }
 

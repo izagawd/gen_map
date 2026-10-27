@@ -32,6 +32,24 @@ fn pushes_and_pops_keep_the_two_slices_in_step() {
 }
 
 #[test]
+fn the_non_null_pointers_reach_each_item_without_borrowing_the_others() {
+    let mut pairs = PairVec::<u32, u32>::new();
+    for i in 0..4 {
+        pairs.push(i, i * 10);
+    }
+    // SAFETY: `first_non_null` points at the first of four first items.
+    let first = unsafe { pairs.first_non_null().add(1).as_mut() };
+    // SAFETY: `second_non_null` points at the first of four second items.
+    let second = unsafe { pairs.second_non_null().add(2).as_mut() };
+    *first += 100;
+    *second += 100;
+    assert_eq!(pairs.slices(), (&[0, 101, 2, 3][..], &[0, 10, 120, 30][..]));
+    let mut empty = PairVec::<u32, u64>::new();
+    assert_eq!(empty.first_non_null(), NonNull::dangling());
+    assert_eq!(empty.second_non_null(), NonNull::dangling());
+}
+
+#[test]
 fn the_mutable_slices_change_the_pairs_in_place() {
     let mut pairs: PairVec<u32, u64> = (0..4).map(|i| (i, u64::from(i) * 10)).collect();
     let (firsts, seconds) = pairs.slices_mut();

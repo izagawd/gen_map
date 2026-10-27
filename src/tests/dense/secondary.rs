@@ -4,7 +4,7 @@
 //! storage errors.
 
 use crate::tests::{key_from_parts, Bomb, Cfg, CloneBomb, DropTracker};
-use crate::{DenseError, DenseSecondaryMap, GenMap, Key, SecondaryInsertError, Split};
+use crate::{DenseError, DenseSecondaryMap, GenMap, Key, PairStorage, SecondaryInsertError, Split};
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -17,6 +17,50 @@ type Keyed = Cfg<u8, u8>;
 fn keys(n: usize) -> Vec<Key> {
     let mut map = GenMap::new();
     (0..n).map(|_| map.insert(())).collect()
+}
+
+#[test]
+fn position_at_finds_the_value_in_a_slot_that_holds_one() {
+    let k = keys(3);
+    let mut map = DenseSecondaryMap::new();
+    map.insert(k[1], 10u32).unwrap();
+    map.insert(k[2], 20).unwrap();
+    // The slot at index 0 exists, but it holds no value.
+    assert_eq!(map.position_at(0), None);
+    assert_eq!(map.position_at(1), Some(0));
+    assert_eq!(map.position_at(2), Some(1));
+    assert_eq!(map.position_at(3), None);
+    // SAFETY: the slot at index 2 holds a value.
+    assert_eq!(unsafe { map.position_at_unchecked(2) }, 1);
+}
+
+#[test]
+fn position_and_the_storages_reach_a_value_in_place() {
+    let k = keys(3);
+    let mut map = DenseSecondaryMap::new();
+    map.insert(k[0], 1).unwrap();
+    map.insert(k[1], 2).unwrap();
+    let position = map.position(k[1]).unwrap();
+    assert_eq!(map.as_slices().1[position], 2);
+    assert_eq!(map.position(k[2]), None);
+    // SAFETY: a value is stored under `k[1]`.
+    assert_eq!(unsafe { map.position_unchecked(k[1]) }, position);
+
+    // SAFETY: only the value under `k[1]` changes.
+    let pairs = unsafe { map.pairs_mut() };
+    // SAFETY: `position` is below the number of values.
+    let value = unsafe { pairs.second_non_null().add(position).as_mut() };
+    *value += 10;
+    assert_eq!(map.get(k[1]), Some(&12));
+
+    // SAFETY: the keys and the values are only read.
+    let (keys, values) = unsafe { map.pairs() }.slices();
+    assert_eq!((keys[position], values[position]), (k[1], 12));
+
+    // SAFETY: the slots are only read.
+    assert_eq!(unsafe { map.slots() }.len(), 2);
+    // SAFETY: the same as above.
+    assert_eq!(unsafe { map.slots_mut() }.len(), 2);
 }
 
 #[test]
