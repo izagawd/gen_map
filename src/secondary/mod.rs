@@ -339,9 +339,9 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     ///
     /// # Safety
     ///
-    /// Changes made through the returned reference must keep the slots
-    /// following the rules that [`SecondaryMapRawParts`] lists, with the other
-    /// fields of the map as they are.
+    /// By the time the map is used again through a method other than
+    /// [`slots`](Self::slots) and [`slots_mut`](Self::slots_mut), the slots
+    /// must follow the rules that [`SecondaryMapRawParts`] lists.
     #[inline]
     pub unsafe fn slots(&self) -> &<C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>> {
         &self.slots
@@ -353,9 +353,8 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// # Safety
     ///
     /// By the time the map is used again through a method other than
-    /// [`slots`](Self::slots) and `slots_mut`, the slots must follow the rules
-    /// that [`SecondaryMapRawParts`] lists, with the other fields of the map as
-    /// they are.
+    /// [`slots`](Self::slots) and [`slots_mut`](Self::slots_mut), the slots
+    /// must follow the rules that [`SecondaryMapRawParts`] lists.
     #[inline]
     pub unsafe fn slots_mut(
         &mut self,
