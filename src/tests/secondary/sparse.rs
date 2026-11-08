@@ -116,8 +116,8 @@ fn slots_and_slots_mut_reach_a_value_in_place() {
     let a = keys.insert(());
     let b = keys.insert(());
     let mut map = SparseSecondaryMap::new();
-    map.insert(a, 1u32).unwrap();
-    map.insert(b, 2).unwrap();
+    map.insert(a, 1u32);
+    map.insert(b, 2);
 
     // SAFETY: only the value of `b` changes.
     let slots = unsafe { map.slots_mut() };
@@ -135,12 +135,12 @@ fn a_newer_key_replaces_the_value_and_an_older_key_is_refused() {
     let mut map = SparseSecondaryMap::<&str, Newer>::new_with_config();
     let old = key8(3, 1);
     let new = key8(3, 5);
-    assert_eq!(map.insert(old, "old").unwrap(), None);
-    assert_eq!(map.insert(new, "new").unwrap(), Some("old"));
+    assert_eq!(map.insert(old, "old"), None);
+    assert_eq!(map.insert(new, "new"), Some("old"));
     assert_eq!(map.get(old), None);
     assert_eq!(map[new], "new");
     assert!(matches!(
-        map.insert(old, "older"),
+        map.try_insert(old, "older"),
         Err(SecondaryInsertError::Refused("older"))
     ));
     assert_eq!(map.key_at(3), Some(new));
@@ -152,14 +152,14 @@ fn existing_wins_keeps_the_value_until_it_is_removed() {
     let mut map = SparseSecondaryMap::<&str, Keep>::new_with_config();
     let first = key8(0, 1);
     let second = key8(0, 3);
-    map.insert(first, "first").unwrap();
+    map.insert(first, "first");
     assert!(matches!(
-        map.insert(second, "second"),
+        map.try_insert(second, "second"),
         Err(SecondaryInsertError::Refused("second"))
     ));
     assert_eq!(map.remove(second), None);
     assert_eq!(map.remove(first), Some("first"));
-    assert_eq!(map.insert(second, "second").unwrap(), None);
+    assert_eq!(map.insert(second, "second"), None);
     assert_eq!(map[second], "second");
 }
 
@@ -167,14 +167,14 @@ fn existing_wins_keeps_the_value_until_it_is_removed() {
 fn a_key_at_the_largest_index_fits() {
     let mut map = SparseSecondaryMap::<u32, Newer>::new_with_config();
     let key = key8(u8::MAX - 1, 1);
-    assert_eq!(map.insert(key, 1).unwrap(), None);
+    assert_eq!(map.insert(key, 1), None);
     assert_eq!(map[key], 1);
 }
 
 #[test]
 fn no_value_is_at_the_largest_value_of_the_index_type() {
     let mut map = SparseSecondaryMap::<u32, Newer>::new_with_config();
-    map.insert(key8(0, 1), 1).unwrap();
+    map.insert(key8(0, 1), 1);
     assert_eq!(map.key_at(u8::MAX), None);
     assert_eq!(map.get_at(u8::MAX), None);
     assert_eq!(map.get_at_mut(u8::MAX), None);
@@ -187,7 +187,7 @@ fn no_value_is_at_the_largest_value_of_the_index_type() {
 #[test]
 fn a_key_with_another_generation_neither_reads_nor_removes() {
     let mut map = SparseSecondaryMap::<u32, Newer>::new_with_config();
-    map.insert(key8(2, 3), 7).unwrap();
+    map.insert(key8(2, 3), 7);
     let stale = key8(2, 1);
     assert!(!map.contains_key(stale));
     assert_eq!(map.get(stale), None);
@@ -204,7 +204,7 @@ fn a_high_index_takes_no_room_for_the_indices_below_it() {
         last = people.insert(());
     }
     let mut map = SparseSecondaryMap::new();
-    map.insert(last, "last").unwrap();
+    map.insert(last, "last");
     assert_eq!(map.len(), 1);
     assert!(map.capacity() < 100);
     assert_eq!(map[last], "last");
@@ -216,9 +216,9 @@ fn every_value_is_dropped_once() {
     let k = keys(10);
     let mut map = SparseSecondaryMap::new();
     for key in &k {
-        map.insert(*key, tracker.make_item()).unwrap();
+        map.insert(*key, tracker.make_item());
     }
-    drop(map.insert(k[0], tracker.make_item()));
+    drop(map.try_insert(k[0], tracker.make_item()));
     drop(map.remove(k[1]));
     map.retain(|key, _| key != k[2]);
     let mut drain = map.drain();
@@ -227,18 +227,18 @@ fn every_value_is_dropped_once() {
     assert!(map.is_empty());
 
     for key in &k {
-        map.insert(*key, tracker.make_item()).unwrap();
+        map.insert(*key, tracker.make_item());
     }
     let mut into_iter = map.clone().into_iter();
     drop(into_iter.next());
     drop(into_iter);
     let mut copy = SparseSecondaryMap::new();
-    copy.insert(k[0], tracker.make_item()).unwrap();
+    copy.insert(k[0], tracker.make_item());
     copy.clone_from(&map);
     drop(copy);
     map.clear();
     for key in &k[..3] {
-        map.insert(*key, tracker.make_item()).unwrap();
+        map.insert(*key, tracker.make_item());
     }
     drop(map);
     tracker.assert_all_dropped_exactly_once(tracker.total_made());
@@ -248,7 +248,7 @@ fn every_value_is_dropped_once() {
 fn lookups_work_when_every_index_collides() {
     let mut map = SparseSecondaryMap::<u32, Newer, Collide>::new_with_config();
     for idx in 0..20 {
-        map.insert(key8(idx, 1), u32::from(idx)).unwrap();
+        map.insert(key8(idx, 1), u32::from(idx));
     }
     for idx in 0..20 {
         assert_eq!(map[key8(idx, 1)], u32::from(idx));
@@ -275,7 +275,7 @@ fn lookups_work_when_every_index_collides() {
 fn the_constructors_use_the_given_hasher_and_config() {
     let k = keys(1);
     let mut map = SparseSecondaryMap::with_hasher(Collide::default());
-    map.insert(k[0], 1).unwrap();
+    map.insert(k[0], 1);
     assert_eq!(map[k[0]], 1);
     let _: &Collide = map.hasher();
 
@@ -286,13 +286,13 @@ fn the_constructors_use_the_given_hasher_and_config() {
 
     let mut map = SparseSecondaryMap::<u32, Keep, Collide>::with_capacity_and_config(10);
     assert!(map.capacity() >= 10);
-    map.insert(key8(1, 1), 1).unwrap();
+    map.insert(key8(1, 1), 1);
     let mut map = SparseSecondaryMap::<u32, Keep, Collide>::with_capacity_and_hasher_and_config(
         10,
         Collide::default(),
     );
     assert!(map.capacity() >= 10);
-    map.insert(key8(1, 1), 1).unwrap();
+    map.insert(key8(1, 1), 1);
     let map = SparseSecondaryMap::<u32, Keep, Collide>::with_hasher_and_config(Collide::default());
     assert_eq!(map.capacity(), 0);
     let map: SparseSecondaryMap<u32, Keep> = SparseSecondaryMap::default();
@@ -304,7 +304,7 @@ fn a_clone_holds_the_same_values_under_the_same_keys() {
     let k = keys(4);
     let mut map = SparseSecondaryMap::new();
     for (i, key) in k.iter().enumerate() {
-        map.insert(*key, i).unwrap();
+        map.insert(*key, i);
     }
     let mut clone = map.clone();
     clone[k[0]] = 100;
@@ -321,10 +321,10 @@ fn clone_from_holds_the_same_values_under_the_same_keys() {
     let k = keys(4);
     let mut source = SparseSecondaryMap::new();
     for (i, key) in k[..3].iter().enumerate() {
-        source.insert(*key, i).unwrap();
+        source.insert(*key, i);
     }
     let mut target = SparseSecondaryMap::new();
-    target.insert(k[3], 3).unwrap();
+    target.insert(k[3], 3);
     target.clone_from(&source);
     assert_eq!(target.len(), 3);
     assert_eq!(target.get(k[3]), None);
@@ -338,7 +338,7 @@ fn the_iterators_agree_with_each_other() {
     let k = keys(6);
     let mut map = SparseSecondaryMap::new();
     for (i, key) in k.iter().enumerate() {
-        map.insert(*key, i).unwrap();
+        map.insert(*key, i);
     }
     let mut pairs: Vec<_> = map.iter().map(|(key, value)| (key, *value)).collect();
     pairs.sort_unstable();
@@ -386,8 +386,8 @@ fn the_iterators_agree_with_each_other() {
 fn get_disjoint_mut_checks_every_key() {
     let k = keys(3);
     let mut map = SparseSecondaryMap::new();
-    map.insert(k[0], 0).unwrap();
-    map.insert(k[1], 1).unwrap();
+    map.insert(k[0], 0);
+    map.insert(k[1], 1);
     assert_eq!(
         map.get_disjoint_mut([k[0], k[2]]),
         Err(GetDisjointMutError::InvalidKey)
@@ -428,7 +428,7 @@ fn shrinking_frees_room_and_keeps_every_value() {
     let k = keys(1000);
     let mut map = SparseSecondaryMap::new();
     for (i, key) in k.iter().enumerate() {
-        map.insert(*key, i).unwrap();
+        map.insert(*key, i);
     }
     map.retain(|_, value| *value < 5);
     let before = map.capacity();
@@ -451,7 +451,7 @@ fn shrinking_frees_room_and_keeps_every_value() {
     map.clear();
     map.shrink_to_fit();
     assert_eq!(map.capacity(), 0);
-    map.insert(k[0], 0).unwrap();
+    map.insert(k[0], 0);
     assert_eq!(map[k[0]], 0);
 }
 
@@ -470,8 +470,8 @@ fn a_hasher_that_changes_its_hashes_cannot_cause_undefined_behavior() {
         };
         let mut map = SparseSecondaryMap::<u32, Newer, Flaky>::with_hasher_and_config(hasher);
         let _ = catch_unwind(AssertUnwindSafe(|| {
-            let _ = map.insert(a, 1);
-            let _ = map.insert(b, 2);
+            let _ = map.try_insert(a, 1);
+            let _ = map.try_insert(b, 2);
             let _ = map.get_disjoint_mut([a, b]);
             let _ = map.get_disjoint_mut_at([1, 2]);
             let _ = (
@@ -481,7 +481,7 @@ fn a_hasher_that_changes_its_hashes_cannot_cause_undefined_behavior() {
                 map.get_at(2),
             );
             let _ = (map.get_mut(b).is_some(), map.get_at_mut(1).is_some());
-            let _ = map.insert(key8(1, 3), 3);
+            let _ = map.try_insert(key8(1, 3), 3);
             let _ = format!("{:?}", map.clone());
             let _ = map.iter().count() + map.keys().count() + map.values().count();
             map.retain(|_, value| *value != 2);
@@ -509,7 +509,7 @@ fn indexing_with_a_missing_key_panics() {
 #[test]
 fn debug_lists_each_key_with_its_value() {
     let mut map = SparseSecondaryMap::<u32, Newer>::new_with_config();
-    map.insert(key8(1, 3), 5).unwrap();
+    map.insert(key8(1, 3), 5);
     assert_eq!(format!("{map:?}"), "{Key { idx: 1, generation: 3 }: 5}");
 }
 
@@ -593,8 +593,8 @@ where
                     known.push(key);
                 }
                 assert_eq!(
-                    Outcome::from(secondary.insert(key, value)),
-                    Outcome::from(sparse.insert(key, value)),
+                    Outcome::from(secondary.try_insert(key, value)),
+                    Outcome::from(sparse.try_insert(key, value)),
                     "{context:?}"
                 );
             }

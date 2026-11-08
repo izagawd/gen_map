@@ -144,7 +144,7 @@ type LenCount<C> = <<C as SecondaryMapConfig>::Len as Len>::Count<MapIdx<C>>;
 /// `CapacityError` for an `ArrayVec` and `SmallVecError` for a `SmallVec`.
 pub type SecondaryStorageError<T, C> = <Slots<T, C> as SliceStorage>::Error;
 
-/// What [`SecondaryMap::insert`] returns.
+/// What [`SecondaryMap::try_insert`] returns.
 type InsertResult<T, C> = Result<Option<T>, SecondaryInsertError<T, SecondaryStorageError<T, C>>>;
 
 /// Builds the key whose index is `position` and whose generation is
@@ -213,7 +213,7 @@ pub(crate) unsafe fn key_from_parts_unchecked<C: MapConfig>(
 ///
 /// let alice = people.insert("Alice");
 /// let bob = people.insert("Bob");
-/// ages.insert(alice, 30).unwrap();
+/// ages.insert(alice, 30);
 ///
 /// assert_eq!(ages.get(alice), Some(&30));
 /// assert_eq!(ages.get(bob), None);
@@ -614,8 +614,8 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// let a = keys.insert(());
     /// let b = keys.insert(());
     /// let mut map = SecondaryMap::new();
-    /// map.insert(a, 1).unwrap();
-    /// map.insert(b, 2).unwrap();
+    /// map.insert(a, 1);
+    /// map.insert(b, 2);
     ///
     /// let idxs = [a.idx().get(), b.idx().get()];
     /// let [(key_a, x), (key_b, y)] = map.get_disjoint_mut_at(idxs).unwrap();
@@ -692,8 +692,8 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// let a = keys.insert(());
     /// let b = keys.insert(());
     /// let mut map = SecondaryMap::new();
-    /// map.insert(a, 1).unwrap();
-    /// map.insert(b, 2).unwrap();
+    /// map.insert(a, 1);
+    /// map.insert(b, 2);
     ///
     /// let [x, y] = map.get_disjoint_mut([a, b]).unwrap();
     /// core::mem::swap(x, y);
@@ -743,6 +743,18 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
         })
     }
 
+    /// Stores `value` under `key` with [`try_insert`](Self::try_insert), and
+    /// returns the value that it replaced, or `None` if it replaced nothing.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `try_insert` returns an error. Use
+    /// [`try_insert`](Self::try_insert) to get the value back instead.
+    #[inline]
+    pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> Option<T> {
+        self.try_insert(key, value).unwrap()
+    }
+
     /// Stores `value` under `key`.
     ///
     /// - If the slot at the key's index is empty, the value goes in and
@@ -771,19 +783,19 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// let mut ages = SecondaryMap::new();
     ///
     /// let alice = people.insert("Alice");
-    /// assert_eq!(ages.insert(alice, 30).unwrap(), None);
-    /// assert_eq!(ages.insert(alice, 31).unwrap(), Some(30));
+    /// assert_eq!(ages.insert(alice, 30), None);
+    /// assert_eq!(ages.insert(alice, 31), Some(30));
     ///
     /// // Bob gets Alice's slot, with a newer generation, so his age replaces
     /// // hers, and Alice's old key can no longer replace his.
     /// people.remove(alice);
     /// let bob = people.insert("Bob");
     /// assert_eq!(bob.idx(), alice.idx());
-    /// assert_eq!(ages.insert(bob, 25).unwrap(), Some(31));
-    /// assert!(matches!(ages.insert(alice, 32), Err(SecondaryInsertError::Refused(32))));
+    /// assert_eq!(ages.insert(bob, 25), Some(31));
+    /// assert!(matches!(ages.try_insert(alice, 32), Err(SecondaryInsertError::Refused(32))));
     /// assert_eq!(ages[bob], 25);
     /// ```
-    pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
+    pub fn try_insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
         let generation = key.generation();
         let slot = key
             .plain_idx()
@@ -847,7 +859,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// let mut keys = GenMap::new();
     /// let mut map = SecondaryMap::new();
     /// for i in 0..4 {
-    ///     map.insert(keys.insert(()), i).unwrap();
+    ///     map.insert(keys.insert(()), i);
     /// }
     /// map.retain(|_, value| *value % 2 == 0);
     /// assert_eq!(map.len(), 2);

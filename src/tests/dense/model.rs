@@ -662,8 +662,8 @@ where
                     known.push(key);
                 }
                 assert_eq!(
-                    Outcome::from(sparse.insert(key, value)),
-                    Outcome::from(dense.insert(key, value)),
+                    Outcome::from(sparse.try_insert(key, value)),
+                    Outcome::from(dense.try_insert(key, value)),
                     "{context:?}"
                 );
             }

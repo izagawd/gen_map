@@ -196,8 +196,8 @@ fn dense_maps_clone_their_keys_and_values_out_of_two_vecs() {
     assert_eq!(copy.insert(9), map.insert(9));
 
     let mut secondary = DenseSecondaryMap::<u32, TwoVecs>::new_with_config();
-    secondary.insert(keys[2], 20).unwrap();
-    secondary.insert(keys[0], 0).unwrap();
+    secondary.insert(keys[2], 20);
+    secondary.insert(keys[0], 0);
     let copy = secondary.clone();
     assert!(copy.iter().eq(secondary.iter()));
 }

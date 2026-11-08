@@ -231,12 +231,12 @@ pub trait GenMapConfig: MapConfig {
 /// let mut people = GenMap::new();
 /// let mut ages = SecondaryMap::<u32, Keep>::new_with_config();
 /// let alice = people.insert("Alice");
-/// ages.insert(alice, 30).unwrap();
+/// ages.insert(alice, 30);
 ///
 /// // Bob gets Alice's slot, but her age stays until it is removed.
 /// people.remove(alice);
 /// let bob = people.insert("Bob");
-/// assert!(ages.insert(bob, 25).is_err());
+/// assert!(ages.try_insert(bob, 25).is_err());
 /// assert_eq!(ages[alice], 30);
 /// ```
 pub trait SecondaryMapConfig: MapConfig {
@@ -379,12 +379,12 @@ pub trait DenseGenMapConfig: MapConfig {
 /// let mut people = GenMap::new();
 /// let mut ages = DenseSecondaryMap::<u32, Keep>::new_with_config();
 /// let alice = people.insert("Alice");
-/// ages.insert(alice, 30).unwrap();
+/// ages.insert(alice, 30);
 ///
 /// // Bob gets Alice's slot, but her age stays until it is removed.
 /// people.remove(alice);
 /// let bob = people.insert("Bob");
-/// assert!(ages.insert(bob, 25).is_err());
+/// assert!(ages.try_insert(bob, 25).is_err());
 /// assert_eq!(ages[alice], 30);
 /// ```
 pub trait DenseSecondaryMapConfig: MapConfig {
@@ -447,8 +447,8 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     /// let alice = people.insert("Alice");
     /// let mut ages = DenseSecondaryMap::<u32, Paired>::new_with_config();
     /// let mut heights = DenseSecondaryMap::<u32, TwoVecs>::new_with_config();
-    /// ages.insert(alice, 30).unwrap();
-    /// heights.insert(alice, 165).unwrap();
+    /// ages.insert(alice, 30);
+    /// heights.insert(alice, 165);
     /// assert_eq!(ages[alice], 30);
     /// assert_eq!(heights[alice], 165);
     /// ```
@@ -486,12 +486,12 @@ pub trait DenseSecondaryMapConfig: MapConfig {
 /// let mut people = GenMap::new();
 /// let mut ages = SparseSecondaryMap::<u32, Keep>::new_with_config();
 /// let alice = people.insert("Alice");
-/// ages.insert(alice, 30).unwrap();
+/// ages.insert(alice, 30);
 ///
 /// // Bob gets Alice's slot, but her age stays until it is removed.
 /// people.remove(alice);
 /// let bob = people.insert("Bob");
-/// assert!(ages.insert(bob, 25).is_err());
+/// assert!(ages.try_insert(bob, 25).is_err());
 /// assert_eq!(ages[alice], 30);
 /// ```
 #[cfg(feature = "std")]

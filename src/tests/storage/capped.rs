@@ -167,7 +167,7 @@ fn a_secondary_map_hands_back_the_storages_own_error_and_adds_no_slots() {
     let mut map = SecondaryMap::<i32, Four>::new_with_config();
     assert_eq!(map.capacity(), CAP);
     let error: SecondaryInsertError<i32, SecondaryStorageError<i32, Four>> = map
-        .insert(key_from_parts::<Split<u8, u8>>(9, 1), 9)
+        .try_insert(key_from_parts::<Split<u8, u8>>(9, 1), 9)
         .unwrap_err();
     assert!(matches!(
         error,
@@ -176,11 +176,7 @@ fn a_secondary_map_hands_back_the_storages_own_error_and_adds_no_slots() {
     assert_eq!(map.slots_len(), 0);
 
     // Inserting at index 3 fills all four slots the storage has room for.
-    assert_eq!(
-        map.insert(key_from_parts::<Split<u8, u8>>(3, 1), 3)
-            .unwrap(),
-        None
-    );
+    assert_eq!(map.insert(key_from_parts::<Split<u8, u8>>(3, 1), 3), None);
     assert_eq!(map.slots_len(), CAP);
     assert_eq!(map.len(), 1);
 }
@@ -189,7 +185,7 @@ fn a_secondary_map_hands_back_the_storages_own_error_and_adds_no_slots() {
 fn a_secondary_map_clones_on_a_fixed_storage() {
     let mut map = SecondaryMap::<i32, Four>::new_with_config();
     let key = key_from_parts::<Split<u8, u8>>(2, 1);
-    map.insert(key, 7).unwrap();
+    map.insert(key, 7);
     let copy = map.clone();
     assert_eq!(copy.len(), 1);
     assert_eq!(copy.slots_len(), 3);

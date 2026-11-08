@@ -102,7 +102,7 @@ fn a_dense_secondary_map_of_unit_values_keeps_a_key_for_each_value() {
     let keys: Vec<_> = (0..6).map(|_| primary.insert(())).collect();
     let mut secondary = DenseSecondaryMap::<()>::new();
     for key in &keys {
-        assert!(matches!(secondary.insert(*key, ()), Ok(None)));
+        assert!(matches!(secondary.try_insert(*key, ()), Ok(None)));
     }
     assert_eq!(secondary.remove(keys[1]), Some(()));
     assert_eq!(secondary.len(), 5);

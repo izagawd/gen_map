@@ -181,8 +181,8 @@ fn a_dense_map_works_without_an_owning_iterator() {
 
     let mut secondary =
         DenseSecondaryMap::<u32, DenseNoIter>::with_storages(bare(), bare_pairs()).unwrap();
-    secondary.insert(c, 30).unwrap();
-    secondary.insert(b, 20).unwrap();
+    secondary.insert(c, 30);
+    secondary.insert(b, 20);
     let drained: Vec<_> = secondary.drain().collect();
     assert_eq!(drained, [(b, 20), (c, 30)]);
 }
@@ -205,8 +205,8 @@ fn dense_into_iter_works_when_the_storage_iterators_have_no_next_back() {
 
     let mut secondary =
         DenseSecondaryMap::<u32, DenseForwardIter>::with_storages(bare(), bare_pairs()).unwrap();
-    secondary.insert(keys[2], 2).unwrap();
-    secondary.insert(keys[0], 0).unwrap();
+    secondary.insert(keys[2], 2);
+    secondary.insert(keys[0], 0);
     let pairs: Vec<_> = secondary.into_iter().collect();
     assert_eq!(pairs, [(keys[2], 2), (keys[0], 0)]);
 }

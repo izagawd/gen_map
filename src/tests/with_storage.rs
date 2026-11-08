@@ -69,7 +69,7 @@ fn a_secondary_map_built_from_an_empty_storage_keeps_it_and_works() {
     assert_eq!(map.len(), 0);
     assert_eq!(map.slots_len(), 0);
 
-    map.insert(b, 2).unwrap();
+    map.insert(b, 2);
     assert!(map.get(a).is_none());
     assert_eq!(map[b], 2);
     assert_eq!(map.len(), 1);
@@ -80,7 +80,7 @@ fn a_secondary_map_refuses_a_storage_that_holds_slots_and_hands_it_back() {
     let mut keys = GenMap::<(), Config>::new_with_config();
     let key = keys.insert(());
     let mut map = SecondaryMap::<i32, Config>::new_with_config();
-    map.insert(key, 1).unwrap();
+    map.insert(key, 1);
     let slots = map.into_raw_parts().slots;
 
     let error = SecondaryMap::<i32, Config>::with_storage(slots).unwrap_err();
@@ -153,7 +153,7 @@ fn a_dense_secondary_map_built_from_empty_storages_keeps_them_and_works() {
     assert_eq!(map.capacity(), capacity);
     assert_eq!(map.len(), 0);
 
-    map.insert(b, 2).unwrap();
+    map.insert(b, 2);
     assert!(map.get(a).is_none());
     assert_eq!(map[b], 2);
     assert_eq!(map.len(), 1);
@@ -164,7 +164,7 @@ fn a_dense_secondary_map_says_which_storage_holds_items_and_hands_both_back() {
     let mut keys = GenMap::<(), Config>::new_with_config();
     let key = keys.insert(());
     let mut map = DenseSecondaryMap::<i32, Config>::new_with_config();
-    map.insert(key, 1).unwrap();
+    map.insert(key, 1);
     let parts = map.into_raw_parts();
 
     let error =

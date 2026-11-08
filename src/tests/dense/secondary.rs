@@ -23,8 +23,8 @@ fn keys(n: usize) -> Vec<Key> {
 fn position_at_finds_the_value_in_a_slot_that_holds_one() {
     let k = keys(3);
     let mut map = DenseSecondaryMap::new();
-    map.insert(k[1], 10u32).unwrap();
-    map.insert(k[2], 20).unwrap();
+    map.insert(k[1], 10u32);
+    map.insert(k[2], 20);
     // The slot at index 0 exists, but it holds no value.
     assert_eq!(map.position_at(0), None);
     assert_eq!(map.position_at(1), Some(0));
@@ -38,8 +38,8 @@ fn position_at_finds_the_value_in_a_slot_that_holds_one() {
 fn position_and_the_storages_reach_a_value_in_place() {
     let k = keys(3);
     let mut map = DenseSecondaryMap::new();
-    map.insert(k[0], 1).unwrap();
-    map.insert(k[1], 2).unwrap();
+    map.insert(k[0], 1);
+    map.insert(k[1], 2);
     let position = map.position(k[1]).unwrap();
     assert_eq!(map.as_slices().1[position], 2);
     assert_eq!(map.position(k[2]), None);
@@ -68,7 +68,7 @@ fn removing_a_value_moves_the_last_value_into_its_place() {
     let k = keys(4);
     let mut map = DenseSecondaryMap::new();
     for (i, key) in k.iter().enumerate() {
-        assert_eq!(map.insert(*key, i).unwrap(), None);
+        assert_eq!(map.insert(*key, i), None);
     }
     assert_eq!(map.remove(k[0]), Some(0));
     assert_eq!(map.values().copied().collect::<Vec<_>>(), [3, 1, 2]);
@@ -86,16 +86,16 @@ fn a_value_replaced_under_a_newer_key_keeps_its_place() {
     let new = key_from_parts::<Split<u8, u8>>(0, 3);
     let other = key_from_parts::<Split<u8, u8>>(1, 1);
     let mut keyed = DenseSecondaryMap::<&str, Keyed>::new_with_config();
-    keyed.insert(old, "old").unwrap();
-    keyed.insert(other, "other").unwrap();
-    assert_eq!(keyed.insert(new, "new").unwrap(), Some("old"));
+    keyed.insert(old, "old");
+    keyed.insert(other, "other");
+    assert_eq!(keyed.insert(new, "new"), Some("old"));
     assert_eq!(
         keyed.iter().collect::<Vec<_>>(),
         [(new, &"new"), (other, &"other")]
     );
     assert_eq!(keyed.get(old), None);
     assert!(matches!(
-        keyed.insert(old, "older"),
+        keyed.try_insert(old, "older"),
         Err(SecondaryInsertError::Refused("older"))
     ));
     // The new key moved in with the value, so removing under it works.
@@ -107,7 +107,7 @@ fn a_value_replaced_under_a_newer_key_keeps_its_place() {
 fn a_key_at_the_largest_index_fits() {
     let mut map = DenseSecondaryMap::<u32, Keyed>::new_with_config();
     let key = key_from_parts::<Split<u8, u8>>(u8::MAX - 1, 1);
-    assert_eq!(map.insert(key, 1).unwrap(), None);
+    assert_eq!(map.insert(key, 1), None);
     assert_eq!(map[key], 1);
     assert_eq!(map.slots_len(), usize::from(u8::MAX));
 }
@@ -117,7 +117,7 @@ fn retain_and_drain_see_every_value_once() {
     let k = keys(6);
     let mut map = DenseSecondaryMap::new();
     for (i, key) in k.iter().enumerate() {
-        map.insert(*key, i).unwrap();
+        map.insert(*key, i);
     }
     let mut seen = Vec::new();
     map.retain(|key, value| {
@@ -142,18 +142,18 @@ fn every_value_is_dropped_once() {
     let k = keys(8);
     let mut map = DenseSecondaryMap::new();
     for key in &k {
-        map.insert(*key, tracker.make_item()).unwrap();
+        map.insert(*key, tracker.make_item());
     }
-    drop(map.insert(k[0], tracker.make_item()));
+    drop(map.try_insert(k[0], tracker.make_item()));
     drop(map.remove(k[1]));
     map.retain(|key, _| key != k[2]);
     let mut drain = map.drain();
     drop(drain.next());
     drop(drain);
     assert_eq!(tracker.total_dropped(), 9);
-    map.insert(k[3], tracker.make_item()).unwrap();
+    map.insert(k[3], tracker.make_item());
     map.clear();
-    map.insert(k[4], tracker.make_item()).unwrap();
+    map.insert(k[4], tracker.make_item());
     let copy = map.clone();
     drop(map);
     drop(copy);
@@ -165,7 +165,7 @@ fn iterators_debug_and_into_iter_follow_the_values() {
     let k = keys(3);
     let mut map = DenseSecondaryMap::new();
     for (i, key) in k.iter().enumerate() {
-        map.insert(*key, i).unwrap();
+        map.insert(*key, i);
     }
     map.remove(k[0]);
     for (_, value) in &mut map {
@@ -202,7 +202,7 @@ fn values_mut_and_index_mut_change_the_values_in_place() {
     let mut map = DenseSecondaryMap::<u32>::default();
     assert!(map.is_empty());
     for (i, key) in (0..).zip(&k) {
-        map.insert(*key, i).unwrap();
+        map.insert(*key, i);
     }
     for value in map.values_mut() {
         *value *= 10;
@@ -220,7 +220,7 @@ fn as_slices_and_as_slices_mut_follow_the_stored_order() {
     let k = keys(4);
     let mut map = DenseSecondaryMap::new();
     for (i, key) in (0..).zip(&k) {
-        map.insert(*key, i).unwrap();
+        map.insert(*key, i);
     }
     map.remove(k[1]);
     let stored = [k[0], k[3], k[2]];
@@ -272,7 +272,7 @@ mod capped {
         let mut map = DenseSecondaryMap::<u32, Caps<S, V, K>>::new_with_config();
         for i in 0..u8::MAX {
             let key = key_from_parts::<Split<u8, u8>>(i, 1);
-            match map.insert(key, u32::from(i)) {
+            match map.try_insert(key, u32::from(i)) {
                 Ok(_) => {}
                 Err(SecondaryInsertError::StorageFull(value, error)) => {
                     assert_eq!(value, u32::from(i));
@@ -302,11 +302,11 @@ mod capped {
         let mut map = DenseSecondaryMap::<u32, Caps<8, 2, 8>>::new_with_config();
         for i in 0..2 {
             let key = key_from_parts::<Split<u8, u8>>(i, 1);
-            map.insert(key, u32::from(i)).unwrap();
+            map.insert(key, u32::from(i));
         }
         let far = key_from_parts::<Split<u8, u8>>(6, 1);
         assert!(matches!(
-            map.insert(far, 6),
+            map.try_insert(far, 6),
             Err(SecondaryInsertError::StorageFull(
                 6,
                 DenseError::Pairs(SplitPairError::Second(_))
@@ -323,12 +323,12 @@ fn a_panicking_drop_in_clear_leaves_an_empty_map() {
     let all: Vec<Key> = (0..4).map(|_| keys.insert(())).collect();
     let mut map = DenseSecondaryMap::new();
     for (i, &key) in all[..3].iter().enumerate() {
-        map.insert(key, Bomb::new(&tracker, i == 1)).unwrap();
+        map.insert(key, Bomb::new(&tracker, i == 1));
     }
     assert!(catch_unwind(AssertUnwindSafe(|| map.clear())).is_err());
     assert!(map.is_empty());
     assert!(all[..3].iter().all(|&key| map.get(key).is_none()));
-    map.insert(all[3], Bomb::new(&tracker, false)).unwrap();
+    map.insert(all[3], Bomb::new(&tracker, false));
     assert!(map.get(all[3]).is_some());
     drop(map);
     tracker.assert_all_dropped_exactly_once(4);
@@ -339,10 +339,10 @@ fn clone_from_matches_clone_and_reuses_the_allocation() {
     let k = keys(6);
     let mut source = DenseSecondaryMap::new();
     for &i in &[0, 2, 5] {
-        source.insert(k[i], i as u32).unwrap();
+        source.insert(k[i], i as u32);
     }
     let mut target = DenseSecondaryMap::with_capacity(16);
-    target.insert(k[1], 100).unwrap();
+    target.insert(k[1], 100);
     let capacity = target.capacity();
 
     target.clone_from(&source);
@@ -356,14 +356,10 @@ fn clone_from_leaves_an_empty_map_if_a_value_panics_while_cloning() {
     let k = keys(5);
     let mut source = DenseSecondaryMap::new();
     for (i, &key) in k[..4].iter().enumerate() {
-        source
-            .insert(key, CloneBomb::new(&tracker, i == 2))
-            .unwrap();
+        source.insert(key, CloneBomb::new(&tracker, i == 2));
     }
     let mut target = DenseSecondaryMap::new();
-    target
-        .insert(k[4], CloneBomb::new(&tracker, false))
-        .unwrap();
+    target.insert(k[4], CloneBomb::new(&tracker, false));
 
     assert!(catch_unwind(AssertUnwindSafe(|| target.clone_from(&source))).is_err());
     assert!(target.is_empty());

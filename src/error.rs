@@ -107,11 +107,12 @@ impl<T, S: fmt::Display> fmt::Display for InsertError<T, S> {
     }
 }
 
-/// This error says why [`SecondaryMap::insert`](crate::SecondaryMap::insert),
-/// [`DenseSecondaryMap::insert`](crate::DenseSecondaryMap::insert) or
-/// [`SparseSecondaryMap::insert`](crate::SparseSecondaryMap::insert) could
-/// not insert. Each variant hands the value back so that the caller can keep
-/// it. `S` is the map's
+/// This error says why
+/// [`SecondaryMap::try_insert`](crate::SecondaryMap::try_insert),
+/// [`DenseSecondaryMap::try_insert`](crate::DenseSecondaryMap::try_insert) or
+/// [`SparseSecondaryMap::try_insert`](crate::SparseSecondaryMap::try_insert)
+/// could not insert. Each variant hands the value back so that the caller can
+/// keep it. `S` is the map's
 /// [`SecondaryStorageError`](crate::SecondaryStorageError), the
 /// [`DenseSecondaryStorageError`](crate::DenseSecondaryStorageError) of a
 /// `DenseSecondaryMap`, or `TryReserveError` for a `SparseSecondaryMap`.

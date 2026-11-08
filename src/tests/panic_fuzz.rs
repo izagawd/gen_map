@@ -276,10 +276,10 @@ where
                         known.push(key);
                     }
                     if let Some(key) = a {
-                        drop(secondary.insert(key, fragile()));
+                        drop(secondary.try_insert(key, fragile()));
                     }
                     if let Some(key) = b {
-                        drop(dense_secondary.insert(key, fragile()));
+                        drop(dense_secondary.try_insert(key, fragile()));
                     }
                 }
                 4 => {
