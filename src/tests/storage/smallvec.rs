@@ -54,7 +54,7 @@ fn dense_maps_in_small_vecs_keep_working_after_they_move_to_the_heap() {
 
     let mut secondary = DenseSecondaryMap::<u32, Four>::new_with_config();
     for (key, value) in &map {
-        secondary.insert(key, *value * 10).unwrap();
+        secondary.insert(key, *value * 10);
     }
     assert_eq!(secondary.len(), 19);
     assert_eq!(secondary[keys[19]], 190);
@@ -171,7 +171,7 @@ fn a_secondary_map_in_a_small_vec_keeps_working_after_it_moves_to_the_heap() {
         .map(|i| key_from_parts::<Split<u32, u32>>(i * 3, 1))
         .collect();
     for (i, &key) in keys.iter().enumerate() {
-        assert_eq!(map.insert(key, i as u32).unwrap(), None);
+        assert_eq!(map.insert(key, i as u32), None);
     }
     assert_eq!(map.slots_len(), 58);
     for (i, &key) in keys.iter().enumerate() {
@@ -195,13 +195,12 @@ fn a_secondary_map_in_a_small_vec_can_make_room_ahead_of_time() {
     assert!(map.try_reserve(8).is_ok());
 
     let key = key_from_parts::<Split<u32, u32>>(63, 1);
-    map.insert(key, 1).unwrap();
+    map.insert(key, 1);
     assert_eq!(map[key], 1);
     assert_eq!(map.slots_len(), 64);
 
     // The storage's own iterator runs from both ends, so the map's does too.
-    map.insert(key_from_parts::<Split<u32, u32>>(2, 1), 2)
-        .unwrap();
+    map.insert(key_from_parts::<Split<u32, u32>>(2, 1), 2);
     let backward: Vec<u32> = map.into_iter().rev().map(|(_, value)| value).collect();
     assert_eq!(backward, [1, 2]);
 }

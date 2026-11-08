@@ -47,7 +47,7 @@
 //! let mut people = GenMap::new();
 //! let mut ages = SecondaryMap::new();
 //! let alice = people.insert("Alice");
-//! ages.insert(alice, 30).unwrap();
+//! ages.insert(alice, 30);
 //! assert_eq!(ages[alice], 30);
 //! ```
 //!

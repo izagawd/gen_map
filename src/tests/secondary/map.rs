@@ -101,8 +101,8 @@ fn slots_and_slots_mut_reach_a_value_in_place() {
     let a = keys.insert(());
     let b = keys.insert(());
     let mut map = SecondaryMap::<u32>::new();
-    map.insert(a, 1).unwrap();
-    map.insert(b, 2).unwrap();
+    map.insert(a, 1);
+    map.insert(b, 2);
     let index = <<DefaultKeyConfig as KeyConfig>::Idx as KeyPiece>::from_non_max(b.idx())
         .into_usize()
         .unwrap();
@@ -124,8 +124,8 @@ fn slots_mut_and_set_len_remove_a_value_together() {
     let a = keys.insert(());
     let b = keys.insert(());
     let mut map = SecondaryMap::<u32>::new();
-    map.insert(a, 1).unwrap();
-    map.insert(b, 2).unwrap();
+    map.insert(a, 1);
+    map.insert(b, 2);
     let index = <<DefaultKeyConfig as KeyConfig>::Idx as KeyPiece>::from_non_max(b.idx())
         .into_usize()
         .unwrap();
@@ -150,8 +150,8 @@ fn insert_get_remove() {
     let mut map = SecondaryMap::<u32>::new();
     assert!(map.is_empty());
 
-    assert_eq!(map.insert(a, 1).unwrap(), None);
-    assert_eq!(map.insert(b, 2).unwrap(), None);
+    assert_eq!(map.insert(a, 1), None);
+    assert_eq!(map.insert(b, 2), None);
     assert_eq!(map.len(), 2);
     assert_eq!(map.get(a), Some(&1));
     assert!(map.contains_key(b));
@@ -159,7 +159,7 @@ fn insert_get_remove() {
     *map.get_mut(b).unwrap() += 10;
     assert_eq!(map[b], 12);
     map[a] = 5;
-    assert_eq!(map.insert(a, 6).unwrap(), Some(5));
+    assert_eq!(map.insert(a, 6), Some(5));
     assert_eq!(map.len(), 2);
 
     assert_eq!(map.remove(a), Some(6));
@@ -177,18 +177,18 @@ fn insert_get_remove() {
 fn a_newer_key_replaces_an_older_value() {
     let (old, new) = reused_keys();
     let mut map = SecondaryMap::<u32>::new();
-    map.insert(old, 1).unwrap();
+    map.insert(old, 1);
 
     // The newer key does not match the older value, but its insert
     // replaces it and hands it back.
     assert_eq!(map.get(new), None);
-    assert_eq!(map.insert(new, 2).unwrap(), Some(1));
+    assert_eq!(map.insert(new, 2), Some(1));
     assert_eq!(map.get(old), None);
     assert_eq!(map[new], 2);
     assert_eq!(map.len(), 1);
 
     // The older key cannot take the slot back.
-    assert_eq!(refused(map.insert(old, 3)), 3);
+    assert_eq!(refused(map.try_insert(old, 3)), 3);
     assert_eq!(map.remove(old), None);
     assert_eq!(map[new], 2);
     assert_eq!(map.len(), 1);
@@ -200,9 +200,9 @@ fn an_empty_slot_takes_any_key() {
     // older key's insert goes in.
     let (old, new) = reused_keys();
     let mut map = SecondaryMap::<u32>::new();
-    map.insert(new, 1).unwrap();
+    map.insert(new, 1);
     map.remove(new);
-    assert_eq!(map.insert(old, 2).unwrap(), None);
+    assert_eq!(map.insert(old, 2), None);
     assert_eq!(map[old], 2);
     assert_eq!(map.len(), 1);
 }
@@ -211,12 +211,12 @@ fn an_empty_slot_takes_any_key() {
 fn existing_wins_keeps_the_older_value_until_it_is_removed() {
     let (old, new) = reused_keys();
     let mut map = SecondaryMap::<u32, Keep>::new_with_config();
-    map.insert(old, 1).unwrap();
-    assert_eq!(refused(map.insert(new, 2)), 2);
+    map.insert(old, 1);
+    assert_eq!(refused(map.try_insert(new, 2)), 2);
     assert_eq!(map[old], 1);
 
     assert_eq!(map.remove(old), Some(1));
-    assert_eq!(map.insert(new, 2).unwrap(), None);
+    assert_eq!(map.insert(new, 2), None);
     assert_eq!(map[new], 2);
 }
 
@@ -224,8 +224,8 @@ fn existing_wins_keeps_the_older_value_until_it_is_removed() {
 fn newer_wins_refuses_a_key_from_after_a_wrap() {
     let (before, after) = keys_around_a_wrap();
     let mut map = SecondaryMap::<u32, With<NewerWins>>::new_with_config();
-    map.insert(before, 1).unwrap();
-    assert_eq!(refused(map.insert(after, 2)), 2);
+    map.insert(before, 1);
+    assert_eq!(refused(map.try_insert(after, 2)), 2);
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn iterators() {
     // Skipping the second key leaves the slot at index 1 empty.
     for (i, &key) in all.iter().enumerate() {
         if i != 1 {
-            map.insert(key, i as u32).unwrap();
+            map.insert(key, i as u32);
         }
     }
 
@@ -288,7 +288,7 @@ fn retain() {
     let all: Vec<Key> = (0..6)
         .map(|i| {
             let key = keys.insert(());
-            map.insert(key, i).unwrap();
+            map.insert(key, i);
             key
         })
         .collect();
@@ -309,7 +309,7 @@ fn drain() {
     let mut keys = GenMap::new();
     let mut map = SecondaryMap::<DropItem>::new();
     for _ in 0..5 {
-        map.insert(keys.insert(()), tracker.make_item()).unwrap();
+        map.insert(keys.insert(()), tracker.make_item());
     }
 
     // Take two values, then drop the iterator, which drops the other three.
@@ -337,11 +337,11 @@ fn every_value_is_dropped_once() {
     assert_eq!(new.idx(), old.idx());
 
     let mut map = SecondaryMap::<DropItem>::new();
-    map.insert(old, tracker.make_item()).unwrap();
-    map.insert(other, tracker.make_item()).unwrap();
-    let replaced = map.insert(other, tracker.make_item()).unwrap();
-    let overridden = map.insert(new, tracker.make_item()).unwrap();
-    let handed_back = refused(map.insert(old, tracker.make_item()));
+    map.insert(old, tracker.make_item());
+    map.insert(other, tracker.make_item());
+    let replaced = map.insert(other, tracker.make_item());
+    let overridden = map.insert(new, tracker.make_item());
+    let handed_back = refused(map.try_insert(old, tracker.make_item()));
     tracker.assert_none_dropped();
 
     drop((replaced, overridden, handed_back));
@@ -357,7 +357,7 @@ fn clone_debug_and_default() {
     let mut keys = GenMap::new();
     let a = keys.insert(());
     let mut map = SecondaryMap::<u32>::new();
-    map.insert(a, 1).unwrap();
+    map.insert(a, 1);
     let copy = map.clone();
     assert_eq!(copy[a], 1);
     assert_eq!(format!("{map:?}"), format!("{{{a:?}: 1}}"));
@@ -378,7 +378,7 @@ fn a_secondary_map_iterates_in_index_order() {
     let all: Vec<Key> = (0..4).map(|_| keys.insert(())).collect();
     let mut map = SecondaryMap::<u32>::new();
     for &i in &[3, 0, 2] {
-        map.insert(all[i], i as u32).unwrap();
+        map.insert(all[i], i as u32);
     }
     let pairs: Vec<(Key, u32)> = map.iter().map(|(key, &value)| (key, value)).collect();
     assert_eq!(pairs, [(all[0], 0), (all[2], 2), (all[3], 3)]);
@@ -392,7 +392,7 @@ fn a_secondary_map_keeps_its_slots() {
     // 254 is the largest index a slot can have, since `u8::MAX` is never
     // used.
     let last = key_from_parts::<Split<u8, u8>>(254, 1);
-    assert_eq!(map.insert(last, 7).unwrap(), None);
+    assert_eq!(map.insert(last, 7), None);
     assert_eq!(map.slots_len(), 255);
     assert_eq!(map.iter().collect::<Vec<_>>(), [(last, &7)]);
 
@@ -400,11 +400,11 @@ fn a_secondary_map_keeps_its_slots() {
     // slots, as they do in a `GenMap`.
     assert_eq!(map.remove(last), Some(7));
     assert_eq!(map.slots_len(), 255);
-    map.insert(last, 8).unwrap();
+    map.insert(last, 8);
     map.clear();
     assert!(map.is_empty());
     assert_eq!(map.slots_len(), 255);
-    map.insert(last, 9).unwrap();
+    map.insert(last, 9);
     drop(map.drain());
     assert!(map.is_empty());
     assert_eq!(map.slots_len(), 255);
@@ -416,8 +416,8 @@ fn unchecked_lookups_find_the_same_values() {
     let a = keys.insert(());
     let b = keys.insert(());
     let mut map = SecondaryMap::<u32>::new();
-    map.insert(a, 1).unwrap();
-    map.insert(b, 2).unwrap();
+    map.insert(a, 1);
+    map.insert(b, 2);
 
     // SAFETY: the map has a value for `a` and for `b`.
     unsafe {
@@ -432,11 +432,11 @@ fn unchecked_lookups_find_the_same_values() {
 fn a_clone_has_the_same_values_and_keys() {
     let (old, new) = reused_keys();
     let mut map = SecondaryMap::<u32, Keep>::new_with_config();
-    map.insert(old, 1).unwrap();
+    map.insert(old, 1);
     let mut copy = map.clone();
     assert_eq!(copy.iter().collect::<Vec<_>>(), [(old, &1)]);
     // The clone keeps the generation, so the newer key is still refused.
-    assert_eq!(refused(copy.insert(new, 2)), 2);
+    assert_eq!(refused(copy.try_insert(new, 2)), 2);
     assert_eq!(copy.remove(old), Some(1));
     assert_eq!(map[old], 1);
 }
@@ -450,7 +450,7 @@ fn an_index_past_usize_fails_in_a_secondary_map_before_adding_a_slot() {
     let key = key_from_parts::<MapKeyConfig<Wide>>(u128::MAX - 1, 1);
     let mut map = SecondaryMap::<u8, Wide>::new_with_config();
     assert!(matches!(
-        map.insert(key, 5),
+        map.try_insert(key, 5),
         Err(SecondaryInsertError::StorageFull(5, _))
     ));
     assert!(map.is_empty());
@@ -469,7 +469,7 @@ fn a_far_index_fails_in_a_secondary_map_before_adding_a_slot() {
     let key = key_from_parts::<MapKeyConfig<Big>>(1 << 62, 1);
     let mut map = SecondaryMap::<u8, Big>::new_with_config();
     assert!(matches!(
-        map.insert(key, 5),
+        map.try_insert(key, 5),
         Err(SecondaryInsertError::StorageFull(5, _))
     ));
     assert!(map.is_empty());
@@ -496,8 +496,8 @@ fn the_strategies_compare_generations_as_documented() {
 }
 
 /// Inserts `value` under `key` into `model` the way a map with `NewerWins`
-/// does, and returns what the map's `insert` would return. The model maps an
-/// index to the generation and the value there.
+/// does, and returns what the map's `try_insert` would return. The model maps
+/// an index to the generation and the value there.
 fn model_insert(
     model: &mut HashMap<u32, (u32, u32)>,
     key: Key,
@@ -627,7 +627,7 @@ where
                     coverage.full += 1;
                     assert!(
                         matches!(
-                            map.insert(key, step),
+                            map.try_insert(key, step),
                             Err(SecondaryInsertError::StorageFull(value, _)) if value == step
                         ),
                         "insert past the capacity at step {step} of seed {seed}"
@@ -641,7 +641,9 @@ where
                         coverage.met_older_or_newer += 1;
                         coverage.replaced_it += usize::from(expected.is_ok());
                     }
-                    let found = map.insert(key, step).map_err(|error| error.into_inner());
+                    let found = map
+                        .try_insert(key, step)
+                        .map_err(|error| error.into_inner());
                     assert_eq!(found, expected, "insert at step {step} of seed {seed}");
                 }
             }
@@ -744,7 +746,7 @@ fn retain_stays_consistent_when_the_closure_panics() {
     let all: Vec<Key> = (0..6)
         .map(|_| {
             let key = keys.insert(());
-            map.insert(key, tracker.make_item()).unwrap();
+            map.insert(key, tracker.make_item());
             key
         })
         .collect();
@@ -774,8 +776,7 @@ fn retain_stays_consistent_when_a_drop_panics() {
     let mut keys = GenMap::new();
     let mut map = SecondaryMap::<Bomb>::new();
     for i in 0..4 {
-        map.insert(keys.insert(()), Bomb::new(&tracker, i == 1))
-            .unwrap();
+        map.insert(keys.insert(()), Bomb::new(&tracker, i == 1));
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| map.retain(|_, _| false)));
@@ -797,7 +798,7 @@ fn clear_and_drain_stay_consistent_when_a_drop_panics() {
         let all: Vec<Key> = (0..5)
             .map(|i| {
                 let key = keys.insert(());
-                map.insert(key, Bomb::new(&tracker, i == 2)).unwrap();
+                map.insert(key, Bomb::new(&tracker, i == 2));
                 key
             })
             .collect();
@@ -835,7 +836,7 @@ fn into_iter_drops_every_value_once() {
     // Dropping the iterator early drops the values it has not reached.
     let mut map = SecondaryMap::<DropItem>::new();
     for _ in 0..4 {
-        map.insert(keys.insert(()), tracker.make_item()).unwrap();
+        map.insert(keys.insert(()), tracker.make_item());
     }
     let mut iter = map.into_iter();
     drop(iter.next());
@@ -846,8 +847,7 @@ fn into_iter_drops_every_value_once() {
     let tracker = DropTracker::new();
     let mut map = SecondaryMap::<Bomb>::new();
     for i in 0..4 {
-        map.insert(keys.insert(()), Bomb::new(&tracker, i == 2))
-            .unwrap();
+        map.insert(keys.insert(()), Bomb::new(&tracker, i == 2));
     }
     let iter = map.into_iter();
     assert!(catch_unwind(AssertUnwindSafe(move || drop(iter))).is_err());
@@ -880,7 +880,7 @@ fn clone_leaves_no_trace_when_a_value_panics_while_cloning() {
             item: tracker.make_item(),
             panics: i == 2,
         };
-        map.insert(keys.insert(()), value).unwrap();
+        map.insert(keys.insert(()), value);
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| map.clone()));
@@ -901,10 +901,10 @@ fn clone_from_matches_clone_and_reuses_the_allocation() {
     let all: Vec<Key> = (0..6).map(|_| keys.insert(())).collect();
     let mut source = SecondaryMap::<u32>::new();
     for &i in &[0, 2, 5] {
-        source.insert(all[i], i as u32).unwrap();
+        source.insert(all[i], i as u32);
     }
     let mut target = SecondaryMap::<u32>::with_capacity(16);
-    target.insert(all[1], 100).unwrap();
+    target.insert(all[1], 100);
     let capacity = target.capacity();
 
     target.clone_from(&source);
@@ -920,12 +920,10 @@ fn clone_from_leaves_an_empty_map_if_a_value_panics_while_cloning() {
     let mut source = SecondaryMap::new();
     for i in 0..4 {
         let value = CloneBomb::new(&tracker, i == 2);
-        source.insert(keys.insert(()), value).unwrap();
+        source.insert(keys.insert(()), value);
     }
     let mut target = SecondaryMap::new();
-    target
-        .insert(keys.insert(()), CloneBomb::new(&tracker, false))
-        .unwrap();
+    target.insert(keys.insert(()), CloneBomb::new(&tracker, false));
 
     assert!(catch_unwind(AssertUnwindSafe(|| target.clone_from(&source))).is_err());
     assert!(target.is_empty());
@@ -941,7 +939,7 @@ fn a_leaked_drain_leaves_the_rest_in_the_map() {
     let all: Vec<Key> = (0..4).map(|_| keys.insert(())).collect();
     let mut map = SecondaryMap::<u32>::new();
     for (i, &key) in all.iter().enumerate() {
-        map.insert(key, i as u32).unwrap();
+        map.insert(key, i as u32);
     }
 
     let mut drain = map.drain();
@@ -958,8 +956,8 @@ fn zero_sized_values_work() {
     let mut keys = GenMap::new();
     let all: Vec<Key> = (0..3).map(|_| keys.insert(())).collect();
     let mut map = SecondaryMap::<()>::new();
-    map.insert(all[0], ()).unwrap();
-    map.insert(all[2], ()).unwrap();
+    map.insert(all[0], ());
+    map.insert(all[2], ());
 
     assert_eq!(map.len(), 2);
     assert_eq!(map.get(all[1]), None);
@@ -989,7 +987,7 @@ fn every_iterator_reports_how_many_values_it_has_left() {
     let mut map = SecondaryMap::<u32>::new();
     // Every other index, so there are empty slots between the values.
     for i in [0, 2, 4] {
-        map.insert(all[i], i as u32).unwrap();
+        map.insert(all[i], i as u32);
     }
 
     check(map.iter(), 3);
@@ -1008,8 +1006,8 @@ fn map_with_a_gap() -> (SecondaryMap<u32>, Vec<Key>) {
     let mut keys = GenMap::new();
     let all: Vec<Key> = (0..4).map(|_| keys.insert(())).collect();
     let mut map = SecondaryMap::new();
-    map.insert(all[0], 10).unwrap();
-    map.insert(all[2], 12).unwrap();
+    map.insert(all[0], 10);
+    map.insert(all[2], 12);
     (map, all)
 }
 
@@ -1043,9 +1041,9 @@ fn generation_at_is_the_keys_generation_or_zero() {
 fn the_index_lookups_follow_a_replaced_and_removed_value() {
     let (old, new) = reused_keys();
     let mut map = SecondaryMap::<u32>::new();
-    map.insert(old, 1).unwrap();
+    map.insert(old, 1);
     assert_eq!(map.key_at(old.idx().get()), Some(old));
-    map.insert(new, 2).unwrap();
+    map.insert(new, 2);
     assert_eq!(map.key_at(new.idx().get()), Some(new));
     assert_eq!(map.get_at(new.idx().get()), Some((new, &2)));
 
@@ -1060,8 +1058,7 @@ fn the_index_lookups_find_nothing_past_usize() {
     type Wide = Cfg<u128, u32>;
 
     let mut map = SecondaryMap::<u8, Wide>::new_with_config();
-    map.insert(key_from_parts::<MapKeyConfig<Wide>>(0, 1), 1)
-        .unwrap();
+    map.insert(key_from_parts::<MapKeyConfig<Wide>>(0, 1), 1);
     assert_eq!(map.key_at(u128::MAX), None);
     assert_eq!(map.get_at(u128::MAX), None);
     assert!(map.get_at_mut(u128::MAX).is_none());
@@ -1133,8 +1130,8 @@ fn get_disjoint_mut_rejects_missing_stale_and_repeated_keys() {
     // The older key lost its value to the newer one, so it has no value.
     let (old, new) = reused_keys();
     let mut map = SecondaryMap::<u32>::new();
-    map.insert(old, 1).unwrap();
-    map.insert(new, 2).unwrap();
+    map.insert(old, 1);
+    map.insert(new, 2);
     assert_eq!(
         map.get_disjoint_mut([new, old]),
         Err(GetDisjointMutError::InvalidKey)
@@ -1182,8 +1179,7 @@ fn reserve_makes_room_for_slots_ahead_of_time() {
     let capacity = map.capacity();
     assert!(capacity >= 100);
     // Filling the reserved slots does not grow the storage again.
-    map.insert(key_from_parts::<DefaultKeyConfig>(99, 1), 1)
-        .unwrap();
+    map.insert(key_from_parts::<DefaultKeyConfig>(99, 1), 1);
     assert_eq!(map.slots_len(), 100);
     assert_eq!(map.capacity(), capacity);
 
@@ -1214,7 +1210,7 @@ fn every_iterator_runs_from_both_ends() {
     let mut map = SecondaryMap::<u32>::new();
     // Gaps at 1 and 4, so both ends have empty slots to skip.
     for i in [0, 2, 3, 5] {
-        map.insert(all[i], i as u32).unwrap();
+        map.insert(all[i], i as u32);
     }
     let forward: Vec<(Key, u32)> = map.iter().map(|(key, &value)| (key, value)).collect();
     let backward: Vec<(Key, u32)> = forward.iter().rev().copied().collect();
@@ -1266,7 +1262,7 @@ fn insert_takes_a_key_at_the_largest_index() {
     // `u8::MAX`, so the map needs `u8::MAX` slots to store a value under it.
     let key = key_from_parts::<Split<u8, u8>>(u8::MAX - 1, 1);
     let mut map = SecondaryMap::<&str, Cfg<u8, u8>>::new_with_config();
-    assert_eq!(map.insert(key, "x").unwrap(), None);
+    assert_eq!(map.insert(key, "x"), None);
     assert_eq!(map.len(), 1);
     assert_eq!(map.slots_len(), usize::from(u8::MAX));
     assert_eq!(map[key], "x");
@@ -1278,7 +1274,7 @@ fn insert_takes_a_key_whose_u1_index_is_zero() {
     assert_eq!(Split::<u1, u8>::max_idx().get(), u1::MIN);
     let key = key_from_parts::<Split<u1, u8>>(u1::MIN, 1);
     let mut map = SecondaryMap::<&str, Cfg<u1, u8>>::new_with_config();
-    assert_eq!(map.insert(key, "y").unwrap(), None);
+    assert_eq!(map.insert(key, "y"), None);
     assert_eq!(map[key], "y");
 }
 
@@ -1287,7 +1283,7 @@ fn a_value_under_every_key_a_byte_map_hands_out_fits_the_count() {
     let mut keys = GenMap::<(), Cfg<u8, u8>>::new_with_config();
     let mut map = SecondaryMap::<u32, Cfg<u8, u8>>::new_with_config();
     for i in 0..255 {
-        assert_eq!(map.insert(keys.insert(()), i).unwrap(), None);
+        assert_eq!(map.insert(keys.insert(()), i), None);
     }
     assert!(keys.try_insert(()).is_err());
     assert_eq!(map.len(), 255);
@@ -1322,7 +1318,7 @@ fn a_u1_generation_hands_the_next_key_in_a_slot_the_old_value() {
     let mut people = GenMap::<&str, WrapU1>::new_with_config();
     let mut ages = SecondaryMap::<u32, WrapU1>::new_with_config();
     let alice = people.insert("Alice");
-    ages.insert(alice, 30).unwrap();
+    ages.insert(alice, 30);
 
     // Bob gets Alice's slot under the same key, so the age stored for Alice
     // is found under his key, and his insert replaces it.
@@ -1330,5 +1326,5 @@ fn a_u1_generation_hands_the_next_key_in_a_slot_the_old_value() {
     let bob = people.insert("Bob");
     assert_eq!(bob, alice);
     assert_eq!(ages[bob], 30);
-    assert_eq!(ages.insert(bob, 25).unwrap(), Some(30));
+    assert_eq!(ages.insert(bob, 25), Some(30));
 }

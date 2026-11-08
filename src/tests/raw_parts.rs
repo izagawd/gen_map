@@ -265,8 +265,8 @@ fn a_dense_gen_map_built_by_hand_moves_its_last_value_on_remove() {
 #[test]
 fn the_parts_of_a_secondary_map_hold_its_slots_and_count() {
     let mut map = SecondaryMap::<&str, Byte>::new_with_config();
-    map.insert(key(1, 3), "a").unwrap();
-    map.insert(key(3, 1), "b").unwrap();
+    map.insert(key(1, 3), "a");
+    map.insert(key(3, 1), "b");
     map.remove(key(3, 1));
 
     let parts = map.into_raw_parts();
@@ -296,7 +296,7 @@ fn a_secondary_map_built_by_hand_lets_a_newer_key_replace_its_value() {
     };
     let mut map = unsafe { SecondaryMap::from_raw_parts(parts) };
     assert_eq!(map[key(0, 5)], "old");
-    assert_eq!(map.insert(key(0, 7), "new").unwrap(), Some("old"));
+    assert_eq!(map.insert(key(0, 7), "new"), Some("old"));
     assert!(map.get(key(0, 5)).is_none());
     let pairs: Vec<_> = map.iter().map(|(key, value)| (key, *value)).collect();
     assert_eq!(pairs, [(key(0, 7), "new")]);
@@ -305,9 +305,9 @@ fn a_secondary_map_built_by_hand_lets_a_newer_key_replace_its_value() {
 #[test]
 fn the_parts_of_a_dense_secondary_map_keep_its_values_keys_and_slots_in_step() {
     let mut map = DenseSecondaryMap::<&str, Byte>::new_with_config();
-    map.insert(key(2, 1), "a").unwrap();
-    map.insert(key(0, 3), "b").unwrap();
-    map.insert(key(1, 1), "c").unwrap();
+    map.insert(key(2, 1), "a");
+    map.insert(key(0, 3), "b");
+    map.insert(key(1, 1), "c");
     map.remove(key(2, 1));
 
     let parts = map.into_raw_parts();
@@ -343,7 +343,7 @@ fn a_dense_secondary_map_built_by_hand_moves_its_last_value_on_remove() {
 
     assert_eq!(map.remove(key(2, 3)), Some("x"));
     assert_eq!(map[key(0, 1)], "y");
-    map.insert(key(1, 1), "z").unwrap();
+    map.insert(key(1, 1), "z");
     let pairs: Vec<_> = map.iter().map(|(key, value)| (key, *value)).collect();
     assert_eq!(pairs, [(key(0, 1), "y"), (key(1, 1), "z")]);
 }
@@ -375,8 +375,8 @@ mod sparse {
     #[test]
     fn the_parts_of_a_sparse_secondary_map_keep_its_values_and_hasher() {
         let mut map = SparseSecondaryMap::<&str, Byte, Seeded>::with_hasher_and_config(Seeded(7));
-        map.insert(key(4, 1), "a").unwrap();
-        map.insert(key(9, 3), "b").unwrap();
+        map.insert(key(4, 1), "a");
+        map.insert(key(9, 3), "b");
 
         let parts = map.into_raw_parts();
         assert_eq!(parts.slots.hasher().0, 7);

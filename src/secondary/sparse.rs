@@ -35,7 +35,7 @@ type Slots<T, C, S> = HashMap<NonMaxIdx<C>, SparseSlot<MapGen<C>, T>, S>;
 /// `Strategy<C>` is the replace strategy that config `C` gives the map.
 type Strategy<C> = <C as SparseSecondaryMapConfig>::ReplaceStrategy;
 
-/// [`SparseSecondaryMap::insert`] returns this type.
+/// [`SparseSecondaryMap::try_insert`] returns this type.
 type InsertResult<T> = Result<Option<T>, SecondaryInsertError<T, TryReserveError>>;
 
 /// Builds the key whose index is `idx` and whose generation is `generation`,
@@ -87,7 +87,7 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 ///
 /// let alice = people.insert("Alice");
 /// let bob = people.insert("Bob");
-/// ages.insert(alice, 30).unwrap();
+/// ages.insert(alice, 30);
 ///
 /// assert_eq!(ages.get(alice), Some(&30));
 /// assert_eq!(ages.get(bob), None);
@@ -140,7 +140,7 @@ impl<T, S: BuildHasher> SparseSecondaryMap<T, DefaultMapConfig, S> {
     /// let mut keys = GenMap::new();
     /// let mut map = SparseSecondaryMap::with_hasher(hasher);
     /// let key = keys.insert(());
-    /// map.insert(key, "a").unwrap();
+    /// map.insert(key, "a");
     /// assert_eq!(map[key], "a");
     /// ```
     #[inline]
@@ -426,8 +426,8 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// let a = keys.insert(());
     /// let b = keys.insert(());
     /// let mut map = SparseSecondaryMap::new();
-    /// map.insert(a, 1).unwrap();
-    /// map.insert(b, 2).unwrap();
+    /// map.insert(a, 1);
+    /// map.insert(b, 2);
     ///
     /// let [x, y] = map.get_disjoint_mut([a, b]).unwrap();
     /// core::mem::swap(x, y);
@@ -487,6 +487,18 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
         })
     }
 
+    /// Stores `value` under `key` with [`try_insert`](Self::try_insert), and
+    /// returns the value that it replaced, or `None` if it replaced nothing.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `try_insert` returns an error. Use
+    /// [`try_insert`](Self::try_insert) to get the value back instead.
+    #[inline]
+    pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> Option<T> {
+        self.try_insert(key, value).unwrap()
+    }
+
     /// Stores `value` under `key`.
     ///
     /// - If no value is stored at the key's index, the value goes in and
@@ -517,18 +529,18 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// let mut ages = SparseSecondaryMap::new();
     ///
     /// let alice = people.insert("Alice");
-    /// assert_eq!(ages.insert(alice, 30).unwrap(), None);
-    /// assert_eq!(ages.insert(alice, 31).unwrap(), Some(30));
+    /// assert_eq!(ages.insert(alice, 30), None);
+    /// assert_eq!(ages.insert(alice, 31), Some(30));
     ///
     /// // Bob gets Alice's slot, with a newer generation, so his age replaces
     /// // hers, and Alice's old key can no longer replace his.
     /// people.remove(alice);
     /// let bob = people.insert("Bob");
-    /// assert_eq!(ages.insert(bob, 25).unwrap(), Some(31));
-    /// assert!(matches!(ages.insert(alice, 32), Err(SecondaryInsertError::Refused(32))));
+    /// assert_eq!(ages.insert(bob, 25), Some(31));
+    /// assert!(matches!(ages.try_insert(alice, 32), Err(SecondaryInsertError::Refused(32))));
     /// assert_eq!(ages[bob], 25);
     /// ```
-    pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T> {
+    pub fn try_insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T> {
         // `HashMap::entry` makes room for one more value when it finds no value
         // at the index, and it panics or aborts if it cannot. The map makes
         // room first, so it can hand `value` back instead.

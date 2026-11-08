@@ -158,9 +158,9 @@ fn a_secondary_map_without_a_count_inserts_and_removes() {
     let all: Vec<_> = (0..5).map(|_| keys.insert(())).collect();
     let mut map = SecondaryMap::<u32, Uncounted>::new_with_config();
     for (i, &key) in all.iter().enumerate() {
-        assert_eq!(map.insert(key, i as u32).unwrap(), None);
+        assert_eq!(map.insert(key, i as u32), None);
     }
-    assert_eq!(map.insert(all[0], 10).unwrap(), Some(0));
+    assert_eq!(map.insert(all[0], 10), Some(0));
     assert_eq!(map.remove(all[1]), Some(1));
     map.retain(|_, value| *value != 2);
 
@@ -169,7 +169,7 @@ fn a_secondary_map_without_a_count_inserts_and_removes() {
 
     let drained: Vec<_> = map.drain().map(|(_, value)| value).collect();
     assert_eq!(drained, [10, 3, 4]);
-    map.insert(all[4], 4).unwrap();
+    map.insert(all[4], 4);
     map.clear();
     assert_eq!(map.iter().count(), 0);
     assert_eq!(map.slots_len(), 5);
@@ -181,7 +181,7 @@ fn the_iterators_of_a_secondary_map_without_a_count_only_bound_the_values_left()
     let all: Vec<_> = (0..4).map(|_| keys.insert(())).collect();
     let mut map = SecondaryMap::<u32, Uncounted>::new_with_config();
     for key in [all[0], all[2], all[3]] {
-        map.insert(key, 0).unwrap();
+        map.insert(key, 0);
     }
 
     assert_eq!(map.iter().size_hint(), (0, Some(4)));
@@ -208,7 +208,7 @@ fn the_parts_of_a_secondary_map_without_a_count_have_no_count() {
     let mut keys = GenMap::<(), Uncounted>::new_with_config();
     let a = keys.insert(());
     let mut map = SecondaryMap::<u32, Uncounted>::new_with_config();
-    map.insert(a, 1).unwrap();
+    map.insert(a, 1);
 
     let SecondaryMapRawParts { slots, len: () } = map.into_raw_parts();
     assert_eq!(slots.len(), 1);

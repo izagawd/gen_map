@@ -58,7 +58,7 @@ pub type DenseSecondaryStorageError<T, C> = DenseError<
     <<C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> as PairStorage>::Error,
 >;
 
-/// What [`DenseSecondaryMap::insert`] returns.
+/// What [`DenseSecondaryMap::try_insert`] returns.
 type InsertResult<T, C> =
     Result<Option<T>, SecondaryInsertError<T, DenseSecondaryStorageError<T, C>>>;
 
@@ -94,8 +94,8 @@ type InsertResult<T, C> =
 ///
 /// let alice = people.insert("Alice");
 /// let bob = people.insert("Bob");
-/// ages.insert(alice, 30).unwrap();
-/// ages.insert(bob, 25).unwrap();
+/// ages.insert(alice, 30);
+/// ages.insert(bob, 25);
 ///
 /// assert_eq!(ages.get(alice), Some(&30));
 /// assert_eq!(ages.values().sum::<u32>(), 55);
@@ -319,8 +319,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// let mut ages = DenseSecondaryMap::new();
     /// let alice = people.insert("Alice");
     /// let bob = people.insert("Bob");
-    /// ages.insert(alice, 30).unwrap();
-    /// ages.insert(bob, 25).unwrap();
+    /// ages.insert(alice, 30);
+    /// ages.insert(bob, 25);
     ///
     /// let position = ages.position(bob).unwrap();
     /// assert_eq!(ages.as_slices().1[position], 25);
@@ -540,7 +540,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// let mut ages = DenseSecondaryMap::new();
     /// people.insert("Alice");
     /// let bob = people.insert("Bob");
-    /// ages.insert(bob, 25).unwrap();
+    /// ages.insert(bob, 25);
     ///
     /// // The slot at index 1 holds Bob's age, which sits at position zero. The
     /// // slot at index 0, which is Alice's index, holds no value because Alice
@@ -739,6 +739,18 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
         })
     }
 
+    /// Stores `value` under `key` with [`try_insert`](Self::try_insert), and
+    /// returns the value that it replaced, or `None` if it replaced nothing.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `try_insert` returns an error. Use
+    /// [`try_insert`](Self::try_insert) to get the value back instead.
+    #[inline]
+    pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> Option<T> {
+        self.try_insert(key, value).unwrap()
+    }
+
     /// Stores `value` under `key`.
     ///
     /// - If no value is stored at the key's index, the value goes in at the
@@ -767,18 +779,18 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// let mut ages = DenseSecondaryMap::new();
     ///
     /// let alice = people.insert("Alice");
-    /// assert_eq!(ages.insert(alice, 30).unwrap(), None);
-    /// assert_eq!(ages.insert(alice, 31).unwrap(), Some(30));
+    /// assert_eq!(ages.insert(alice, 30), None);
+    /// assert_eq!(ages.insert(alice, 31), Some(30));
     ///
     /// // Bob gets Alice's slot, with a newer generation, so his age replaces
     /// // hers, and Alice's old key can no longer replace his.
     /// people.remove(alice);
     /// let bob = people.insert("Bob");
-    /// assert_eq!(ages.insert(bob, 25).unwrap(), Some(31));
-    /// assert!(matches!(ages.insert(alice, 32), Err(SecondaryInsertError::Refused(32))));
+    /// assert_eq!(ages.insert(bob, 25), Some(31));
+    /// assert!(matches!(ages.try_insert(alice, 32), Err(SecondaryInsertError::Refused(32))));
     /// assert_eq!(ages[bob], 25);
     /// ```
-    pub fn insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
+    pub fn try_insert(&mut self, key: Key<MapKeyConfig<C>>, value: T) -> InsertResult<T, C> {
         let generation = key.generation();
         // The map reads the number of slots and looks up the slot before it
         // makes room in the pair storage, so it does not have to read them
@@ -894,8 +906,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// let mut ages = DenseSecondaryMap::new();
     /// let alice = people.insert("Alice");
     /// let bob = people.insert("Bob");
-    /// ages.insert(alice, 30).unwrap();
-    /// ages.insert(bob, 25).unwrap();
+    /// ages.insert(alice, 30);
+    /// ages.insert(bob, 25);
     ///
     /// let (keys, values) = ages.as_slices();
     /// assert_eq!(keys, [alice, bob]);
@@ -919,8 +931,8 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// let mut ages = DenseSecondaryMap::new();
     /// let alice = people.insert("Alice");
     /// let bob = people.insert("Bob");
-    /// ages.insert(alice, 30).unwrap();
-    /// ages.insert(bob, 25).unwrap();
+    /// ages.insert(alice, 30);
+    /// ages.insert(bob, 25);
     ///
     /// let (_, values) = ages.as_slices_mut();
     /// values[0] = 31;
