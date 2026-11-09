@@ -1136,14 +1136,14 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// Iterates over references to the values, in the order they are stored.
     #[inline]
     pub fn values(&self) -> DenseValues<'_, T> {
-        DenseValues(self.pairs.second_slice().iter())
+        self.pairs.second_slice().iter()
     }
 
     /// Iterates over mutable references to the values, in the order they are
     /// stored.
     #[inline]
     pub fn values_mut(&mut self) -> DenseValuesMut<'_, T> {
-        DenseValuesMut(self.pairs.second_slice_mut().iter_mut())
+        self.pairs.second_slice_mut().iter_mut()
     }
 
     /// Returns the keys and the values as two slices, in the order the values
@@ -1504,7 +1504,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     pub fn iter(&self) -> DenseIter<'_, T, MapKeyConfig<C>> {
         let (keys, values) = self.pairs.slices();
         DenseIter {
-            keys: keys.iter(),
+            keys: keys.iter().copied(),
             values: values.iter(),
         }
     }
@@ -1515,7 +1515,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     pub fn iter_mut(&mut self) -> DenseIterMut<'_, T, MapKeyConfig<C>> {
         let (keys, values) = self.pairs.slices_mut();
         DenseIterMut {
-            keys: keys.iter(),
+            keys: keys.iter().copied(),
             values: values.iter_mut(),
         }
     }
@@ -1523,7 +1523,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// Iterates over the keys, in the order the values are stored.
     #[inline]
     pub fn keys(&self) -> DenseKeys<'_, MapKeyConfig<C>> {
-        DenseKeys(self.pairs.first_slice().iter())
+        self.pairs.first_slice().iter().copied()
     }
 
     /// Takes the value at `position` and its key out of the pair storage by
@@ -1734,8 +1734,8 @@ impl<T, C: DenseGenMapConfig> Drop for DenseDrain<'_, T, C> {
 /// It is created using [`DenseGenMap::iter`] or
 /// [`DenseSecondaryMap::iter`](crate::DenseSecondaryMap::iter).
 pub struct DenseIter<'a, T, K> {
-    pub(crate) keys: core::slice::Iter<'a, Key<K>>,
-    pub(crate) values: core::slice::Iter<'a, T>,
+    pub(crate) keys: DenseKeys<'a, K>,
+    pub(crate) values: DenseValues<'a, T>,
 }
 
 impl<'a, T, K: KeyConfig> Iterator for DenseIter<'a, T, K> {
@@ -1743,7 +1743,7 @@ impl<'a, T, K: KeyConfig> Iterator for DenseIter<'a, T, K> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let key = *self.keys.next()?;
+        let key = self.keys.next()?;
         // SAFETY: the map keeps one key for each value, and the iterator takes
         // out a key and a value together, so a value is left whenever a key is.
         Some((key, unsafe { self.values.next().unwrap_unchecked() }))
@@ -1758,7 +1758,7 @@ impl<'a, T, K: KeyConfig> Iterator for DenseIter<'a, T, K> {
 impl<T, K: KeyConfig> DoubleEndedIterator for DenseIter<'_, T, K> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        let key = *self.keys.next_back()?;
+        let key = self.keys.next_back()?;
         // SAFETY: the same as in `next`.
         Some((key, unsafe { self.values.next_back().unwrap_unchecked() }))
     }
@@ -1781,8 +1781,8 @@ impl<T, K: KeyConfig> Clone for DenseIter<'_, T, K> {
 /// stored. It is created using [`DenseGenMap::iter_mut`] or
 /// [`DenseSecondaryMap::iter_mut`](crate::DenseSecondaryMap::iter_mut).
 pub struct DenseIterMut<'a, T, K> {
-    pub(crate) keys: core::slice::Iter<'a, Key<K>>,
-    pub(crate) values: core::slice::IterMut<'a, T>,
+    pub(crate) keys: DenseKeys<'a, K>,
+    pub(crate) values: DenseValuesMut<'a, T>,
 }
 
 impl<'a, T, K: KeyConfig> Iterator for DenseIterMut<'a, T, K> {
@@ -1790,7 +1790,7 @@ impl<'a, T, K: KeyConfig> Iterator for DenseIterMut<'a, T, K> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let key = *self.keys.next()?;
+        let key = self.keys.next()?;
         // SAFETY: the same as in `DenseIter::next`.
         Some((key, unsafe { self.values.next().unwrap_unchecked() }))
     }
@@ -1804,7 +1804,7 @@ impl<'a, T, K: KeyConfig> Iterator for DenseIterMut<'a, T, K> {
 impl<T, K: KeyConfig> DoubleEndedIterator for DenseIterMut<'_, T, K> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        let key = *self.keys.next_back()?;
+        let key = self.keys.next_back()?;
         // SAFETY: the same as in `DenseIter::next`.
         Some((key, unsafe { self.values.next_back().unwrap_unchecked() }))
     }
@@ -1816,103 +1816,17 @@ impl<T, K: KeyConfig> FusedIterator for DenseIterMut<'_, T, K> {}
 /// Iterator over the keys, in the order the values are stored. It is created
 /// using [`DenseGenMap::keys`] or
 /// [`DenseSecondaryMap::keys`](crate::DenseSecondaryMap::keys).
-pub struct DenseKeys<'a, K>(pub(crate) core::slice::Iter<'a, Key<K>>);
-
-impl<K: KeyConfig> Iterator for DenseKeys<'_, K> {
-    type Item = Key<K>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().copied()
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-impl<K: KeyConfig> DoubleEndedIterator for DenseKeys<'_, K> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back().copied()
-    }
-}
-
-impl<K: KeyConfig> ExactSizeIterator for DenseKeys<'_, K> {}
-impl<K: KeyConfig> FusedIterator for DenseKeys<'_, K> {}
-
-impl<K: KeyConfig> Clone for DenseKeys<'_, K> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
+pub type DenseKeys<'a, K> = core::iter::Copied<core::slice::Iter<'a, Key<K>>>;
 
 /// Iterator over references to the values, in the order they are stored. It
 /// is created using [`DenseGenMap::values`] or
 /// [`DenseSecondaryMap::values`](crate::DenseSecondaryMap::values).
-pub struct DenseValues<'a, T>(pub(crate) core::slice::Iter<'a, T>);
-
-impl<'a, T> Iterator for DenseValues<'a, T> {
-    type Item = &'a T;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-impl<T> DoubleEndedIterator for DenseValues<'_, T> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back()
-    }
-}
-
-impl<T> ExactSizeIterator for DenseValues<'_, T> {}
-impl<T> FusedIterator for DenseValues<'_, T> {}
-
-impl<T> Clone for DenseValues<'_, T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
+pub type DenseValues<'a, T> = core::slice::Iter<'a, T>;
 
 /// Iterator over mutable references to the values, in the order they are
 /// stored. It is created using [`DenseGenMap::values_mut`] or
 /// [`DenseSecondaryMap::values_mut`](crate::DenseSecondaryMap::values_mut).
-pub struct DenseValuesMut<'a, T>(pub(crate) core::slice::IterMut<'a, T>);
-
-impl<'a, T> Iterator for DenseValuesMut<'a, T> {
-    type Item = &'a mut T;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-impl<T> DoubleEndedIterator for DenseValuesMut<'_, T> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back()
-    }
-}
-
-impl<T> ExactSizeIterator for DenseValuesMut<'_, T> {}
-impl<T> FusedIterator for DenseValuesMut<'_, T> {}
+pub type DenseValuesMut<'a, T> = core::slice::IterMut<'a, T>;
 
 /// Owning iterator over `(key, value)` pairs, in the order the values were
 /// stored. It is created by consuming a dense map with `into_iter`, which a
