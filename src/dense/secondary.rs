@@ -883,14 +883,14 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// are stored.
     #[inline]
     pub fn values(&self) -> DenseValues<'_, T> {
-        DenseValues(self.pairs.second_slice().iter())
+        self.pairs.second_slice().iter()
     }
 
     /// Returns an iterator over mutable references to the values, in the
     /// order they are stored.
     #[inline]
     pub fn values_mut(&mut self) -> DenseValuesMut<'_, T> {
-        DenseValuesMut(self.pairs.second_slice_mut().iter_mut())
+        self.pairs.second_slice_mut().iter_mut()
     }
 
     /// Returns the keys and the values as two slices, in the order the values
@@ -1102,7 +1102,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     pub fn iter(&self) -> DenseIter<'_, T, MapKeyConfig<C>> {
         let (keys, values) = self.pairs.slices();
         DenseIter {
-            keys: keys.iter(),
+            keys: keys.iter().copied(),
             values: values.iter(),
         }
     }
@@ -1110,7 +1110,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// Returns an iterator over the keys, in the order the values are stored.
     #[inline]
     pub fn keys(&self) -> DenseKeys<'_, MapKeyConfig<C>> {
-        DenseKeys(self.pairs.first_slice().iter())
+        self.pairs.first_slice().iter().copied()
     }
 
     /// Returns an iterator over the keys and mutable references to the
@@ -1119,7 +1119,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     pub fn iter_mut(&mut self) -> DenseIterMut<'_, T, MapKeyConfig<C>> {
         let (keys, values) = self.pairs.slices_mut();
         DenseIterMut {
-            keys: keys.iter(),
+            keys: keys.iter().copied(),
             values: values.iter_mut(),
         }
     }
