@@ -245,35 +245,49 @@ fn every_value_is_dropped_once() {
 }
 
 #[test]
-fn clear_and_drain_drop_every_value_when_a_drop_panics() {
-    for drain in [false, true] {
-        let tracker = DropTracker::new();
-        let k = keys(5);
-        let mut map = SparseSecondaryMap::new();
-        for (i, &key) in k.iter().enumerate() {
-            map.insert(key, Bomb::new(&tracker, i == 2));
-        }
-        let capacity = map.capacity();
-
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            if drain {
-                let mut iter = map.drain();
-                drop(iter.next());
-                drop(iter);
-            } else {
-                map.clear();
-            }
-        }));
-        assert!(result.is_err());
-
-        // The values are dropped in arbitrary order. Every value after the
-        // one whose drop panicked is still dropped, and the map keeps the
-        // memory it has allocated.
-        tracker.assert_all_dropped_exactly_once(5);
-        assert!(map.is_empty());
-        assert!(k.iter().all(|&key| !map.contains_key(key)));
-        assert_eq!(map.capacity(), capacity);
+fn a_panicking_drop_in_clear_leaves_an_empty_map() {
+    let tracker = DropTracker::new();
+    let k = keys(5);
+    let mut map = SparseSecondaryMap::new();
+    for (i, &key) in k.iter().enumerate() {
+        map.insert(key, Bomb::new(&tracker, i == 2));
     }
+    let capacity = map.capacity();
+
+    assert!(catch_unwind(AssertUnwindSafe(|| map.clear())).is_err());
+
+    // `clear` never drops the values after the one whose drop panicked, so
+    // the test does not check the drops. The map is still empty and keeps
+    // the memory it has allocated.
+    assert!(map.is_empty());
+    assert!(k.iter().all(|&key| !map.contains_key(key)));
+    assert_eq!(map.capacity(), capacity);
+}
+
+#[test]
+fn a_panicking_drop_in_a_drain_still_drops_every_value() {
+    let tracker = DropTracker::new();
+    let k = keys(5);
+    let mut map = SparseSecondaryMap::new();
+    for (i, &key) in k.iter().enumerate() {
+        map.insert(key, Bomb::new(&tracker, i == 2));
+    }
+    let capacity = map.capacity();
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let mut drain = map.drain();
+        drop(drain.next());
+        drop(drain);
+    }));
+    assert!(result.is_err());
+
+    // The values are dropped in arbitrary order. Every value after the one
+    // whose drop panicked is still dropped, and the map keeps the memory it
+    // has allocated.
+    tracker.assert_all_dropped_exactly_once(5);
+    assert!(map.is_empty());
+    assert!(k.iter().all(|&key| !map.contains_key(key)));
+    assert_eq!(map.capacity(), capacity);
 }
 
 #[test]
