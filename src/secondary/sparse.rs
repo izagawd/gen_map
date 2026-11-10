@@ -6,7 +6,7 @@ use crate::error::{
 use crate::key::parity::Odd;
 use crate::key::piece::KeyPiece;
 use crate::key::Key;
-use crate::map::{drop_rest, MapGen, MapIdx, MapKeyConfig};
+use crate::map::{MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use core::fmt;
 use core::hash::BuildHasher;
@@ -995,7 +995,10 @@ impl<T, C: MapConfig> FusedIterator for SparseSecondaryDrain<'_, T, C> {}
 
 impl<T, C: MapConfig> Drop for SparseSecondaryDrain<'_, T, C> {
     fn drop(&mut self) {
-        drop_rest(self);
+        // If dropping a value panics, the `HashMap` drain in `slots` is
+        // still dropped while the panic unwinds, and it drops the values
+        // that this loop has not reached.
+        for _ in self.by_ref() {}
     }
 }
 
