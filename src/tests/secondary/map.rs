@@ -790,7 +790,7 @@ fn retain_stays_consistent_when_a_drop_panics() {
 }
 
 #[test]
-fn clear_and_drain_stay_consistent_when_a_drop_panics() {
+fn clear_and_drain_drop_every_value_when_a_drop_panics() {
     for drain in [false, true] {
         let tracker = DropTracker::new();
         let mut keys = GenMap::new();
@@ -805,8 +805,8 @@ fn clear_and_drain_stay_consistent_when_a_drop_panics() {
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             if drain {
-                // The drain takes the first value, and dropping it takes the
-                // rest, until the value at 2 panics.
+                // The drain yields the first value, and dropping the drain
+                // takes out and drops the rest.
                 let mut iter = map.drain();
                 drop(iter.next());
                 drop(iter);
@@ -816,15 +816,12 @@ fn clear_and_drain_stay_consistent_when_a_drop_panics() {
         }));
         assert!(result.is_err());
 
-        // The panic stopped right after the value at 2 was taken out, so the
-        // last two stay in the map, as they would in a `GenMap`.
-        assert_eq!(map.len(), 2);
-        assert!(all[..3].iter().all(|&key| !map.contains_key(key)));
-        assert!(all[3..].iter().all(|&key| map.contains_key(key)));
-        assert_eq!(map.slots_len(), 5);
-
-        drop(map);
+        // The drop of the value at 2 panicked, but the values after it were
+        // still dropped, and the map kept its slots.
         tracker.assert_all_dropped_exactly_once(5);
+        assert!(map.is_empty());
+        assert!(all.iter().all(|&key| !map.contains_key(key)));
+        assert_eq!(map.slots_len(), 5);
     }
 }
 

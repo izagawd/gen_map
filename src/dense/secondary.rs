@@ -12,7 +12,7 @@ use crate::error::{
 use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
 use crate::key::Key;
-use crate::map::{MapGen, MapIdx, MapKeyConfig};
+use crate::map::{drop_rest, MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::secondary::{grow_to, key_from_parts_unchecked};
 use crate::slot::{ParityMut, ParityRef, Slot};
@@ -1324,7 +1324,7 @@ impl<T, C: DenseSecondaryMapConfig> FusedIterator for DenseSecondaryDrain<'_, T,
 
 impl<T, C: DenseSecondaryMapConfig> Drop for DenseSecondaryDrain<'_, T, C> {
     fn drop(&mut self) {
-        for _ in self.by_ref() {}
+        drop_rest(self);
     }
 }
 

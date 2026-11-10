@@ -335,6 +335,22 @@ fn a_panicking_drop_in_clear_leaves_an_empty_map() {
 }
 
 #[test]
+fn a_panicking_drop_in_a_drain_still_drops_every_value() {
+    let tracker = DropTracker::new();
+    let all = keys(5);
+    let mut map = DenseSecondaryMap::new();
+    for (i, &key) in all.iter().enumerate() {
+        map.insert(key, Bomb::new(&tracker, i == 2));
+    }
+    let mut drain = map.drain();
+    drop(drain.next());
+    assert!(catch_unwind(AssertUnwindSafe(move || drop(drain))).is_err());
+    tracker.assert_all_dropped_exactly_once(5);
+    assert!(map.is_empty());
+    assert!(all.iter().all(|&key| map.get(key).is_none()));
+}
+
+#[test]
 fn clone_from_matches_clone_and_reuses_the_allocation() {
     let k = keys(6);
     let mut source = DenseSecondaryMap::new();

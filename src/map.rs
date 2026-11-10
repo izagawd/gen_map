@@ -179,6 +179,24 @@ pub(crate) unsafe fn size_hint<I: KeyPiece, L: Counter<I>>(
     }
 }
 
+/// Drops every item that `iter` has not yielded yet. If dropping one of them
+/// panics, the items after it are still dropped while the panic unwinds.
+pub(crate) fn drop_rest<I: Iterator>(iter: &mut I) {
+    /// Drops the items that its iterator has not yielded yet when the guard
+    /// goes out of scope, which also happens while a panic from dropping one
+    /// of the items unwinds.
+    struct Guard<'a, I: Iterator>(&'a mut I);
+
+    impl<I: Iterator> Drop for Guard<'_, I> {
+        fn drop(&mut self) {
+            for _ in self.0.by_ref() {}
+        }
+    }
+
+    let guard = Guard(iter);
+    for _ in guard.0.by_ref() {}
+}
+
 /// The generation after `generation`, or `None` if `generation` is the
 /// largest one a key of `C` can hold, which is when a slot retires or wraps.
 #[inline]
@@ -1457,17 +1475,9 @@ impl<T, C: GenMapConfig> GenMap<T, C> {
 
     /// Removes every value. The slots stay, and old keys stop matching just
     /// as they do after [`remove`](Self::remove).
+    #[inline]
     pub fn clear(&mut self) {
-        for position in 0..self.slots.len() {
-            // SAFETY: `position` is below the slot count, which `take` does
-            // not change.
-            let holds_value = unsafe { self.slots.as_slice().get_unchecked(position).is_odd() };
-            if holds_value {
-                // SAFETY: the slot was just found to hold a value, and
-                // `position` is its position.
-                drop(unsafe { self.take(index_of::<C>(position), position) });
-            }
-        }
+        drop(self.drain());
         debug_assert!(self.len.get().is_none_or(|len| len == Idx::<C>::ZERO));
     }
 
@@ -2026,7 +2036,7 @@ impl<T, C: GenMapConfig> FusedIterator for Drain<'_, T, C> {}
 
 impl<T, C: GenMapConfig> Drop for Drain<'_, T, C> {
     fn drop(&mut self) {
-        for _ in self.by_ref() {}
+        drop_rest(self);
     }
 }
 

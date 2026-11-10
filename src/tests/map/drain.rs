@@ -141,7 +141,7 @@ fn drain_with_gaps_drops_only_occupied_slots() {
 }
 
 #[test]
-fn dropping_a_drain_stays_consistent_when_a_drop_panics() {
+fn dropping_a_drain_drops_every_value_when_a_drop_panics() {
     let tracker = DropTracker::new();
     let mut map = GenMap::new();
     let keys: Vec<_> = (0..5)
@@ -152,17 +152,11 @@ fn dropping_a_drain_stays_consistent_when_a_drop_panics() {
     drop(drain.next());
     assert!(catch_unwind(AssertUnwindSafe(move || drop(drain))).is_err());
 
-    // The panic stopped the drain right after it took out the value at 2.
-    assert_eq!(map.len(), 2);
-    for key in &keys[..3] {
-        assert!(map.get(*key).is_none());
-    }
-    for key in &keys[3..] {
-        assert!(map.contains_key(*key));
-    }
-
-    drop(map);
+    // The drop of the value at 2 panicked, but dropping the drain still
+    // dropped the values after it.
     tracker.assert_all_dropped_exactly_once(5);
+    assert!(map.is_empty());
+    assert!(keys.iter().all(|&key| map.get(key).is_none()));
 }
 
 #[test]

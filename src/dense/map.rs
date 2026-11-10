@@ -9,8 +9,8 @@ use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
 use crate::key::Key;
 use crate::map::{
-    detached_generation, detached_slot, freed_parts, index_of as idx_of_slot, max_slot_idx,
-    no_slot, position_of as slot_index_of, slot_key, MapGen, MapIdx, MapKeyConfig,
+    detached_generation, detached_slot, drop_rest, freed_parts, index_of as idx_of_slot,
+    max_slot_idx, no_slot, position_of as slot_index_of, slot_key, MapGen, MapIdx, MapKeyConfig,
 };
 use crate::slot::{ParityRef, Slot};
 use crate::storage::pair::{ClearPairsOnUnwind, PairStorage, ReservePairStorage};
@@ -1726,7 +1726,7 @@ impl<T, C: DenseGenMapConfig> FusedIterator for DenseDrain<'_, T, C> {}
 
 impl<T, C: DenseGenMapConfig> Drop for DenseDrain<'_, T, C> {
     fn drop(&mut self) {
-        for _ in self.by_ref() {}
+        drop_rest(self);
     }
 }
 

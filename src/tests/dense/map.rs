@@ -382,6 +382,21 @@ fn a_panicking_drop_in_clear_leaves_an_empty_map() {
 }
 
 #[test]
+fn a_panicking_drop_in_a_drain_still_drops_every_value() {
+    let tracker = DropTracker::new();
+    let mut map = DenseGenMap::new();
+    let keys: Vec<Key> = (0..5)
+        .map(|i| map.insert(Bomb::new(&tracker, i == 2)))
+        .collect();
+    let mut drain = map.drain();
+    drop(drain.next());
+    assert!(catch_unwind(AssertUnwindSafe(move || drop(drain))).is_err());
+    tracker.assert_all_dropped_exactly_once(5);
+    assert!(map.is_empty());
+    assert!(keys.iter().all(|&key| map.get(key).is_none()));
+}
+
+#[test]
 fn a_dropped_entry_or_a_rejected_value_inserts_nothing() {
     let mut map = DenseGenMap::new();
     let promised = map.vacant_entry().unwrap().key();

@@ -349,7 +349,7 @@ fn debug_output_lists_entries() {
 }
 
 #[test]
-fn clear_stays_consistent_when_a_drop_panics() {
+fn clear_drops_every_value_and_empties_the_map_when_a_drop_panics() {
     let tracker = DropTracker::new();
     let mut map = GenMap::new();
     let keys: Vec<_> = (0..5)
@@ -358,18 +358,19 @@ fn clear_stays_consistent_when_a_drop_panics() {
 
     assert!(catch_unwind(AssertUnwindSafe(|| map.clear())).is_err());
 
-    // The panic stopped `clear` right after it took out the value at 2.
-    assert_eq!(map.len(), 2);
-    for key in &keys[..3] {
-        assert!(map.get(*key).is_none());
-    }
-    for key in &keys[3..] {
-        assert!(map.contains_key(*key));
-    }
-
-    map.clear();
-    assert!(map.is_empty());
+    // The drop of the value at 2 panicked, but `clear` still dropped the
+    // values after it.
     tracker.assert_all_dropped_exactly_once(5);
+    assert!(map.is_empty());
+    assert!(keys.iter().all(|&key| map.get(key).is_none()));
+
+    // The map keeps its slots, and the next insert reuses one of them under a
+    // new key.
+    let key = map.insert(Bomb::new(&tracker, false));
+    assert_eq!(map.slots_len(), 5);
+    assert!(!keys.contains(&key));
+    drop(map);
+    tracker.assert_all_dropped_exactly_once(6);
 }
 
 #[test]

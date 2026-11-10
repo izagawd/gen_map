@@ -6,7 +6,7 @@ use crate::error::{
 use crate::key::parity::Odd;
 use crate::key::piece::KeyPiece;
 use crate::key::Key;
-use crate::map::{MapGen, MapIdx, MapKeyConfig};
+use crate::map::{drop_rest, MapGen, MapIdx, MapKeyConfig};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use core::fmt;
 use core::hash::BuildHasher;
@@ -598,7 +598,15 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     /// Removes every value. The map keeps the memory it has allocated.
     #[inline]
     pub fn clear(&mut self) {
-        self.slots.clear();
+        // When dropping a value panics, `HashMap::clear` never drops the
+        // values after it, but the drain still does. If `T` has no drop
+        // glue, dropping a value cannot panic, so the map uses
+        // `HashMap::clear` then.
+        if core::mem::needs_drop::<T>() {
+            drop(self.drain());
+        } else {
+            self.slots.clear();
+        }
     }
 
     /// Returns an iterator over the keys and references to the values, in
@@ -984,6 +992,12 @@ impl<T, C: MapConfig> Iterator for SparseSecondaryDrain<'_, T, C> {
 
 impl<T, C: MapConfig> ExactSizeIterator for SparseSecondaryDrain<'_, T, C> {}
 impl<T, C: MapConfig> FusedIterator for SparseSecondaryDrain<'_, T, C> {}
+
+impl<T, C: MapConfig> Drop for SparseSecondaryDrain<'_, T, C> {
+    fn drop(&mut self) {
+        drop_rest(self);
+    }
+}
 
 /// This iterator yields each key of a [`SparseSecondaryMap`] together with
 /// its value, in arbitrary order. It is created by consuming the map with

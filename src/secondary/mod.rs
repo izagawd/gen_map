@@ -14,7 +14,9 @@ use crate::key::piece::KeyPiece;
 use crate::key::Key;
 use crate::len::sealed::Counter;
 use crate::len::{KeepLen, Len};
-use crate::map::{decrement_len, increment_len, size_hint, MapGen, MapIdx, MapKeyConfig};
+use crate::map::{
+    decrement_len, drop_rest, increment_len, size_hint, MapGen, MapIdx, MapKeyConfig,
+};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::slot::{Parity, ParityMut, ParityRef, Slot};
 use crate::storage::{ClearOnUnwind, Empty, ReserveStorage, SliceStorage, WithCapacity};
@@ -880,13 +882,9 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
 
     /// Removes every value. The slots stay, as they do after
     /// [`remove`](Self::remove).
+    #[inline]
     pub fn clear(&mut self) {
-        for slot in self.slots.as_mut_slice() {
-            if slot.is_odd() {
-                decrement_len(&mut self.len);
-                drop(take(slot));
-            }
-        }
+        drop(self.drain());
     }
 
     /// Returns an iterator over the keys and references to the values, in
@@ -1326,7 +1324,7 @@ impl<T, C: SecondaryMapConfig> FusedIterator for SecondaryDrain<'_, T, C> {}
 
 impl<T, C: SecondaryMapConfig> Drop for SecondaryDrain<'_, T, C> {
     fn drop(&mut self) {
-        for _ in self.by_ref() {}
+        drop_rest(self);
     }
 }
 
