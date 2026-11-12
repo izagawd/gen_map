@@ -2,7 +2,7 @@
 name = "gen_map"
 version = "0.4.0"
 edition = "2021"
-rust-version = "1.86.0"
+rust-version = "1.100.0"
 authors = ["Izagawd <theizaboss@gmail.com>"]
 keywords = ["generational", "arena", "handle", "no-std"]
 categories = ["memory-management", "data-structures", "no-std", "no-std::no-alloc"]

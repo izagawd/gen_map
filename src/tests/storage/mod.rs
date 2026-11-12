@@ -1,3 +1,4 @@
+mod allocator;
 #[cfg(feature = "arrayvec")]
 mod arrayvec;
 mod bare;

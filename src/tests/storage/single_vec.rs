@@ -6,6 +6,7 @@ use crate::tests::{Bomb, CloneBomb, DropTracker};
 use crate::{u1, ReserveError, SingleVec, SingleVecIntoIter, SingleVecRawParts, SliceStorage};
 use core::mem::ManuallyDrop;
 use core::ptr::NonNull;
+use std::alloc::Global;
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::{String, ToString};
@@ -380,6 +381,7 @@ fn a_vec_can_take_over_the_buffer_of_a_std_vec() {
         pointer: NonNull::new(vec.as_mut_ptr()).unwrap(),
         capacity: vec.capacity(),
         len: vec.len(),
+        allocator: Global,
     };
     let mut items: SingleVec<_> = unsafe { SingleVec::from_raw_parts(parts) };
     // Growing reallocates the buffer of the `Vec`.

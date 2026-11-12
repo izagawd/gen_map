@@ -8,6 +8,7 @@ use core::alloc::Layout;
 use core::fmt::Debug;
 use core::mem::size_of;
 use core::ptr::NonNull;
+use std::alloc::Global;
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::{String, ToString};
@@ -591,6 +592,7 @@ fn a_vec_can_take_over_a_buffer_allocated_by_hand() {
         second,
         capacity: 4usize,
         len: 3,
+        allocator: Global,
     };
     let mut pairs: PairVec<_, _> = unsafe { PairVec::from_raw_parts(parts) };
     // Growing reallocates the buffer that was allocated by hand.

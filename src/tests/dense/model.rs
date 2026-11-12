@@ -314,7 +314,7 @@ fn pick_idx<C: MapConfig>(slots_len: usize, rng: &mut Rng) -> MapIdx<C> {
 /// Whether `retain` keeps a value. It only looks at the value, so both maps
 /// keep the same values whatever order they visit them in.
 fn keeps(value: u32) -> bool {
-    value % 3 != 0
+    !value.is_multiple_of(3)
 }
 
 fn run_gen<G, D>(seed: u64, steps: usize)
