@@ -6,7 +6,7 @@ use crate::storage::buffer::{
 };
 use crate::storage::pair::{PairStorage, ReservePairStorage};
 use crate::storage::{Empty, WithCapacity};
-use core::alloc::Layout;
+use alloc::alloc::{Allocator, Global, Layout};
 use core::fmt;
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
@@ -20,6 +20,11 @@ use core::slice;
 /// as its length type, the third type parameter, which works the same way as
 /// the length type of a [`SingleVec`](crate::SingleVec). The length type is
 /// `usize` when it is left out.
+///
+/// A `PairVec` allocates its buffer from its allocator, the fourth type
+/// parameter, which is the global allocator when it is left out.
+/// [`new_in`](Self::new_in) and [`with_capacity_in`](Self::with_capacity_in)
+/// create a `PairVec` with another allocator.
 ///
 /// The slice whose items take more space sits at the start of the buffer,
 /// and the other slice sits at the end. When the buffer grows, the `PairVec`
@@ -51,21 +56,21 @@ use core::slice;
 /// assert_eq!(pairs.pop(), Some((2, "two")));
 /// assert_eq!(pairs.len(), 1);
 /// ```
-pub struct PairVec<A, B, L: KeyPiece = usize> {
-    buffer: Buffer<A, B, L>,
+pub struct PairVec<A, B, L: KeyPiece = usize, Alloc: Allocator = Global> {
+    buffer: Buffer<A, B, L, Alloc>,
     /// A `PairVec` owns the items in its buffer.
     _items: PhantomData<(A, B)>,
 }
 
 /// A `Buffer` is the buffer of a [`PairVec`] or a [`PairVecIntoIter`],
-/// together with its capacity and length. Dropping a `Buffer` frees the
-/// memory without dropping any item in it.
+/// together with its capacity, its length and its allocator. Dropping a
+/// `Buffer` frees the memory without dropping any item in it.
 ///
 /// [`buffer_layout`] gives the layout of the buffer for its capacity, and the
 /// position in it where the slice at the end starts. [`second_at_start`]
 /// tells which slice sits at the start. When the buffer holds no memory, both
 /// pointers are dangling.
-struct Buffer<A, B, L: KeyPiece> {
+struct Buffer<A, B, L: KeyPiece, Alloc: Allocator> {
     /// `first` points at the first slice.
     first: NonNull<A>,
     /// `second` points at the second slice.
@@ -78,6 +83,8 @@ struct Buffer<A, B, L: KeyPiece> {
     /// the pairs from `start` up to `len` are the ones it has not yielded yet.
     /// It is never more than the capacity or the largest `usize`.
     len: L,
+    /// `allocator` is the allocator that the memory of the buffer comes from.
+    allocator: Alloc,
 }
 
 /// Returns `true` if the items of both slices take no space, so that the
@@ -171,12 +178,12 @@ unsafe fn slice_pointers<A, B>(start: NonNull<u8>, offset: usize) -> (NonNull<A>
     }
 }
 
-impl<A, B, L: KeyPiece> Buffer<A, B, L> {
-    /// Returns a buffer that holds no memory. Its capacity is zero, or the
-    /// largest value of the length type when the items of both slices take
-    /// no space.
+impl<A, B, L: KeyPiece, Alloc: Allocator> Buffer<A, B, L, Alloc> {
+    /// Returns a buffer that holds no memory, with `allocator` as its
+    /// allocator. Its capacity is zero, or the largest value of the length
+    /// type when the items of both slices take no space.
     #[inline]
-    const fn new() -> Self {
+    const fn new_in(allocator: Alloc) -> Self {
         Self {
             first: NonNull::dangling(),
             second: NonNull::dangling(),
@@ -186,27 +193,64 @@ impl<A, B, L: KeyPiece> Buffer<A, B, L> {
                 L::ZERO
             },
             len: L::ZERO,
+            allocator,
         }
     }
 
-    /// Allocates a buffer with room for `capacity` items in each slice.
-    fn with_capacity(capacity: usize) -> Result<Self, ReserveError> {
+    /// Allocates a buffer with room for `capacity` items in each slice from
+    /// `allocator`.
+    fn with_capacity_in(capacity: usize, allocator: Alloc) -> Result<Self, ReserveError> {
+        let mut buffer = Self::new_in(allocator);
+        // SAFETY: a new buffer holds no items.
+        unsafe { buffer.replace_memory(capacity)? };
+        Ok(buffer)
+    }
+
+    /// Allocates room for `capacity` items in each slice from the allocator
+    /// of the buffer, and then frees the memory that the buffer held before.
+    /// If the allocation fails, the buffer is left as it was.
+    ///
+    /// # Safety
+    ///
+    /// The buffer must hold no items, because the items are not moved to the
+    /// new memory.
+    unsafe fn replace_memory(&mut self, capacity: usize) -> Result<(), ReserveError> {
+        debug_assert!(self.len == L::ZERO);
         let stored = L::from_usize(capacity).ok_or(ReserveError::CapacityOverflow)?;
         let (layout, offset) = buffer_layout::<A, B>(capacity)?;
+        // Room for `capacity` pairs takes no space, so the buffer already has
+        // it.
         if layout.size() == 0 {
-            return Ok(Self::new());
+            return Ok(());
         }
-        // SAFETY: the layout takes space.
-        let start = unsafe { allocate_layout(layout)? };
+        let start = allocate_layout(&self.allocator, layout)?;
+        // SAFETY: the pointers to the old memory are overwritten right away,
+        // so nothing uses it afterwards.
+        unsafe { self.free() };
         // SAFETY: the slice at the end starts `offset` bytes into the buffer,
         // and that position is no further than the end of the buffer.
         let (first, second) = unsafe { slice_pointers(start, offset) };
-        Ok(Self {
-            first,
-            second,
-            capacity: stored,
-            len: L::ZERO,
-        })
+        self.first = first;
+        self.second = second;
+        self.capacity = stored;
+        Ok(())
+    }
+
+    /// Frees the memory of the buffer.
+    ///
+    /// # Safety
+    ///
+    /// Nothing may use the memory afterwards.
+    unsafe fn free(&mut self) {
+        // SAFETY: the buffer was allocated with the layout for its capacity,
+        // or that layout takes no space, so making the layout again succeeds.
+        let (layout, _) = unsafe { buffer_layout::<A, B>(self.capacity()).unwrap_unchecked() };
+        // SAFETY: if the layout takes space, the allocator of the buffer
+        // allocated the buffer with it, by `allocate_layout`, by
+        // `reallocate_layout` or as the rules of `PairVecRawParts` require, and
+        // `start` returns the start of the buffer. The caller promises that
+        // nothing uses the buffer after this.
+        unsafe { deallocate_layout(&self.allocator, self.start(), layout) };
     }
 
     /// Returns a pointer to the start of the buffer.
@@ -233,16 +277,10 @@ impl<A, B, L: KeyPiece> Buffer<A, B, L> {
     }
 }
 
-impl<A, B, L: KeyPiece> Drop for Buffer<A, B, L> {
+impl<A, B, L: KeyPiece, Alloc: Allocator> Drop for Buffer<A, B, L, Alloc> {
     fn drop(&mut self) {
-        // SAFETY: the buffer was allocated with the layout for its capacity,
-        // or that layout takes no space, so making the layout again succeeds.
-        let (layout, _) = unsafe { buffer_layout::<A, B>(self.capacity()).unwrap_unchecked() };
-        // SAFETY: if the layout takes space, the global allocator allocated the
-        // buffer with it, by `allocate_layout`, by `reallocate_layout` or as the
-        // rules of `PairVecRawParts` require, and `start` returns the start of
-        // the buffer. Nothing uses the buffer after this.
-        unsafe { deallocate_layout(self.start(), layout) };
+        // SAFETY: nothing uses the memory of a buffer that is being dropped.
+        unsafe { self.free() };
     }
 }
 
@@ -252,10 +290,7 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
     #[inline]
     #[must_use]
     pub const fn new() -> Self {
-        Self {
-            buffer: Buffer::new(),
-            _items: PhantomData,
-        }
+        Self::new_in(Global)
     }
 
     /// Creates a `PairVec` with no pairs and room for at least `capacity` of
@@ -270,13 +305,58 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
     #[inline]
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
-        match Buffer::with_capacity(capacity) {
+        Self::with_capacity_in(capacity, Global)
+    }
+}
+
+impl<A, B, L: KeyPiece, Alloc: Allocator> PairVec<A, B, L, Alloc> {
+    /// Creates a `PairVec` with no pairs. It allocates its buffer from
+    /// `allocator`, and it allocates nothing until a pair is pushed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::{PairStorage, PairVec};
+    /// use std::alloc::System;
+    ///
+    /// let mut pairs = PairVec::<i32, &str, u32, _>::new_in(System);
+    /// pairs.push(1, "one");
+    /// assert_eq!(pairs.slices(), (&[1][..], &["one"][..]));
+    /// ```
+    #[inline]
+    #[must_use]
+    pub const fn new_in(allocator: Alloc) -> Self {
+        Self {
+            buffer: Buffer::new_in(allocator),
+            _items: PhantomData,
+        }
+    }
+
+    /// Creates a `PairVec` with no pairs and room for at least `capacity` of
+    /// them. It allocates its buffer from `allocator`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length type cannot count `capacity` pairs, or if a
+    /// buffer with room for `capacity` pairs would take more than
+    /// `isize::MAX` bytes. If an allocation fails, `with_capacity_in` calls
+    /// `handle_alloc_error`, which aborts the program by default.
+    #[inline]
+    #[must_use]
+    pub fn with_capacity_in(capacity: usize, allocator: Alloc) -> Self {
+        match Buffer::with_capacity_in(capacity, allocator) {
             Ok(buffer) => Self {
                 buffer,
                 _items: PhantomData,
             },
             Err(error) => error.handle(),
         }
+    }
+
+    /// Returns the allocator of the `PairVec`.
+    #[inline]
+    pub fn allocator(&self) -> &Alloc {
+        &self.buffer.allocator
     }
 
     /// Appends `first` to the first slice and `second` to the second slice, as
@@ -384,16 +464,24 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
         // or that layout takes no space, so making the layout again succeeds.
         let (old_layout, old_offset) =
             unsafe { buffer_layout::<A, B>(old_capacity).unwrap_unchecked() };
-        // SAFETY: if `old_layout` takes space, the global allocator allocated
-        // the buffer with it, by `allocate_layout`, by `reallocate_layout` or
-        // as the rules of `PairVecRawParts` require, and `start` returns the
-        // start of the buffer. Both layouts have the larger alignment of the
-        // two item types. `grown_capacity` returns at least `required`, which
-        // is more than `old_capacity`, and a `PairVec` whose items all take no
-        // space never grows. Otherwise the items of the slice at the end take
-        // space, so `layout` takes more space than `old_layout`. The old
-        // pointers are overwritten below, so nothing uses them afterwards.
-        let start = unsafe { reallocate_layout(self.buffer.start(), old_layout, layout)? };
+        // SAFETY: if `old_layout` takes space, the allocator of the buffer
+        // allocated the buffer with it, by `allocate_layout`, by
+        // `reallocate_layout` or as the rules of `PairVecRawParts` require, and
+        // `start` returns the start of the buffer. Both layouts have the larger
+        // alignment of the two item types. `grown_capacity` returns at least
+        // `required`, which is more than `old_capacity`, and a `PairVec` whose
+        // items all take no space never grows. Otherwise the items of the slice
+        // at the end take space, so `layout` takes more space than
+        // `old_layout`. The old pointers are overwritten below, so nothing uses
+        // them afterwards.
+        let start = unsafe {
+            reallocate_layout(
+                &self.buffer.allocator,
+                self.buffer.start(),
+                old_layout,
+                layout,
+            )?
+        };
         // Each item of the slice at the end takes `item_size` bytes.
         let item_size = if second_at_start::<A, B>() {
             size_of::<A>()
@@ -527,7 +615,7 @@ impl<A, B, L: KeyPiece> Default for PairVec<A, B, L> {
     }
 }
 
-impl<A, B, L: KeyPiece> Drop for PairVec<A, B, L> {
+impl<A, B, L: KeyPiece, Alloc: Allocator> Drop for PairVec<A, B, L, Alloc> {
     fn drop(&mut self) {
         // SAFETY: the first `len` items of both slices are initialized, and
         // nothing uses them after this. `buffer` frees the memory afterwards,
@@ -559,7 +647,7 @@ impl<A, B, L: KeyPiece> Drop for PairVec<A, B, L> {
 // yields the pairs in order, and `next_back` yields them starting from the
 // last one. Its size hint and its length are exact, and it returns `None` from
 // either end once it has yielded every pair.
-unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
+unsafe impl<A, B, L: KeyPiece, Alloc: Allocator> PairStorage for PairVec<A, B, L, Alloc> {
     type First = A;
     type Second = B;
     type Error = ReserveError;
@@ -667,7 +755,7 @@ unsafe impl<A, B, L: KeyPiece> PairStorage for PairVec<A, B, L> {
     }
 }
 
-impl<A, B, L: KeyPiece> ReservePairStorage for PairVec<A, B, L> {}
+impl<A, B, L: KeyPiece, Alloc: Allocator> ReservePairStorage for PairVec<A, B, L, Alloc> {}
 
 impl<A, B, L: KeyPiece> Empty for PairVec<A, B, L> {
     #[inline]
@@ -683,31 +771,44 @@ impl<A, B, L: KeyPiece> WithCapacity for PairVec<A, B, L> {
     }
 }
 
-// SAFETY: a `PairVec` owns its items the way a `Vec` does, so it can move to
-// another thread when its items can.
-unsafe impl<A: Send, B: Send, L: KeyPiece> Send for PairVec<A, B, L> {}
+// SAFETY: a `PairVec` owns its items and its allocator the way a `Vec` does,
+// so it can move to another thread when both can.
+unsafe impl<A: Send, B: Send, L: KeyPiece, Alloc: Allocator + Send> Send
+    for PairVec<A, B, L, Alloc>
+{
+}
 
-// SAFETY: a shared `PairVec` only hands out shared references to its items,
-// so it can be shared between threads when its items can.
-unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVec<A, B, L> {}
+// SAFETY: a shared `PairVec` only hands out shared references to its items
+// and to its allocator, so it can be shared between threads when both can.
+unsafe impl<A: Sync, B: Sync, L: KeyPiece, Alloc: Allocator + Sync> Sync
+    for PairVec<A, B, L, Alloc>
+{
+}
 
-impl<A: Clone, B: Clone, L: KeyPiece> Clone for PairVec<A, B, L> {
+impl<A: Clone, B: Clone, L: KeyPiece, Alloc: Allocator + Clone> Clone for PairVec<A, B, L, Alloc> {
+    /// Allocates the buffer of the clone from a clone of the allocator of
+    /// `self`. Each of the two vecs frees its buffer through its own
+    /// allocator, so neither allocator has to be able to free what the other
+    /// one allocated.
     fn clone(&self) -> Self {
-        let mut clone = Self::with_capacity(self.buffer.len());
-        // SAFETY: `with_capacity` just made `clone` with no pairs and room for
-        // every pair of `self`.
+        let mut clone = Self::with_capacity_in(self.buffer.len(), self.buffer.allocator.clone());
+        // SAFETY: `with_capacity_in` just made `clone` with no pairs and room
+        // for every pair of `self`.
         unsafe { clone.fill_with_clones(self) };
         clone
     }
 
     /// Reuses the buffer of `self` when it has room for every pair of
-    /// `source`, and otherwise makes a buffer of the right size before it
-    /// clones any item. If cloning an item panics, `self` keeps the whole
-    /// pairs written before it.
+    /// `source`, and otherwise allocates a buffer of the right size from the
+    /// allocator of `self` before it clones any item. If cloning an item
+    /// panics, `self` keeps the whole pairs written before it.
     fn clone_from(&mut self, source: &Self) {
         PairStorage::clear(self);
         if self.buffer.capacity() < source.buffer.len() {
-            *self = Self::with_capacity(source.buffer.len());
+            // SAFETY: `clear` left `self` with no pairs.
+            if let Err(error) = unsafe { self.buffer.replace_memory(source.buffer.len()) } {
+                error.handle();
+            }
         }
         // SAFETY: `clear` left `self` with no pairs, and its buffer has room
         // for every pair of `source`.
@@ -715,7 +816,9 @@ impl<A: Clone, B: Clone, L: KeyPiece> Clone for PairVec<A, B, L> {
     }
 }
 
-impl<A: fmt::Debug, B: fmt::Debug, L: KeyPiece> fmt::Debug for PairVec<A, B, L> {
+impl<A: fmt::Debug, B: fmt::Debug, L: KeyPiece, Alloc: Allocator> fmt::Debug
+    for PairVec<A, B, L, Alloc>
+{
     /// Lists the pairs in the order they were pushed.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
@@ -735,12 +838,12 @@ impl<A, B, L: KeyPiece> FromIterator<(A, B)> for PairVec<A, B, L> {
     }
 }
 
-impl<A, B, L: KeyPiece> IntoIterator for PairVec<A, B, L> {
+impl<A, B, L: KeyPiece, Alloc: Allocator> IntoIterator for PairVec<A, B, L, Alloc> {
     type Item = (A, B);
-    type IntoIter = PairVecIntoIter<A, B, L>;
+    type IntoIter = PairVecIntoIter<A, B, L, Alloc>;
 
     #[inline]
-    fn into_iter(self) -> PairVecIntoIter<A, B, L> {
+    fn into_iter(self) -> PairVecIntoIter<A, B, L, Alloc> {
         let pairs = ManuallyDrop::new(self);
         // SAFETY: `pairs` is never dropped, so the buffer moves into the
         // iterator and is only freed once, by the iterator.
@@ -756,10 +859,10 @@ impl<A, B, L: KeyPiece> IntoIterator for PairVec<A, B, L> {
 /// Owning iterator over the pairs of a [`PairVec`], in the order they were
 /// pushed. It is created by consuming a `PairVec` with `into_iter`. Dropping
 /// it drops the pairs it has not yielded yet.
-pub struct PairVecIntoIter<A, B, L: KeyPiece = usize> {
+pub struct PairVecIntoIter<A, B, L: KeyPiece = usize, Alloc: Allocator = Global> {
     /// `buffer` holds the buffer of the `PairVec`. Its length is one past the
     /// position of the pair that `next_back` yields.
-    buffer: Buffer<A, B, L>,
+    buffer: Buffer<A, B, L, Alloc>,
     /// `start` is the position of the pair that `next` yields. The pairs from
     /// `start` up to the length of the buffer are initialized and not yielded
     /// yet.
@@ -768,7 +871,7 @@ pub struct PairVecIntoIter<A, B, L: KeyPiece = usize> {
     _items: PhantomData<(A, B)>,
 }
 
-impl<A, B, L: KeyPiece> PairVecIntoIter<A, B, L> {
+impl<A, B, L: KeyPiece, Alloc: Allocator> PairVecIntoIter<A, B, L, Alloc> {
     /// Reads the pair at `position` out of the buffer.
     ///
     /// # Safety
@@ -788,7 +891,7 @@ impl<A, B, L: KeyPiece> PairVecIntoIter<A, B, L> {
     }
 }
 
-impl<A, B, L: KeyPiece> Iterator for PairVecIntoIter<A, B, L> {
+impl<A, B, L: KeyPiece, Alloc: Allocator> Iterator for PairVecIntoIter<A, B, L, Alloc> {
     type Item = (A, B);
 
     #[inline]
@@ -810,7 +913,7 @@ impl<A, B, L: KeyPiece> Iterator for PairVecIntoIter<A, B, L> {
     }
 }
 
-impl<A, B, L: KeyPiece> DoubleEndedIterator for PairVecIntoIter<A, B, L> {
+impl<A, B, L: KeyPiece, Alloc: Allocator> DoubleEndedIterator for PairVecIntoIter<A, B, L, Alloc> {
     #[inline]
     fn next_back(&mut self) -> Option<(A, B)> {
         if self.start == self.buffer.len() {
@@ -823,10 +926,10 @@ impl<A, B, L: KeyPiece> DoubleEndedIterator for PairVecIntoIter<A, B, L> {
     }
 }
 
-impl<A, B, L: KeyPiece> ExactSizeIterator for PairVecIntoIter<A, B, L> {}
-impl<A, B, L: KeyPiece> FusedIterator for PairVecIntoIter<A, B, L> {}
+impl<A, B, L: KeyPiece, Alloc: Allocator> ExactSizeIterator for PairVecIntoIter<A, B, L, Alloc> {}
+impl<A, B, L: KeyPiece, Alloc: Allocator> FusedIterator for PairVecIntoIter<A, B, L, Alloc> {}
 
-impl<A, B, L: KeyPiece> Drop for PairVecIntoIter<A, B, L> {
+impl<A, B, L: KeyPiece, Alloc: Allocator> Drop for PairVecIntoIter<A, B, L, Alloc> {
     fn drop(&mut self) {
         let remaining = self.buffer.len() - self.start;
         // SAFETY: `start` is never more than the length, which is never more
@@ -845,12 +948,19 @@ impl<A, B, L: KeyPiece> Drop for PairVecIntoIter<A, B, L> {
     }
 }
 
-// SAFETY: the iterator owns the pairs it has not yielded yet, the way a
-// `PairVec` owns its pairs.
-unsafe impl<A: Send, B: Send, L: KeyPiece> Send for PairVecIntoIter<A, B, L> {}
+// SAFETY: the iterator owns the pairs it has not yielded yet and its
+// allocator, the way a `PairVec` owns its pairs and its allocator.
+unsafe impl<A: Send, B: Send, L: KeyPiece, Alloc: Allocator + Send> Send
+    for PairVecIntoIter<A, B, L, Alloc>
+{
+}
 
-// SAFETY: a shared iterator hands out no references to its pairs.
-unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVecIntoIter<A, B, L> {}
+// SAFETY: a shared iterator hands out no references to its pairs or to its
+// allocator.
+unsafe impl<A: Sync, B: Sync, L: KeyPiece, Alloc: Allocator + Sync> Sync
+    for PairVecIntoIter<A, B, L, Alloc>
+{
+}
 
 /// `PairVecRawParts` holds the fields of a [`PairVec`].
 /// [`into_raw_parts`](PairVec::into_raw_parts) takes a vec apart into these
@@ -869,11 +979,10 @@ unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVecIntoIter<A, B, L> {}
 /// at the end.
 ///
 /// - If that layout takes space, the pointer to the slice at the start points
-///   at a buffer that the global allocator allocated with it, and the pointer
-///   to the slice at the end points at the offset that `Layout::extend`
-///   returns, counted in bytes from the start of the buffer. Otherwise both
-///   pointers only have to be aligned for their items, as dangling pointers
-///   are.
+///   at a buffer that `allocator` allocated with it, and the pointer to the
+///   slice at the end points at the offset that `Layout::extend` returns,
+///   counted in bytes from the start of the buffer. Otherwise both pointers
+///   only have to be aligned for their items, as dangling pointers are.
 /// - `len` is not more than `capacity` or the largest `usize`.
 /// - The first `len` items of both slices are initialized.
 /// - Nothing else uses, drops or frees the buffer or its items.
@@ -884,6 +993,7 @@ unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVecIntoIter<A, B, L> {}
 /// use core::alloc::Layout;
 /// use core::ptr::NonNull;
 /// use gen_map::{PairStorage, PairVec, PairVecRawParts};
+/// use std::alloc::Global;
 ///
 /// // The buffer has room for two `u32`s followed by two `char`s.
 /// let (layout, offset) = Layout::array::<u32>(2)
@@ -906,6 +1016,7 @@ unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVecIntoIter<A, B, L> {}
 ///     second,
 ///     capacity: 2,
 ///     len: 1,
+///     allocator: Global,
 /// };
 /// // SAFETY: the global allocator allocated the buffer with the layout the
 /// // rules describe, `second` points at the offset that `Layout::extend`
@@ -914,7 +1025,7 @@ unsafe impl<A: Sync, B: Sync, L: KeyPiece> Sync for PairVecIntoIter<A, B, L> {}
 /// let pairs: PairVec<u32, char> = unsafe { PairVec::from_raw_parts(parts) };
 /// assert_eq!(pairs.slices(), (&[1][..], &['a'][..]));
 /// ```
-pub struct PairVecRawParts<A, B, L: KeyPiece = usize> {
+pub struct PairVecRawParts<A, B, L: KeyPiece = usize, Alloc: Allocator = Global> {
     // These fields are in the same order as the fields of the buffer of a
     // `PairVec`, so the two structs can be read side by side. `into_raw_parts`
     // and `from_raw_parts` list every field of both, so the compiler catches a
@@ -928,9 +1039,12 @@ pub struct PairVecRawParts<A, B, L: KeyPiece = usize> {
     /// `len` is the number of pairs. The first `len` items of each slice are
     /// initialized.
     pub len: L,
+    /// `allocator` is the allocator of the vec. It allocates and frees the
+    /// buffer.
+    pub allocator: Alloc,
 }
 
-impl<A, B, L: KeyPiece> PairVec<A, B, L> {
+impl<A, B, L: KeyPiece, Alloc: Allocator> PairVec<A, B, L, Alloc> {
     /// Takes the vec apart into its fields.
     /// [`from_raw_parts`](Self::from_raw_parts) builds a vec from them again,
     /// and [`PairVecRawParts`] lists the rules they follow. Nothing drops the
@@ -955,7 +1069,7 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
     /// assert_eq!(pairs.slices(), (&[1][..], &['a'][..]));
     /// ```
     #[inline]
-    pub fn into_raw_parts(self) -> PairVecRawParts<A, B, L> {
+    pub fn into_raw_parts(self) -> PairVecRawParts<A, B, L, Alloc> {
         // The vec is never dropped, so its buffer and items now belong to the
         // parts.
         let pairs = ManuallyDrop::new(self);
@@ -964,12 +1078,16 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
             second,
             capacity,
             len,
+            allocator,
         } = &pairs.buffer;
         PairVecRawParts {
             first: *first,
             second: *second,
             capacity: *capacity,
             len: *len,
+            // SAFETY: the vec is never dropped or used again, so nothing else
+            // reads or drops its allocator.
+            allocator: unsafe { ptr::read(allocator) },
         }
     }
 
@@ -985,12 +1103,13 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
     /// them cause undefined behavior.
     #[inline]
     #[must_use]
-    pub unsafe fn from_raw_parts(parts: PairVecRawParts<A, B, L>) -> Self {
+    pub unsafe fn from_raw_parts(parts: PairVecRawParts<A, B, L, Alloc>) -> Self {
         let PairVecRawParts {
             first,
             second,
             capacity,
             len,
+            allocator,
         } = parts;
         Self {
             buffer: Buffer {
@@ -1002,6 +1121,7 @@ impl<A, B, L: KeyPiece> PairVec<A, B, L> {
                     capacity
                 },
                 len,
+                allocator,
             },
             _items: PhantomData,
         }

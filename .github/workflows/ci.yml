@@ -24,13 +24,13 @@ jobs:
       - run: cargo test --all-features
 
   msrv:
-    name: Test (MSRV 1.86)
+    name: Test (MSRV 1.100)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.86"
+          toolchain: "1.100"
       - run: cargo test --all-features
 
   no-std:

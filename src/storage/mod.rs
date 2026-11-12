@@ -7,6 +7,8 @@ pub(crate) mod pair_vec;
 pub(crate) mod single_vec;
 
 #[cfg(feature = "alloc")]
+use alloc::alloc::Allocator;
+#[cfg(feature = "alloc")]
 use alloc::collections::TryReserveError;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
@@ -201,7 +203,7 @@ impl<St: SliceStorage> Drop for ClearOnUnwind<'_, St> {
 // `next_back` yields them starting from the last one. Its size hint and its
 // length are exact, and it returns `None` from either end once it has yielded
 // every item.
-unsafe impl<S> SliceStorage for Vec<S> {
+unsafe impl<S, A: Allocator> SliceStorage for Vec<S, A> {
     type Item = S;
     type Error = TryReserveError;
 
@@ -262,7 +264,7 @@ unsafe impl<S> SliceStorage for Vec<S> {
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-impl<S> ReserveStorage for Vec<S> {}
+impl<S, A: Allocator> ReserveStorage for Vec<S, A> {}
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]

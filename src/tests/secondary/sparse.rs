@@ -567,7 +567,7 @@ fn pick_idx(rng: &mut Rng) -> u8 {
 /// Returns whether `retain` keeps a value. It only looks at the value, so both
 /// maps keep the same values whatever order they visit them in.
 fn keeps(value: u32) -> bool {
-    value % 3 != 0
+    !value.is_multiple_of(3)
 }
 
 fn run<C, S>(seed: u64, steps: usize)

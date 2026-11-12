@@ -220,7 +220,7 @@
 //!
 //! # Minimum supported Rust version
 //!
-//! The crate builds on Rust 1.86 and later.
+//! The crate builds on Rust 1.100 and later.
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]

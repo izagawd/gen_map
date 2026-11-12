@@ -4,6 +4,7 @@ use crate::storage::buffer::{
     allocate, deallocate, grown_capacity, max_len, reallocate, saturating_usize, SetLenOnDrop,
 };
 use crate::storage::{Empty, ReserveStorage, SliceStorage, WithCapacity};
+use alloc::alloc::{Allocator, Global};
 use alloc::vec::Vec;
 use core::fmt;
 use core::iter::FusedIterator;
@@ -19,8 +20,14 @@ use core::slice;
 /// can be [`u1`](crate::u1), `u8`, `u16`, `u32`, `u64`, `u128` or `usize`,
 /// which is the default.
 /// A `SingleVec` never holds more items than its length type can count, and
-/// with a `u32` length type it takes 16 bytes on a 64-bit target, where a
-/// `Vec` takes 24. A `SingleVec` needs the `alloc` feature.
+/// with a `u32` length type and the global allocator it takes 16 bytes on a
+/// 64-bit target, where a `Vec` takes 24. A `SingleVec` needs the `alloc`
+/// feature.
+///
+/// A `SingleVec` allocates its buffer from its allocator, the third type
+/// parameter, which is the global allocator by default.
+/// [`new_in`](Self::new_in) and [`with_capacity_in`](Self::with_capacity_in)
+/// create a `SingleVec` with another allocator.
 ///
 /// A `SingleVec` derefs to a slice of its items. When its items take no space,
 /// it never allocates, and its capacity is the most items its length type can
@@ -40,16 +47,16 @@ use core::slice;
 /// assert_eq!(items[..], ["a", "b"]);
 /// assert_eq!(items.len(), 2);
 /// ```
-pub struct SingleVec<T, L: KeyPiece = usize> {
-    buffer: Buffer<T, L>,
+pub struct SingleVec<T, L: KeyPiece = usize, A: Allocator = Global> {
+    buffer: Buffer<T, L, A>,
     /// A `SingleVec` owns the items in its buffer.
     _items: PhantomData<T>,
 }
 
 /// A `Buffer` is the buffer of a [`SingleVec`] or a [`SingleVecIntoIter`],
-/// together with its capacity and length. Dropping a `Buffer` frees the
-/// memory without dropping any item in it.
-struct Buffer<T, L: KeyPiece> {
+/// together with its capacity, its length and its allocator. Dropping a
+/// `Buffer` frees the memory without dropping any item in it.
+struct Buffer<T, L: KeyPiece, A: Allocator> {
     pointer: NonNull<T>,
     /// How many items the buffer has room for.
     capacity: L,
@@ -57,31 +64,58 @@ struct Buffer<T, L: KeyPiece> {
     /// `SingleVecIntoIter`, the items from `start` up to `len` are the ones it
     /// has not yielded yet.
     len: L,
+    /// `allocator` is the allocator that the memory of the buffer comes from.
+    allocator: A,
 }
 
-impl<T, L: KeyPiece> Buffer<T, L> {
-    /// Returns a buffer that holds no memory. Its capacity is zero, or the
-    /// largest value of the length type when the items take no space.
+impl<T, L: KeyPiece, A: Allocator> Buffer<T, L, A> {
+    /// Returns a buffer that holds no memory, with `allocator` as its
+    /// allocator. Its capacity is zero, or the largest value of the length
+    /// type when the items take no space.
     #[inline]
-    const fn new() -> Self {
+    const fn new_in(allocator: A) -> Self {
         Self {
             pointer: NonNull::dangling(),
             capacity: if size_of::<T>() == 0 { L::MAX } else { L::ZERO },
             len: L::ZERO,
+            allocator,
         }
     }
 
-    /// Allocates a buffer with room for `capacity` items.
-    fn with_capacity(capacity: usize) -> Result<Self, ReserveError> {
+    /// Allocates a buffer with room for `capacity` items from `allocator`.
+    fn with_capacity_in(capacity: usize, allocator: A) -> Result<Self, ReserveError> {
+        let mut buffer = Self::new_in(allocator);
+        // SAFETY: a new buffer holds no items.
+        unsafe { buffer.replace_memory(capacity)? };
+        Ok(buffer)
+    }
+
+    /// Allocates room for `capacity` items from the allocator of the buffer,
+    /// and then frees the memory that the buffer held before. If the
+    /// allocation fails, the buffer is left as it was.
+    ///
+    /// # Safety
+    ///
+    /// The buffer must hold no items, because the items are not moved to the
+    /// new memory.
+    unsafe fn replace_memory(&mut self, capacity: usize) -> Result<(), ReserveError> {
+        debug_assert!(self.len == L::ZERO);
         let stored = L::from_usize(capacity).ok_or(ReserveError::CapacityOverflow)?;
+        // Items that take no space need no memory, and the buffer already has
+        // room for as many of them as the length type can count.
         if size_of::<T>() == 0 {
-            return Ok(Self::new());
+            return Ok(());
         }
-        Ok(Self {
-            pointer: allocate(capacity)?,
-            capacity: stored,
-            len: L::ZERO,
-        })
+        let pointer = allocate(&self.allocator, capacity)?;
+        // SAFETY: unless the old capacity is zero, the allocator of the buffer
+        // allocated the old memory with the layout `deallocate` expects, by
+        // `allocate`, by `reallocate` or as the rules of `SingleVecRawParts`
+        // require. The pointer to it is overwritten right away, so nothing
+        // uses it afterwards.
+        unsafe { deallocate(&self.allocator, self.pointer, self.capacity()) };
+        self.pointer = pointer;
+        self.capacity = stored;
+        Ok(())
     }
 
     /// The number of items as a `usize`.
@@ -98,13 +132,13 @@ impl<T, L: KeyPiece> Buffer<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> Drop for Buffer<T, L> {
+impl<T, L: KeyPiece, A: Allocator> Drop for Buffer<T, L, A> {
     fn drop(&mut self) {
-        // SAFETY: unless `capacity` items take no space, the buffer was
-        // allocated with the layout `deallocate` expects, by `allocate`, by
-        // `reallocate` or as the rules of `SingleVecRawParts` require. Nothing
-        // uses it after this.
-        unsafe { deallocate(self.pointer, self.capacity()) };
+        // SAFETY: unless `capacity` items take no space, the allocator of the
+        // buffer allocated it with the layout `deallocate` expects, by
+        // `allocate`, by `reallocate` or as the rules of `SingleVecRawParts`
+        // require. Nothing uses it after this.
+        unsafe { deallocate(&self.allocator, self.pointer, self.capacity()) };
     }
 }
 
@@ -114,10 +148,7 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
     #[inline]
     #[must_use]
     pub const fn new() -> Self {
-        Self {
-            buffer: Buffer::new(),
-            _items: PhantomData,
-        }
+        Self::new_in(Global)
     }
 
     /// Creates a `SingleVec` with no items and room for at least `capacity` of
@@ -132,13 +163,58 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
     #[inline]
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
-        match Buffer::with_capacity(capacity) {
+        Self::with_capacity_in(capacity, Global)
+    }
+}
+
+impl<T, L: KeyPiece, A: Allocator> SingleVec<T, L, A> {
+    /// Creates a `SingleVec` with no items. It allocates its buffer from
+    /// `allocator`, and it allocates nothing until an item is pushed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gen_map::SingleVec;
+    /// use std::alloc::System;
+    ///
+    /// let mut items = SingleVec::<&str, u32, _>::new_in(System);
+    /// items.push("a");
+    /// assert_eq!(items[..], ["a"]);
+    /// ```
+    #[inline]
+    #[must_use]
+    pub const fn new_in(allocator: A) -> Self {
+        Self {
+            buffer: Buffer::new_in(allocator),
+            _items: PhantomData,
+        }
+    }
+
+    /// Creates a `SingleVec` with no items and room for at least `capacity` of
+    /// them. It allocates its buffer from `allocator`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length type cannot count `capacity` items, or if a
+    /// buffer with room for them would take more than `isize::MAX` bytes. If
+    /// the allocation fails, `with_capacity_in` calls `handle_alloc_error`,
+    /// which aborts the program by default.
+    #[inline]
+    #[must_use]
+    pub fn with_capacity_in(capacity: usize, allocator: A) -> Self {
+        match Buffer::with_capacity_in(capacity, allocator) {
             Ok(buffer) => Self {
                 buffer,
                 _items: PhantomData,
             },
             Err(error) => error.handle(),
         }
+    }
+
+    /// Returns the allocator of the `SingleVec`.
+    #[inline]
+    pub fn allocator(&self) -> &A {
+        &self.buffer.allocator
     }
 
     /// Appends `item`.
@@ -231,12 +307,19 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
         let old_capacity = self.buffer.capacity();
         let capacity = grown_capacity(old_capacity, required, max_len::<L>(), size_of::<T>())?;
         let stored = L::from_usize(capacity).ok_or(ReserveError::CapacityOverflow)?;
-        // SAFETY: unless `old_capacity` items take no space, the buffer was
-        // allocated for them, by `allocate`, by `reallocate` or as the rules of
-        // `SingleVecRawParts` require. `grown_capacity` returns at least
-        // `required`, which is more than `old_capacity`. The old pointer is
-        // overwritten right away, so nothing uses it afterwards.
-        self.buffer.pointer = unsafe { reallocate(self.buffer.pointer, old_capacity, capacity)? };
+        // SAFETY: unless `old_capacity` items take no space, the allocator of
+        // the buffer allocated it for them, by `allocate`, by `reallocate` or
+        // as the rules of `SingleVecRawParts` require. `grown_capacity` returns
+        // at least `required`, which is more than `old_capacity`. The old
+        // pointer is overwritten right away, so nothing uses it afterwards.
+        self.buffer.pointer = unsafe {
+            reallocate(
+                &self.buffer.allocator,
+                self.buffer.pointer,
+                old_capacity,
+                capacity,
+            )?
+        };
         self.buffer.capacity = stored;
         Ok(())
     }
@@ -295,7 +378,7 @@ impl<T, L: KeyPiece> Default for SingleVec<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> Drop for SingleVec<T, L> {
+impl<T, L: KeyPiece, A: Allocator> Drop for SingleVec<T, L, A> {
     fn drop(&mut self) {
         let items = ptr::slice_from_raw_parts_mut(self.buffer.pointer.as_ptr(), self.buffer.len());
         // SAFETY: the first `len` items of the buffer are initialized, and
@@ -305,7 +388,7 @@ impl<T, L: KeyPiece> Drop for SingleVec<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> Deref for SingleVec<T, L> {
+impl<T, L: KeyPiece, A: Allocator> Deref for SingleVec<T, L, A> {
     type Target = [T];
 
     #[inline]
@@ -315,7 +398,7 @@ impl<T, L: KeyPiece> Deref for SingleVec<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> DerefMut for SingleVec<T, L> {
+impl<T, L: KeyPiece, A: Allocator> DerefMut for SingleVec<T, L, A> {
     #[inline]
     fn deref_mut(&mut self) -> &mut [T] {
         // SAFETY: the first `len` items of the buffer are initialized, and
@@ -339,7 +422,7 @@ impl<T, L: KeyPiece> DerefMut for SingleVec<T, L> {
 // `next_back` yields them starting from the last one. Its size hint and its
 // length are exact, and it returns `None` from either end once it has yielded
 // every item.
-unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
+unsafe impl<T, L: KeyPiece, A: Allocator> SliceStorage for SingleVec<T, L, A> {
     type Item = T;
     type Error = ReserveError;
 
@@ -403,7 +486,7 @@ unsafe impl<T, L: KeyPiece> SliceStorage for SingleVec<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> ReserveStorage for SingleVec<T, L> {}
+impl<T, L: KeyPiece, A: Allocator> ReserveStorage for SingleVec<T, L, A> {}
 
 impl<T, L: KeyPiece> Empty for SingleVec<T, L> {
     #[inline]
@@ -419,31 +502,38 @@ impl<T, L: KeyPiece> WithCapacity for SingleVec<T, L> {
     }
 }
 
-// SAFETY: a `SingleVec` owns its items the way a `Vec` does, so it can move to
-// another thread when its items can.
-unsafe impl<T: Send, L: KeyPiece> Send for SingleVec<T, L> {}
+// SAFETY: a `SingleVec` owns its items and its allocator the way a `Vec` does,
+// so it can move to another thread when both can.
+unsafe impl<T: Send, L: KeyPiece, A: Allocator + Send> Send for SingleVec<T, L, A> {}
 
-// SAFETY: a shared `SingleVec` only hands out shared references to its items,
-// so it can be shared between threads when its items can.
-unsafe impl<T: Sync, L: KeyPiece> Sync for SingleVec<T, L> {}
+// SAFETY: a shared `SingleVec` only hands out shared references to its items
+// and to its allocator, so it can be shared between threads when both can.
+unsafe impl<T: Sync, L: KeyPiece, A: Allocator + Sync> Sync for SingleVec<T, L, A> {}
 
-impl<T: Clone, L: KeyPiece> Clone for SingleVec<T, L> {
+impl<T: Clone, L: KeyPiece, A: Allocator + Clone> Clone for SingleVec<T, L, A> {
+    /// Allocates the buffer of the clone from a clone of the allocator of
+    /// `self`. Each of the two vecs frees its buffer through its own
+    /// allocator, so neither allocator has to be able to free what the other
+    /// one allocated.
     fn clone(&self) -> Self {
-        let mut clone = Self::with_capacity(self.buffer.len());
-        // SAFETY: `with_capacity` just made `clone` with no items and room
+        let mut clone = Self::with_capacity_in(self.buffer.len(), self.buffer.allocator.clone());
+        // SAFETY: `with_capacity_in` just made `clone` with no items and room
         // for every item of `self`.
         unsafe { clone.fill_with_clones(self) };
         clone
     }
 
     /// Reuses the buffer of `self` when it has room for every item of
-    /// `source`, and otherwise makes a buffer of the right size before it
-    /// clones any item. If cloning an item panics, `self` keeps the clones
-    /// written before it.
+    /// `source`, and otherwise allocates a buffer of the right size from the
+    /// allocator of `self` before it clones any item. If cloning an item
+    /// panics, `self` keeps the clones written before it.
     fn clone_from(&mut self, source: &Self) {
         SliceStorage::clear(self);
         if self.buffer.capacity() < source.buffer.len() {
-            *self = Self::with_capacity(source.buffer.len());
+            // SAFETY: `clear` left `self` with no items.
+            if let Err(error) = unsafe { self.buffer.replace_memory(source.buffer.len()) } {
+                error.handle();
+            }
         }
         // SAFETY: `clear` left `self` with no items, and its buffer has room
         // for every item of `source`.
@@ -451,7 +541,7 @@ impl<T: Clone, L: KeyPiece> Clone for SingleVec<T, L> {
     }
 }
 
-impl<T: fmt::Debug, L: KeyPiece> fmt::Debug for SingleVec<T, L> {
+impl<T: fmt::Debug, L: KeyPiece, A: Allocator> fmt::Debug for SingleVec<T, L, A> {
     /// Lists the items in the order they were pushed.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
@@ -469,41 +559,44 @@ impl<T, L: KeyPiece> FromIterator<T> for SingleVec<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> From<SingleVec<T, L>> for Vec<T> {
-    /// Hands the buffer of the `SingleVec` to the `Vec`, without copying the
-    /// items.
+impl<T, L: KeyPiece, A: Allocator> From<SingleVec<T, L, A>> for Vec<T, A> {
+    /// Hands the buffer and the allocator of the `SingleVec` to the `Vec`,
+    /// without copying the items.
     #[inline]
-    fn from(items: SingleVec<T, L>) -> Self {
+    fn from(items: SingleVec<T, L, A>) -> Self {
         let SingleVecRawParts {
             pointer,
             capacity,
             len,
+            allocator,
         } = items.into_raw_parts();
         // SAFETY: the parts follow the rules of `SingleVecRawParts`. So when
-        // the items take space and `capacity` is above zero, the global
-        // allocator allocated the buffer with the layout that `Layout::array`
-        // gives for `capacity` items, as a `Vec` with that capacity needs. That
-        // `capacity` fits in a `usize`, because the buffer takes at most
-        // `isize::MAX` bytes. Otherwise a `Vec` only needs the pointer to be
-        // aligned, and it is. The first `len` items are initialized, and `len`
-        // is not more than `capacity`. Nothing uses the parts afterwards, so
-        // the `Vec` is the only owner of the buffer and its items.
+        // the items take space and `capacity` is above zero, `allocator`
+        // allocated the buffer with the layout that `Layout::array` gives for
+        // `capacity` items, as a `Vec` with that capacity and that allocator
+        // needs. That `capacity` fits in a `usize`, because the buffer takes
+        // at most `isize::MAX` bytes. Otherwise a `Vec` only needs the pointer
+        // to be aligned, and it is. The first `len` items are initialized, and
+        // `len` is not more than `capacity`. Nothing uses the parts
+        // afterwards, so the `Vec` is the only owner of the buffer and its
+        // items.
         unsafe {
-            Vec::from_raw_parts(
+            Vec::from_raw_parts_in(
                 pointer.as_ptr(),
                 saturating_usize(len),
                 saturating_usize(capacity),
+                allocator,
             )
         }
     }
 }
 
-impl<T, L: KeyPiece> IntoIterator for SingleVec<T, L> {
+impl<T, L: KeyPiece, A: Allocator> IntoIterator for SingleVec<T, L, A> {
     type Item = T;
-    type IntoIter = SingleVecIntoIter<T, L>;
+    type IntoIter = SingleVecIntoIter<T, L, A>;
 
     #[inline]
-    fn into_iter(self) -> SingleVecIntoIter<T, L> {
+    fn into_iter(self) -> SingleVecIntoIter<T, L, A> {
         let items = ManuallyDrop::new(self);
         // SAFETY: `items` is never dropped, so the buffer moves into the
         // iterator and is only freed once, by the iterator.
@@ -519,10 +612,10 @@ impl<T, L: KeyPiece> IntoIterator for SingleVec<T, L> {
 /// Owning iterator over the items of a [`SingleVec`], in the order they were
 /// pushed. It is created by consuming a `SingleVec` with `into_iter`. Dropping
 /// it drops the items it has not yielded yet.
-pub struct SingleVecIntoIter<T, L: KeyPiece = usize> {
+pub struct SingleVecIntoIter<T, L: KeyPiece = usize, A: Allocator = Global> {
     /// The buffer of the `SingleVec`. Its length is one past the position of
     /// the item that `next_back` yields.
-    buffer: Buffer<T, L>,
+    buffer: Buffer<T, L, A>,
     /// The position of the item that `next` yields. The items from `start` up
     /// to the length of the buffer are initialized and not yielded yet.
     start: usize,
@@ -530,7 +623,7 @@ pub struct SingleVecIntoIter<T, L: KeyPiece = usize> {
     _items: PhantomData<T>,
 }
 
-impl<T, L: KeyPiece> Iterator for SingleVecIntoIter<T, L> {
+impl<T, L: KeyPiece, A: Allocator> Iterator for SingleVecIntoIter<T, L, A> {
     type Item = T;
 
     #[inline]
@@ -552,7 +645,7 @@ impl<T, L: KeyPiece> Iterator for SingleVecIntoIter<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> DoubleEndedIterator for SingleVecIntoIter<T, L> {
+impl<T, L: KeyPiece, A: Allocator> DoubleEndedIterator for SingleVecIntoIter<T, L, A> {
     #[inline]
     fn next_back(&mut self) -> Option<T> {
         if self.start == self.buffer.len() {
@@ -565,10 +658,10 @@ impl<T, L: KeyPiece> DoubleEndedIterator for SingleVecIntoIter<T, L> {
     }
 }
 
-impl<T, L: KeyPiece> ExactSizeIterator for SingleVecIntoIter<T, L> {}
-impl<T, L: KeyPiece> FusedIterator for SingleVecIntoIter<T, L> {}
+impl<T, L: KeyPiece, A: Allocator> ExactSizeIterator for SingleVecIntoIter<T, L, A> {}
+impl<T, L: KeyPiece, A: Allocator> FusedIterator for SingleVecIntoIter<T, L, A> {}
 
-impl<T, L: KeyPiece> Drop for SingleVecIntoIter<T, L> {
+impl<T, L: KeyPiece, A: Allocator> Drop for SingleVecIntoIter<T, L, A> {
     fn drop(&mut self) {
         let remaining = self.buffer.len() - self.start;
         // SAFETY: `start` is never more than the length, which is never more
@@ -583,12 +676,13 @@ impl<T, L: KeyPiece> Drop for SingleVecIntoIter<T, L> {
     }
 }
 
-// SAFETY: the iterator owns the items it has not yielded yet, the way a
-// `SingleVec` owns its items.
-unsafe impl<T: Send, L: KeyPiece> Send for SingleVecIntoIter<T, L> {}
+// SAFETY: the iterator owns the items it has not yielded yet and its
+// allocator, the way a `SingleVec` owns its items and its allocator.
+unsafe impl<T: Send, L: KeyPiece, A: Allocator + Send> Send for SingleVecIntoIter<T, L, A> {}
 
-// SAFETY: a shared iterator hands out no references to its items.
-unsafe impl<T: Sync, L: KeyPiece> Sync for SingleVecIntoIter<T, L> {}
+// SAFETY: a shared iterator hands out no references to its items or to its
+// allocator.
+unsafe impl<T: Sync, L: KeyPiece, A: Allocator + Sync> Sync for SingleVecIntoIter<T, L, A> {}
 
 /// `SingleVecRawParts` holds the fields of a [`SingleVec`].
 /// [`into_raw_parts`](SingleVec::into_raw_parts) takes a vec apart into these
@@ -601,7 +695,7 @@ unsafe impl<T: Sync, L: KeyPiece> Sync for SingleVecIntoIter<T, L> {}
 /// # Rules
 ///
 /// - If the items take space and `capacity` is above zero, `pointer` points
-///   at a buffer that the global allocator allocated with the layout that
+///   at a buffer that `allocator` allocated with the layout that
 ///   `Layout::array` gives for `capacity` items. Otherwise `pointer` only has
 ///   to be aligned for the items, as a dangling pointer is.
 /// - `len` is not more than `capacity` or the largest `usize`.
@@ -614,12 +708,14 @@ unsafe impl<T: Sync, L: KeyPiece> Sync for SingleVecIntoIter<T, L> {}
 /// use core::mem::ManuallyDrop;
 /// use core::ptr::NonNull;
 /// use gen_map::{SingleVec, SingleVecRawParts};
+/// use std::alloc::Global;
 ///
 /// let mut vec = ManuallyDrop::new(vec![1, 2, 3]);
 /// let parts = SingleVecRawParts {
 ///     pointer: NonNull::new(vec.as_mut_ptr()).unwrap(),
 ///     capacity: u32::try_from(vec.capacity()).unwrap(),
 ///     len: u32::try_from(vec.len()).unwrap(),
+///     allocator: Global,
 /// };
 /// // SAFETY: the global allocator allocated the buffer of the `Vec` for its
 /// // capacity, its first three items are initialized, and the `Vec` is never
@@ -627,7 +723,7 @@ unsafe impl<T: Sync, L: KeyPiece> Sync for SingleVecIntoIter<T, L> {}
 /// let items: SingleVec<i32, u32> = unsafe { SingleVec::from_raw_parts(parts) };
 /// assert_eq!(items[..], [1, 2, 3]);
 /// ```
-pub struct SingleVecRawParts<T, L: KeyPiece = usize> {
+pub struct SingleVecRawParts<T, L: KeyPiece = usize, A: Allocator = Global> {
     // These fields are in the same order as the fields of the buffer of a
     // `SingleVec`, so the two structs can be read side by side.
     // `into_raw_parts` and `from_raw_parts` list every field of both, so the
@@ -640,9 +736,12 @@ pub struct SingleVecRawParts<T, L: KeyPiece = usize> {
     /// `len` is the number of items. The first `len` items of the buffer are
     /// initialized.
     pub len: L,
+    /// `allocator` is the allocator of the vec. It allocates and frees the
+    /// buffer.
+    pub allocator: A,
 }
 
-impl<T, L: KeyPiece> SingleVec<T, L> {
+impl<T, L: KeyPiece, A: Allocator> SingleVec<T, L, A> {
     /// Takes the vec apart into its fields.
     /// [`from_raw_parts`](Self::from_raw_parts) builds a vec from them again,
     /// and [`SingleVecRawParts`] lists the rules they follow. Nothing drops
@@ -668,7 +767,7 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
     /// assert_eq!(items[..], [1]);
     /// ```
     #[inline]
-    pub fn into_raw_parts(self) -> SingleVecRawParts<T, L> {
+    pub fn into_raw_parts(self) -> SingleVecRawParts<T, L, A> {
         // The vec is never dropped, so its buffer and items now belong to the
         // parts.
         let items = ManuallyDrop::new(self);
@@ -676,11 +775,15 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
             pointer,
             capacity,
             len,
+            allocator,
         } = &items.buffer;
         SingleVecRawParts {
             pointer: *pointer,
             capacity: *capacity,
             len: *len,
+            // SAFETY: the vec is never dropped or used again, so nothing else
+            // reads or drops its allocator.
+            allocator: unsafe { ptr::read(allocator) },
         }
     }
 
@@ -696,11 +799,12 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
     /// them cause undefined behavior.
     #[inline]
     #[must_use]
-    pub unsafe fn from_raw_parts(parts: SingleVecRawParts<T, L>) -> Self {
+    pub unsafe fn from_raw_parts(parts: SingleVecRawParts<T, L, A>) -> Self {
         let SingleVecRawParts {
             pointer,
             capacity,
             len,
+            allocator,
         } = parts;
         Self {
             buffer: Buffer {
@@ -711,6 +815,7 @@ impl<T, L: KeyPiece> SingleVec<T, L> {
                     capacity
                 },
                 len,
+                allocator,
             },
             _items: PhantomData,
         }
