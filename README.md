@@ -57,7 +57,8 @@ impl MapConfig for CompactConfig {
     type KeyConfig = Packed<u32, 8>;
 }
 
-// `T` is the type of the map's values.
+// `T` is the type of the map's values. This impl is for every `T`, so a map
+// with this config can hold values of any type.
 impl<T> GenMapConfig<T> for CompactConfig {
     type Len = KeepLen;
     // `MapSlot<T, Self>` is the type of the slots the map keeps its values in.

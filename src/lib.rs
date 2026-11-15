@@ -134,13 +134,13 @@
 //!   values. Only a map whose config picks [`KeepLen`] has
 //!   [`len`](GenMap::len) and [`is_empty`](GenMap::is_empty).
 //! - [`Storage`](GenMapConfig::Storage) is the collection the map keeps its
-//!   slots in. The slot type is [`MapSlot<T, Self>`](MapSlot). The collection
-//!   can be a [`SingleVec`], a `Vec`, an `ArrayVec`, a `SmallVec` or any other
-//!   type that implements [`SliceStorage`].
+//!   slots in. The slots of a `GenMap<T, C>` are [`MapSlot<T, C>`](MapSlot).
+//!   The collection can be a [`SingleVec`], a `Vec`, an `ArrayVec`, a
+//!   `SmallVec` or any other type that implements [`SliceStorage`].
 //!
 //! [`GenMapConfig`] takes the type of the map's values as its parameter `T`.
-//! Implement it for every `T` to let a map hold values of any type, or put
-//! bounds on `T` to restrict the types of the values a map can hold.
+//! Implement it for every `T` to let a map hold values of any type, or even implement it for only a few specific
+//! `T`s if desired.
 //!
 //! When its `C` parameter is left out, as in `GenMap<T>`, a map uses
 //! [`DefaultMapConfig`]. Maps with that config hand out keys with a `u32` index

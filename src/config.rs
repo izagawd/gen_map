@@ -178,7 +178,8 @@ pub trait MapConfig {
 ///
 /// `T` is the type of the map's values. Implement this trait for every `T` to
 /// let a map hold values of any type, or put bounds on `T` to restrict the
-/// types of the values a map can hold.
+/// types of the values a map can hold, or even implement it for only a few specific
+/// `T`s if desired.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map hands out. The [`MapConfig`] example shows a config that
@@ -235,7 +236,8 @@ pub trait GenMapConfig<T>: MapConfig {
 ///
 /// `T` is the type of the map's values. Implement this trait for every `T` to
 /// let a map hold values of any type, or put bounds on `T` to restrict the
-/// types of the values a map can hold.
+/// types of the values a map can hold, or even implement it for only a few specific
+/// `T`s if desired.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map works with.
@@ -300,7 +302,8 @@ pub trait SecondaryMapConfig<T>: MapConfig {
 ///
 /// `T` is the type of the map's values. Implement this trait for every `T` to
 /// let a map hold values of any type, or put bounds on `T` to restrict the
-/// types of the values a map can hold.
+/// types of the values a map can hold, or even implement it for only a few specific
+/// `T`s if desired.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map hands out.
@@ -395,7 +398,8 @@ pub trait DenseGenMapConfig<T>: MapConfig {
 ///
 /// `T` is the type of the map's values. Implement this trait for every `T` to
 /// let a map hold values of any type, or put bounds on `T` to restrict the
-/// types of the values a map can hold.
+/// types of the values a map can hold, or even implement it for only a few specific
+/// `T`s if desired.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map works with.
@@ -505,7 +509,8 @@ pub trait DenseSecondaryMapConfig<T>: MapConfig {
 ///
 /// `T` is the type of the map's values. Implement this trait for every `T` to
 /// let a map hold values of any type, or put bounds on `T` to restrict the
-/// types of the values a map can hold.
+/// types of the values a map can hold, or even implement it for only a few specific
+/// `T`s if desired.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map works with. The map keeps its values in a `HashMap`, so
@@ -555,8 +560,8 @@ pub trait SparseSecondaryMapConfig<T>: MapConfig {
     type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
 }
 
-/// A map whose values do not meet the bounds that a config has on `T` cannot
-/// use that config. The example below must fail to compile.
+/// A map cannot use a config that does not implement [`GenMapConfig`] for the
+/// type of the map's values. The example below must fail to compile.
 ///
 /// ```compile_fail,E0277
 /// # use gen_map::{GenMap, GenMapConfig, KeepLen, MapConfig, MapSlot, Split};

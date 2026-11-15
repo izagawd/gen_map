@@ -1,4 +1,4 @@
-//! Configs with bounds on `T`, the type of the values a map holds.
+//! Configs that restrict the types of the values a map can hold.
 
 use crate::{
     DenseGenMap, DenseGenMapConfig, DenseMapSlot, DenseSecondaryMap, DenseSecondaryMapConfig,
@@ -7,7 +7,7 @@ use crate::{
 };
 use std::vec::Vec;
 
-/// A trait that only these tests implement.
+/// Only the tests in this file implement this trait.
 trait Component {}
 
 #[derive(Debug, PartialEq)]
@@ -15,7 +15,7 @@ struct Position(i32);
 
 impl Component for Position {}
 
-/// Maps with this config only hold values that implement [`Component`].
+/// Maps with this config can only hold values that implement [`Component`].
 struct Components;
 
 impl MapConfig for Components {
@@ -79,7 +79,7 @@ fn a_config_can_bound_the_value_type_of_a_sparse_secondary_map() {
     assert_eq!(sparse[key], Position(2));
 }
 
-/// Maps with this config only hold `u32` values.
+/// A `GenMap` with this config can only hold `u32` values.
 struct OnlyU32;
 
 impl MapConfig for OnlyU32 {
@@ -94,9 +94,9 @@ impl GenMapConfig<u32> for OnlyU32 {
 #[test]
 fn a_config_can_work_with_a_single_value_type() {
     // The config only implements `GenMapConfig<u32>`, so the compiler infers
-    // that the values are `u32`.
+    // that the values are `u32`. If it did not, the `7` would be an `i32`, and
+    // this test would not compile, because the config has no impl for `i32`.
     let mut map = GenMap::<_, OnlyU32>::new_with_config();
     let key = map.insert(7);
-    let value: &u32 = &map[key];
-    assert_eq!(*value, 7);
+    assert_eq!(map[key], 7);
 }

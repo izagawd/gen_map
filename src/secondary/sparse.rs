@@ -32,8 +32,8 @@ type NonMaxIdx<C> = <MapIdx<C> as KeyPiece>::NonMax;
 /// under the indices of their keys.
 type Slots<T, C, S> = HashMap<NonMaxIdx<C>, SparseSlot<MapGen<C>, T>, S>;
 
-/// `Strategy<T, C>` is the replace strategy that config `C` gives a map whose
-/// values are `T`.
+/// `Strategy<T, C>` is the replace strategy that config `C` gives a map that
+/// holds values of type `T`.
 type Strategy<T, C> = <C as SparseSecondaryMapConfig<T>>::ReplaceStrategy;
 
 /// [`SparseSecondaryMap::try_insert`] returns this type.
