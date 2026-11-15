@@ -5,8 +5,8 @@ use crate::tests::{key_from_parts, Bomb, Cfg, CloneBomb, DropItem, DropTracker, 
 use crate::{
     u1, DefaultKeyConfig, Even, ExistingWins, GenMap, GenMapConfig, GetDisjointMutAtError,
     GetDisjointMutError, KeepLen, Key, KeyConfig, KeyPiece, MapConfig, MapKeyConfig, MapSlot,
-    NewerWins, NoLen, Odd, Packed, ReplaceStrategy, SecondaryInsertError, SecondaryMap,
-    SecondaryMapConfig, SecondaryMapSlot, Slot, Split,
+    NewerWins, NoLen, Odd, Packed, ParityUnion, ReplaceStrategy, SecondaryInsertError,
+    SecondaryMap, SecondaryMapConfig, SecondaryMapSlot, Slot, Split,
 };
 use core::marker::PhantomData;
 use std::collections::HashMap;
@@ -134,7 +134,7 @@ fn slots_mut_and_set_len_remove_a_value_together() {
     // generation zero, and the count drops to one, before the map is used
     // through any other method.
     unsafe {
-        map.slots_mut()[index] = Slot::new_even(Even::ZERO, ());
+        map.slots_mut()[index] = Slot(ParityUnion::new_even(Even::ZERO, ()));
         map.set_len(1);
     }
     assert_eq!(map.len(), 1);

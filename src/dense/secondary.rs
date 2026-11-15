@@ -13,9 +13,10 @@ use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
 use crate::key::Key;
 use crate::map::{MapGen, MapIdx, MapKeyConfig};
+use crate::parity_union::{ParityMut, ParityRef, ParityUnion};
 use crate::secondary::replace_strategy::ReplaceStrategy;
 use crate::secondary::{grow_to, key_from_parts_unchecked};
-use crate::slot::{ParityMut, ParityRef, Slot};
+use crate::slot::Slot;
 use crate::storage::pair::{ClearPairsOnUnwind, PairStorage, ReservePairStorage};
 use crate::storage::{ClearOnUnwind, Empty, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
@@ -37,6 +38,8 @@ type Pairs<T, C> = <C as DenseSecondaryMapConfig<T>>::PairStorage;
 /// pair storage, in the [`NonMax`](KeyPiece::NonMax) form of the index type.
 /// While it holds no value, its generation is zero, which is even, and it
 /// stores `()` in place of a position.
+///
+/// `DenseSecondaryMapSlot::default()` returns a slot that holds no value.
 pub type DenseSecondaryMapSlot<C> = Slot<MapGen<C>, <MapIdx<C> as KeyPiece>::NonMax, ()>;
 
 /// Returns the generation and the stored position of `slot` if it holds a
@@ -801,7 +804,7 @@ impl<T, C: DenseSecondaryMapConfig<T>> DenseSecondaryMap<T, C> {
             .into_usize()
             .and_then(|slot_index| self.slots.as_mut_slice().get_mut(slot_index));
         if let Some(ParityMut::Odd(current, &mut stored_position)) =
-            slot.as_deref_mut().map(Slot::as_parity_mut)
+            slot.as_deref_mut().map(|slot| slot.as_parity_mut())
         {
             if *current != generation
                 && !<Strategy<T, C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
@@ -852,7 +855,7 @@ impl<T, C: DenseSecondaryMapConfig<T>> DenseSecondaryMap<T, C> {
                     DenseError::Slots(error),
                 ));
             }
-            let slot = Slot::new_odd(generation, stored_position);
+            let slot = Slot(ParityUnion::new_odd(generation, stored_position));
             // SAFETY: `grow_to` returned `Ok`, so the slot storage has room for
             // this push, and the push puts the slot at the key's index.
             unsafe { self.slots.push_unchecked(slot) };
@@ -1351,7 +1354,7 @@ impl<T, C: DenseSecondaryMapConfig<T>> Drop for DenseSecondaryDrain<'_, T, C> {
 ///
 /// ```
 /// use gen_map::{
-///     DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap, NonMax, PairVec, Slot,
+///     DenseSecondaryMap, DenseSecondaryMapRawParts, GenMap, NonMax, PairVec, ParityUnion, Slot,
 /// };
 ///
 /// let mut people = GenMap::new();
@@ -1363,7 +1366,7 @@ impl<T, C: DenseSecondaryMapConfig<T>> Drop for DenseSecondaryDrain<'_, T, C> {
 /// pairs.push(bob, 25);
 /// let zero = NonMax::<u32>::new(0).unwrap();
 /// let parts = DenseSecondaryMapRawParts {
-///     slots: [Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), zero)]
+///     slots: [Slot::default(), Slot(ParityUnion::new_odd(bob.generation(), zero))]
 ///         .into_iter()
 ///         .collect(),
 ///     pairs,

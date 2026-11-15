@@ -10,7 +10,8 @@ use crate::key::piece::KeyPiece;
 use crate::key::Key;
 use crate::len::sealed::Counter;
 use crate::len::{KeepLen, Len};
-use crate::slot::{Parity, ParityMut, ParityRef, Slot};
+use crate::parity_union::{Parity, ParityMut, ParityRef, ParityUnion};
+use crate::slot::Slot;
 use crate::storage::{ClearOnUnwind, Empty, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
@@ -41,6 +42,10 @@ pub(crate) type Gen<C> = MapGen<C>;
 /// index, which is how [`GenMap::attach`] tells a detached slot apart from a
 /// free or retired one. When the map retires a slot, it stores the largest
 /// value of the index type there, so the slot never looks detached.
+///
+/// `MapSlot::default()` returns a slot that holds no value. Its generation is
+/// zero and it stores the largest value of the index type, so it is the same
+/// as a retired slot.
 pub type MapSlot<T, C> = Slot<MapGen<C>, T, MapIdx<C>>;
 
 /// Returns the key of the value in the slot at `idx`, given the slot's current
@@ -1164,7 +1169,7 @@ impl<T, C: GenMapConfig<T>> GenMap<T, C> {
             // and its generation is even.
             self.next_free = unsafe { slot.replace_even_unchecked(target.generation, value) };
         } else {
-            let slot = Slot::new_odd(target.generation, value);
+            let slot = Slot(ParityUnion::new_odd(target.generation, value));
             // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this
             // slot, and no other `&mut` method of the storage has run since,
             // so `SliceStorage` promises room for this push.
@@ -1447,7 +1452,7 @@ impl<T, C: GenMapConfig<T>> GenMap<T, C> {
             self.next_free = unsafe { *slot.get_even_unchecked() };
             slot.set_even(detached, target.idx);
         } else {
-            let slot = Slot::new_even(detached, target.idx);
+            let slot = Slot(ParityUnion::new_even(detached, target.idx));
             // SAFETY: `next_target` got `Ok` from `ensure_room(1)` for this
             // slot, and no other `&mut` method of the storage has run since,
             // so `SliceStorage` promises room for this push.
@@ -1891,7 +1896,7 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (position, slot) in self.slots.by_ref() {
-            if let Parity::Odd(generation, value) = slot.into_parity() {
+            if let Parity::Odd(generation, value) = slot.0.into_parity() {
                 decrement_len(&mut self.remaining);
                 // SAFETY: `position` is where the slot sat in the storage.
                 return Some((
@@ -1923,7 +1928,7 @@ where
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
-            if let Parity::Odd(generation, value) = slot.into_parity() {
+            if let Parity::Odd(generation, value) = slot.0.into_parity() {
                 decrement_len(&mut self.remaining);
                 // SAFETY: `position` is where the slot sat in the storage.
                 return Some((
@@ -2063,11 +2068,11 @@ impl<T, C: GenMapConfig<T>> Drop for Drain<'_, T, C> {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{GenMap, GenMapRawParts, Odd, Slot};
+/// use gen_map::{GenMap, GenMapRawParts, Odd, ParityUnion, Slot};
 ///
 /// // The only slot holds "a" under generation one, so no slot is free.
 /// let parts = GenMapRawParts {
-///     slots: [Slot::new_odd(Odd::new(1).unwrap(), "a")].into_iter().collect(),
+///     slots: [Slot(ParityUnion::new_odd(Odd::new(1).unwrap(), "a"))].into_iter().collect(),
 ///     next_free: u32::MAX,
 ///     len: 1,
 /// };

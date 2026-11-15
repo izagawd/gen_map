@@ -1,5 +1,7 @@
 use crate::tests::{key_from_parts, Bomb, DropTracker};
-use crate::{DefaultKeyConfig, Even, GenMap, InsertWithError, Key, KeyConfig, KeyPiece, Slot};
+use crate::{
+    DefaultKeyConfig, Even, GenMap, InsertWithError, Key, KeyConfig, KeyPiece, ParityUnion, Slot,
+};
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::string::String;
@@ -39,7 +41,7 @@ fn slots_mut_and_set_len_remove_a_value_together() {
     // SAFETY: the slot of `b` becomes a retired slot, and the count drops to
     // one, before the map is used through any other method.
     unsafe {
-        map.slots_mut()[index] = Slot::new_even(Even::ZERO, retired);
+        map.slots_mut()[index] = Slot(ParityUnion::new_even(Even::ZERO, retired));
         map.set_len(1);
     }
     assert_eq!(map.len(), 1);

@@ -15,8 +15,9 @@ use crate::key::Key;
 use crate::len::sealed::Counter;
 use crate::len::{KeepLen, Len};
 use crate::map::{decrement_len, increment_len, size_hint, MapGen, MapIdx, MapKeyConfig};
+use crate::parity_union::{Parity, ParityMut, ParityRef, ParityUnion};
 use crate::secondary::replace_strategy::ReplaceStrategy;
-use crate::slot::{Parity, ParityMut, ParityRef, Slot};
+use crate::slot::Slot;
 use crate::storage::{ClearOnUnwind, Empty, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
 use core::iter::{Enumerate, FusedIterator};
@@ -27,6 +28,8 @@ use core::slice;
 /// the slot holds a value, its generation is the generation of the value's
 /// key, which is odd, and it stores that value. While it holds no value, its
 /// generation is zero, which is even, and it stores `()` in place of a value.
+///
+/// `SecondaryMapSlot::default()` returns a slot that holds no value.
 pub type SecondaryMapSlot<T, C> = Slot<MapGen<C>, T, ()>;
 
 /// Returns the generation and a reference to the value of `slot` if it holds
@@ -73,16 +76,10 @@ fn take<G: KeyPiece, T>(slot: &mut Slot<G, T, ()>) -> Option<T> {
 /// holds no value.
 #[inline]
 fn into_parts<G: KeyPiece, T>(slot: Slot<G, T, ()>) -> Option<(Odd<G>, T)> {
-    match slot.into_parity() {
+    match slot.0.into_parity() {
         Parity::Odd(generation, value) => Some((generation, value)),
         Parity::Even(..) => None,
     }
-}
-
-/// Returns a slot with generation zero, which holds no value.
-#[inline]
-pub(crate) fn empty_slot<G: KeyPiece, T>() -> Slot<G, T, ()> {
-    Slot::new_even(Even::ZERO, ())
 }
 
 /// Pushes empty slots onto `slots` until the next push puts a slot at `idx`,
@@ -124,7 +121,7 @@ where
         // SAFETY: `ensure_room` returned `Ok` for these pushes and one more,
         // and the loop runs no other `&mut` method of the storage, so
         // `SliceStorage` promises room for each push.
-        unsafe { slots.push_unchecked(empty_slot()) };
+        unsafe { slots.push_unchecked(Slot::default()) };
     }
     Ok(())
 }
@@ -806,9 +803,10 @@ impl<T, C: SecondaryMapConfig<T>> SecondaryMap<T, C> {
             if let Err(error) = unsafe { grow_to(&mut self.slots, len, key.plain_idx()) } {
                 return Err(SecondaryInsertError::StorageFull(value, error));
             }
+            let slot = Slot(ParityUnion::new_odd(generation, value));
             // SAFETY: `grow_to` returned `Ok`, so the storage has room for this
             // push, and the push puts the slot at the key's index.
-            unsafe { self.slots.push_unchecked(Slot::new_odd(generation, value)) };
+            unsafe { self.slots.push_unchecked(slot) };
             increment_len(&mut self.len);
             return Ok(None);
         };
@@ -1301,7 +1299,7 @@ impl<T, C: SecondaryMapConfig<T>> Iterator for SecondaryDrain<'_, T, C> {
         while let Some(slot) = self.map.slots.as_mut_slice().get_mut(self.position) {
             let position = self.position;
             self.position += 1;
-            if let Some((generation, value)) = into_parts(core::mem::replace(slot, empty_slot())) {
+            if let Some((generation, value)) = into_parts(core::mem::take(slot)) {
                 decrement_len(&mut self.map.len);
                 // SAFETY: the slot at `position` held this value under
                 // `generation`, so the two fit the key.
@@ -1466,7 +1464,7 @@ impl<'a, T, C: SecondaryMapConfig<T>> IntoIterator for &'a mut SecondaryMap<T, C
 /// # Examples
 ///
 /// ```
-/// use gen_map::{Even, GenMap, SecondaryMap, SecondaryMapRawParts, Slot};
+/// use gen_map::{GenMap, ParityUnion, SecondaryMap, SecondaryMapRawParts, Slot};
 ///
 /// let mut people = GenMap::new();
 /// let alice = people.insert("Alice");
@@ -1474,7 +1472,7 @@ impl<'a, T, C: SecondaryMapConfig<T>> IntoIterator for &'a mut SecondaryMap<T, C
 ///
 /// // Only Bob has an age, so the slot at Alice's index holds no value.
 /// let parts = SecondaryMapRawParts {
-///     slots: [Slot::new_even(Even::ZERO, ()), Slot::new_odd(bob.generation(), 25)]
+///     slots: [Slot::default(), Slot(ParityUnion::new_odd(bob.generation(), 25))]
 ///         .into_iter()
 ///         .collect(),
 ///     len: 1,

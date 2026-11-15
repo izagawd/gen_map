@@ -6,7 +6,8 @@ use super::{key_from_parts, Cfg, DropTracker};
 use crate::{
     DenseGenMap, DenseGenMapRawParts, DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap,
     GenMapConfig, GenMapRawParts, KeepLen, Key, MapConfig, MapSlot, NonMax, Odd, Packed,
-    PairStorage, Parity, ParityMut, ParityRef, SecondaryMap, SecondaryMapRawParts, Slot, Split,
+    PairStorage, Parity, ParityMut, ParityRef, ParityUnion, SecondaryMap, SecondaryMapRawParts,
+    Slot, Split,
 };
 use std::vec;
 use std::vec::Vec;
@@ -140,17 +141,17 @@ fn the_capacity_of_a_gen_map_can_change_between_the_two_calls() {
 fn a_gen_map_built_by_hand_follows_its_free_list() {
     let parts = GenMapRawParts::<&str, Byte> {
         slots: vec![
-            Slot::new_odd(odd(1), "a"),
+            Slot(ParityUnion::new_odd(odd(1), "a")),
             // This slot is the first one on the free list, and it links to
             // the slot at index 3.
-            Slot::new_even(even(4), 3),
+            Slot(ParityUnion::new_even(even(4), 3)),
             // This slot is retired, so nothing ever uses it again.
-            Slot::new_even(even(0), u8::MAX),
+            Slot(ParityUnion::new_even(even(0), u8::MAX)),
             // This slot is the last one on the free list.
-            Slot::new_even(even(2), u8::MAX),
+            Slot(ParityUnion::new_even(even(2), u8::MAX)),
             // This slot is detached under the key with index 4 and generation
             // 5, so it holds its own index.
-            Slot::new_even(even(6), 4),
+            Slot(ParityUnion::new_even(even(6), 4)),
         ],
         next_free: 1,
         len: 1,
@@ -170,9 +171,53 @@ fn a_gen_map_built_by_hand_follows_its_free_list() {
 }
 
 #[test]
+fn a_gen_map_treats_a_default_slot_as_a_retired_slot() {
+    let parts = GenMapRawParts::<&str, Byte> {
+        slots: vec![Slot::default(), Slot(ParityUnion::new_odd(odd(1), "a"))],
+        next_free: u8::MAX,
+        len: 1,
+    };
+    let mut map = unsafe { GenMap::from_raw_parts(parts) };
+    assert_eq!(map.key_at(0), None);
+    assert_eq!(map[key(1, 1)], "a");
+
+    // The default slot is not on the free list, so the next value gets a new
+    // slot.
+    assert_eq!(map.insert("b"), key(2, 1));
+    assert_eq!(map.generation_at(0), Some(0));
+    assert_eq!(map.len(), 2);
+    // A detached slot stores its own index, and the default slot stores the
+    // largest value of the index type, so nothing can be attached to it.
+    assert_eq!(map.attach(key(0, u8::MAX), "c"), Err("c"));
+}
+
+#[test]
+fn a_dense_gen_map_treats_a_default_slot_as_a_retired_slot() {
+    let parts = DenseGenMapRawParts::<&str, Byte> {
+        slots: vec![
+            Slot::default(),
+            Slot(ParityUnion::new_odd(odd(1), non_max(0))),
+        ],
+        next_free: u8::MAX,
+        pairs: [(key(1, 1), "a")].into_iter().collect(),
+    };
+    let mut map = unsafe { DenseGenMap::from_raw_parts(parts) };
+    assert_eq!(map.key_at(0), None);
+    assert_eq!(map[key(1, 1)], "a");
+
+    // The default slot is not on the free list, so the next value gets a new
+    // slot.
+    assert_eq!(map.insert("b"), key(2, 1));
+    assert_eq!(map.len(), 2);
+    // A detached slot stores its own index, and the default slot stores the
+    // largest value of the index type, so nothing can be attached to it.
+    assert_eq!(map.attach(key(0, u8::MAX), "c"), Err("c"));
+}
+
+#[test]
 fn a_free_slot_one_below_the_largest_generation_hands_out_the_largest_key() {
     let parts = GenMapRawParts::<u32, Gen4> {
-        slots: vec![Slot::new_even(even(14), u16::MAX)],
+        slots: vec![Slot(ParityUnion::new_even(even(14), u16::MAX))],
         next_free: 0,
         len: 0,
     };
@@ -240,9 +285,9 @@ fn the_parts_of_a_dense_gen_map_keep_its_values_keys_and_slots_in_step() {
 fn a_dense_gen_map_built_by_hand_moves_its_last_value_on_remove() {
     let parts = DenseGenMapRawParts::<&str, Byte> {
         slots: vec![
-            Slot::new_odd(odd(1), non_max(1)),
-            Slot::new_even(even(2), u8::MAX),
-            Slot::new_odd(odd(3), non_max(0)),
+            Slot(ParityUnion::new_odd(odd(1), non_max(1))),
+            Slot(ParityUnion::new_even(even(2), u8::MAX)),
+            Slot(ParityUnion::new_odd(odd(3), non_max(0))),
         ],
         next_free: 1,
         pairs: [(key(2, 3), "x"), (key(0, 1), "y")].into_iter().collect(),
@@ -291,7 +336,10 @@ fn the_parts_of_a_secondary_map_hold_its_slots_and_count() {
 #[test]
 fn a_secondary_map_built_by_hand_lets_a_newer_key_replace_its_value() {
     let parts = SecondaryMapRawParts::<&str, Byte> {
-        slots: vec![Slot::new_odd(odd(5), "old"), Slot::new_even(Even::ZERO, ())],
+        slots: vec![
+            Slot(ParityUnion::new_odd(odd(5), "old")),
+            Slot(ParityUnion::new_even(Even::ZERO, ())),
+        ],
         len: 1,
     };
     let mut map = unsafe { SecondaryMap::from_raw_parts(parts) };
@@ -332,9 +380,9 @@ fn the_parts_of_a_dense_secondary_map_keep_its_values_keys_and_slots_in_step() {
 fn a_dense_secondary_map_built_by_hand_moves_its_last_value_on_remove() {
     let parts = DenseSecondaryMapRawParts::<&str, Byte> {
         slots: vec![
-            Slot::new_odd(odd(1), non_max(1)),
-            Slot::new_even(Even::ZERO, ()),
-            Slot::new_odd(odd(3), non_max(0)),
+            Slot(ParityUnion::new_odd(odd(1), non_max(1))),
+            Slot(ParityUnion::new_even(Even::ZERO, ())),
+            Slot(ParityUnion::new_odd(odd(3), non_max(0))),
         ],
         pairs: [(key(2, 3), "x"), (key(0, 1), "y")].into_iter().collect(),
     };

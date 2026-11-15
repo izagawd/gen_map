@@ -9,8 +9,7 @@ use core::hint::unreachable_unchecked;
 // `NonZero` of another integer, which has the layout of that integer.
 // `NonZeroU1` takes no space, has an alignment of one and has a single value,
 // which stands for one, the only odd `u1`. So casting a reference to an odd
-// `G` gives a valid reference to an `Odd<G>`. `UnionSlot` relies on this to
-// hand out its generation as a reference to an `Odd`.
+// `G` gives a valid reference to an `Odd<G>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Odd<G: KeyPiece>(G::NonZero);
@@ -79,8 +78,7 @@ impl<G: KeyPiece> Odd<G> {
 // another integer, which has the layout of that integer. `NonMaxU1` takes no
 // space, has an alignment of one and has a single value, which stands for
 // zero, the only even `u1`. So casting a reference to an even `G` gives a
-// valid reference to an `Even<G>`. `UnionSlot` relies on this to hand out its
-// generation as a reference to an `Even`.
+// valid reference to an `Even<G>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Even<G: KeyPiece>(G::NonMax);

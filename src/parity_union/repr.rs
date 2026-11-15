@@ -1,15 +1,14 @@
 use crate::key::parity::{Even, Odd};
 use crate::key::piece::KeyPiece;
-use crate::slot::{Parity, ParityMut, ParityRef};
+use crate::parity_union::{Parity, ParityMut, ParityRef};
 use core::hint::unreachable_unchecked;
 use core::mem::{self, ManuallyDrop};
 
-/// A `Repr` keeps the generation and the value of a [`Slot`](super::Slot).
-/// The generation type `G` picks the `Repr` of its slots through
-/// [`KeyPiece::SlotRepr`]. This trait is in a private module, so no type
-/// outside this crate can implement it.
-// `Slot` relies on every method doing what its docs say, and the maps' unsafe
-// code relies on `Slot`.
+/// A `Repr` keeps the generation and the value of a
+/// [`ParityUnion`](super::ParityUnion). The generation type `G` picks the
+/// `Repr` through [`KeyPiece::ParityUnionRepr`]. This trait is in a private
+/// module, so no type outside this crate can implement it.
+// `ParityUnion` relies on every method doing what its docs say.
 pub trait Repr<G: KeyPiece, T, U>: Sized {
     /// Returns a `Repr` that holds an odd `generation` and a `T`.
     fn new_odd(generation: Odd<G>, value: T) -> Self;
@@ -76,22 +75,23 @@ pub trait Repr<G: KeyPiece, T, U>: Sized {
     unsafe fn replace_even_unchecked(&mut self, generation: Odd<G>, value: T) -> U;
 }
 
-/// A `Value` holds the `T` or the `U` of a [`UnionSlot`]. `odd` is live while
-/// the slot's generation is odd, and `even` is live while it is even.
+/// A `Value` holds the `T` or the `U` of a [`UnionRepr`]. `odd` is live while
+/// the generation of the `UnionRepr` is odd, and `even` is live while it is
+/// even.
 union Value<T, U> {
     odd: ManuallyDrop<T>,
     even: ManuallyDrop<U>,
 }
 
-/// A `UnionSlot` keeps the generation next to a union of a `T` and a `U`. The
+/// A `UnionRepr` keeps the generation next to a union of a `T` and a `U`. The
 /// parity of the generation says which of the two the union holds.
-pub struct UnionSlot<G: KeyPiece, T, U> {
+pub struct UnionRepr<G: KeyPiece, T, U> {
     generation: G,
     /// The parity of `generation` says which field is live.
     value: Value<T, U>,
 }
 
-impl<G: KeyPiece, T, U> Repr<G, T, U> for UnionSlot<G, T, U> {
+impl<G: KeyPiece, T, U> Repr<G, T, U> for UnionRepr<G, T, U> {
     #[inline]
     fn new_odd(generation: Odd<G>, value: T) -> Self {
         Self {
@@ -163,20 +163,20 @@ impl<G: KeyPiece, T, U> Repr<G, T, U> for UnionSlot<G, T, U> {
 
     #[inline]
     fn into_parity(self) -> Parity<G, T, U> {
-        let mut slot = ManuallyDrop::new(self);
+        let mut repr = ManuallyDrop::new(self);
         // SAFETY: the parity of the generation says which field is live. That
-        // field's value is taken out once, and the slot is never dropped, so
-        // the value is not dropped a second time.
+        // field's value is taken out once, and `repr` is never dropped, so the
+        // value is not dropped a second time.
         unsafe {
-            if slot.is_odd() {
+            if repr.is_odd() {
                 Parity::Odd(
-                    Odd::new_unchecked(slot.generation),
-                    ManuallyDrop::take(&mut slot.value.odd),
+                    Odd::new_unchecked(repr.generation),
+                    ManuallyDrop::take(&mut repr.value.odd),
                 )
             } else {
                 Parity::Even(
-                    Even::new_unchecked(slot.generation),
-                    ManuallyDrop::take(&mut slot.value.even),
+                    Even::new_unchecked(repr.generation),
+                    ManuallyDrop::take(&mut repr.value.even),
                 )
             }
         }
@@ -237,11 +237,11 @@ impl<G: KeyPiece, T, U> Repr<G, T, U> for UnionSlot<G, T, U> {
     }
 }
 
-impl<G: KeyPiece, T, U> Drop for UnionSlot<G, T, U> {
+impl<G: KeyPiece, T, U> Drop for UnionRepr<G, T, U> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: the parity of the generation says which field is live, and
-        // the slot is not used again after this.
+        // the `UnionRepr` is not used again after this.
         unsafe {
             if self.is_odd() {
                 ManuallyDrop::drop(&mut self.value.odd);
@@ -252,17 +252,17 @@ impl<G: KeyPiece, T, U> Drop for UnionSlot<G, T, U> {
     }
 }
 
-/// An `EnumSlot` holds an odd generation and a `T` in `Occupied`, or an even
+/// An `EnumRepr` holds an odd generation and a `T` in `Occupied`, or an even
 /// generation and a `U` in `Vacant`. For a [`u1`](crate::u1) generation, `Odd`
 /// and `Even` take no space, so the enum only stores its variant.
-pub enum EnumSlot<G: KeyPiece, T, U> {
+pub enum EnumRepr<G: KeyPiece, T, U> {
     /// The generation is odd and the value is a `T`.
     Occupied(Odd<G>, T),
     /// The generation is even and the value is a `U`.
     Vacant(Even<G>, U),
 }
 
-impl<G: KeyPiece, T, U> Repr<G, T, U> for EnumSlot<G, T, U> {
+impl<G: KeyPiece, T, U> Repr<G, T, U> for EnumRepr<G, T, U> {
     #[inline]
     fn new_odd(generation: Odd<G>, value: T) -> Self {
         Self::Occupied(generation, value)

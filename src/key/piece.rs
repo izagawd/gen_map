@@ -1,20 +1,17 @@
-use crate::slot::repr::{EnumSlot, Repr, UnionSlot};
+use crate::parity_union::repr::{EnumRepr, Repr, UnionRepr};
 use core::fmt::{self, Debug, Display};
 use core::hash::Hash;
 use core::num::NonZero;
 use core::panic::{RefUnwindSafe, UnwindSafe};
 
-// A `UnionSlot` reads one of its union fields based on what `is_odd` says about
-// its generation, and `SingleVec` and `PairVec` build slices from the lengths
-// they store in this type. So the crate's unsafe code relies on every method
-// behaving exactly like it does for an unsigned integer with `BITS` bits. In
-// particular, `into_non_zero` returns `Some` for every value except `ZERO`, and
-// `into_non_max` returns `Some` for every value except `MAX`. `NON_MAX_ZERO` is
-// `ZERO` in its `NonMax` form. `from_usize`, `into_usize` and `from_u128`
-// return `None` for a value that does not fit in the target type. Converting a
-// value to its `NonZero` or `NonMax` form, or to a type that can hold it, and
-// back gives the same value. The largest value is odd, which `Odd`, `Even` and
-// `Split`'s `max_generation` rely on.
+// Every method of a `KeyPiece` must behave exactly like it does for an
+// unsigned integer with `BITS` bits. In particular, `into_non_zero` returns
+// `Some` for every value except `ZERO`, and `into_non_max` returns `Some` for
+// every value except `MAX`. `NON_MAX_ZERO` is `ZERO` in its `NonMax` form.
+// `from_usize`, `into_usize` and `from_u128` return `None` for a value that
+// does not fit in the target type. Converting a value to its `NonZero` or
+// `NonMax` form, or to a type that can hold it, and back gives the same value.
+// The largest value is odd.
 
 /// A `KeyPiece` is an unsigned integer that can be the index or the generation
 /// of a [`Key`](crate::Key), or the length type of a
@@ -64,11 +61,12 @@ pub trait KeyPiece:
         + RefUnwindSafe
         + 'static;
 
-    /// `SlotRepr<T, U>` holds the generation and the value of a
-    /// [`Slot`](crate::Slot) whose generation has this type. It is `UnionSlot`
-    /// for `u8` to `u128` and `usize`, and `EnumSlot` for [`u1`].
+    /// `ParityUnionRepr<T, U>` holds the generation and the value of a
+    /// [`ParityUnion`](crate::ParityUnion) whose generation has this type. It
+    /// is `UnionRepr` for `u8` to `u128` and `usize`, and `EnumRepr` for
+    /// [`u1`].
     #[doc(hidden)]
-    type SlotRepr<T, U>: Repr<Self, T, U>;
+    type ParityUnionRepr<T, U>: Repr<Self, T, U>;
 
     /// The value zero.
     const ZERO: Self;
@@ -191,8 +189,7 @@ mod sealed {
 /// assert_eq!(NonMax::<u8>::new(u8::MAX), None);
 /// assert_eq!(core::mem::size_of::<NonMax<u32>>(), 4);
 /// ```
-// `repr(transparent)` gives a `NonMax<T>` the layout of `T`. The comment on
-// `Even` explains what relies on this.
+// `repr(transparent)` gives a `NonMax<T>` the layout of `T`.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct NonMax<T>(T);
@@ -266,7 +263,7 @@ macro_rules! impl_key_piece {
             impl KeyPiece for $t {
                 type NonZero = NonZero<$t>;
                 type NonMax = NonMax<$t>;
-                type SlotRepr<T, U> = UnionSlot<$t, T, U>;
+                type ParityUnionRepr<T, U> = UnionRepr<$t, T, U>;
 
                 const ZERO: Self = 0;
                 const NON_MAX_ZERO: Self::NonMax = NonMax(0);
@@ -451,8 +448,7 @@ impl Display for u1 {
 /// assert_eq!(NonZeroU1.get(), u1::MAX);
 /// ```
 // `repr(transparent)` gives `NonZeroU1` the layout of `()`, so it takes no
-// space and has an alignment of one. The comment on `Odd` explains what relies
-// on this.
+// space and has an alignment of one.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct NonZeroU1;
@@ -492,8 +488,7 @@ impl Display for NonZeroU1 {
 /// assert_eq!(NonMaxU1.get(), u1::MIN);
 /// ```
 // `repr(transparent)` gives `NonMaxU1` the layout of `()`, so it takes no space
-// and has an alignment of one. The comment on `Even` explains what relies on
-// this.
+// and has an alignment of one.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct NonMaxU1;
@@ -527,7 +522,7 @@ impl sealed::Sealed for u1 {}
 impl KeyPiece for u1 {
     type NonZero = NonZeroU1;
     type NonMax = NonMaxU1;
-    type SlotRepr<T, U> = EnumSlot<u1, T, U>;
+    type ParityUnionRepr<T, U> = EnumRepr<u1, T, U>;
 
     const ZERO: Self = Self(false);
     const NON_MAX_ZERO: Self::NonMax = NonMaxU1;
