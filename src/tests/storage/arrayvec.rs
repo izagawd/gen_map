@@ -3,8 +3,8 @@
 
 use crate::tests::{key_from_parts, Bomb, DropTracker};
 use crate::{
-    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeepLen, MapConfig,
-    NewerWins, Packed, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem,
+    FullError, GenMap, GenMapConfig, InsertError, InsertWithError, KeepLen, MapConfig, MapSlot,
+    NewerWins, Packed, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondaryMapSlot,
     Split,
 };
 use arrayvec::ArrayVec;
@@ -18,15 +18,15 @@ impl MapConfig for Four {
     type KeyConfig = Split<u8, u8>;
 }
 
-impl GenMapConfig for Four {
+impl<T> GenMapConfig<T> for Four {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = ArrayVec<S, 4>;
+    type Storage = ArrayVec<MapSlot<T, Self>, 4>;
 }
 
-impl SecondaryMapConfig for Four {
+impl<T> SecondaryMapConfig<T> for Four {
     type ReplaceStrategy = NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = ArrayVec<S, 4>;
+    type Storage = ArrayVec<SecondaryMapSlot<T, Self>, 4>;
 }
 
 /// Sixteen slots in the storage and sixteen indices in the keys, so both run
@@ -37,9 +37,9 @@ impl MapConfig for Sixteen {
     type KeyConfig = Packed<u8, 4>;
 }
 
-impl GenMapConfig for Sixteen {
+impl<T> GenMapConfig<T> for Sixteen {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = ArrayVec<S, 16>;
+    type Storage = ArrayVec<MapSlot<T, Self>, 16>;
 }
 
 /// Fills every slot of a [`Four`] map.

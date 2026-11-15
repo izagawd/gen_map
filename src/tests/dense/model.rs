@@ -6,10 +6,11 @@
 use crate::tests::model::Rng;
 use crate::tests::{key_from_parts, Cfg};
 use crate::{
-    u1, DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, ExistingWins,
-    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeepLen, Key,
-    KeyPiece, MapConfig, MapIdx, MapKeyConfig, Packed, PairVec, SecondaryInsertError, SecondaryMap,
-    SecondaryMapConfig, SecondarySlotItem, SingleVec, Split, SplitPair,
+    u1, DenseGenMap, DenseGenMapConfig, DenseMapSlot, DenseSecondaryMap, DenseSecondaryMapConfig,
+    DenseSecondaryMapSlot, ExistingWins, FullError, GenMap, GenMapConfig, InsertError,
+    InsertWithError, KeepLen, Key, KeyPiece, MapConfig, MapIdx, MapKey, MapKeyConfig, MapSlot,
+    Packed, PairVec, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondaryMapSlot,
+    SingleVec, Split, SplitPair,
 };
 use std::vec::Vec;
 
@@ -20,10 +21,10 @@ impl MapConfig for Wrap4 {
     type KeyConfig = Packed<u16, 4>;
 }
 
-impl GenMapConfig for Wrap4 {
+impl<T> GenMapConfig<T> for Wrap4 {
     const WRAP_ON_OVERFLOW: bool = true;
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 /// The dense form of [`Wrap4`].
@@ -33,10 +34,10 @@ impl MapConfig for DenseWrap4 {
     type KeyConfig = Packed<u16, 4>;
 }
 
-impl DenseGenMapConfig for DenseWrap4 {
+impl<T> DenseGenMapConfig<T> for DenseWrap4 {
     const WRAP_ON_OVERFLOW: bool = true;
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
+    type SlotStorage = Vec<DenseMapSlot<Self>>;
+    type PairStorage = PairVec<MapKey<Self>, T>;
 }
 
 /// `u8` keys whose secondary maps keep the existing value. Its dense
@@ -47,16 +48,16 @@ impl MapConfig for Keep {
     type KeyConfig = Split<u8, u8>;
 }
 
-impl SecondaryMapConfig for Keep {
+impl<T> SecondaryMapConfig<T> for Keep {
     type ReplaceStrategy = ExistingWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
+    type Storage = Vec<SecondaryMapSlot<T, Self>>;
 }
 
-impl DenseSecondaryMapConfig for Keep {
+impl<T> DenseSecondaryMapConfig<T> for Keep {
     type ReplaceStrategy = ExistingWins;
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
+    type SlotStorage = Vec<DenseSecondaryMapSlot<Self>>;
+    type PairStorage = SplitPair<Vec<MapKey<Self>>, Vec<T>>;
 }
 
 /// Packed keys with four index bits and four generation bits. The keys run
@@ -68,14 +69,14 @@ impl MapConfig for Tiny {
     type KeyConfig = Packed<u8, 4>;
 }
 
-impl GenMapConfig for Tiny {
+impl<T> GenMapConfig<T> for Tiny {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
-impl DenseGenMapConfig for Tiny {
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
+impl<T> DenseGenMapConfig<T> for Tiny {
+    type SlotStorage = Vec<DenseMapSlot<Self>>;
+    type PairStorage = PairVec<MapKey<Self>, T>;
 }
 
 /// Maps with this config hand out keys with a `u1` generation and wrap
@@ -86,16 +87,16 @@ impl MapConfig for U1Wrap {
     type KeyConfig = Split<u8, u1>;
 }
 
-impl GenMapConfig for U1Wrap {
+impl<T> GenMapConfig<T> for U1Wrap {
     const WRAP_ON_OVERFLOW: bool = true;
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
-impl DenseGenMapConfig for U1Wrap {
+impl<T> DenseGenMapConfig<T> for U1Wrap {
     const WRAP_ON_OVERFLOW: bool = true;
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
+    type SlotStorage = Vec<DenseMapSlot<Self>>;
+    type PairStorage = PairVec<MapKey<Self>, T>;
 }
 
 /// Maps with this config have a `u1` index, a `u1` generation and
@@ -107,16 +108,16 @@ impl MapConfig for U1Everything {
     type KeyConfig = Split<u1, u1>;
 }
 
-impl GenMapConfig for U1Everything {
+impl<T> GenMapConfig<T> for U1Everything {
     const WRAP_ON_OVERFLOW: bool = true;
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = SingleVec<S, u1>;
+    type Storage = SingleVec<MapSlot<T, Self>, u1>;
 }
 
-impl DenseGenMapConfig for U1Everything {
+impl<T> DenseGenMapConfig<T> for U1Everything {
     const WRAP_ON_OVERFLOW: bool = true;
-    type SlotStorage<S: GenSlotItem> = SingleVec<S, u1>;
-    type PairStorage<K, V> = PairVec<K, V, u1>;
+    type SlotStorage = SingleVec<DenseMapSlot<Self>, u1>;
+    type PairStorage = PairVec<MapKey<Self>, T, u1>;
 }
 
 /// Four inline slots, values and keys, so the storages move to the heap as
@@ -130,29 +131,29 @@ impl MapConfig for Spill {
 }
 
 #[cfg(feature = "smallvec")]
-impl GenMapConfig for Spill {
+impl<T> GenMapConfig<T> for Spill {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = smallvec::SmallVec<S, 4>;
+    type Storage = smallvec::SmallVec<MapSlot<T, Self>, 4>;
 }
 
 #[cfg(feature = "smallvec")]
-impl SecondaryMapConfig for Spill {
+impl<T> SecondaryMapConfig<T> for Spill {
     type ReplaceStrategy = crate::NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = smallvec::SmallVec<S, 4>;
+    type Storage = smallvec::SmallVec<SecondaryMapSlot<T, Self>, 4>;
 }
 
 #[cfg(feature = "smallvec")]
-impl DenseGenMapConfig for Spill {
-    type SlotStorage<S: GenSlotItem> = smallvec::SmallVec<S, 4>;
-    type PairStorage<K, V> = SplitPair<smallvec::SmallVec<K, 4>, smallvec::SmallVec<V, 4>>;
+impl<T> DenseGenMapConfig<T> for Spill {
+    type SlotStorage = smallvec::SmallVec<DenseMapSlot<Self>, 4>;
+    type PairStorage = SplitPair<smallvec::SmallVec<MapKey<Self>, 4>, smallvec::SmallVec<T, 4>>;
 }
 
 #[cfg(feature = "smallvec")]
-impl DenseSecondaryMapConfig for Spill {
+impl<T> DenseSecondaryMapConfig<T> for Spill {
     type ReplaceStrategy = crate::NewerWins;
-    type SlotStorage<S: GenSlotItem> = smallvec::SmallVec<S, 4>;
-    type PairStorage<K, V> = SplitPair<smallvec::SmallVec<K, 4>, smallvec::SmallVec<V, 4>>;
+    type SlotStorage = smallvec::SmallVec<DenseSecondaryMapSlot<Self>, 4>;
+    type PairStorage = SplitPair<smallvec::SmallVec<MapKey<Self>, 4>, smallvec::SmallVec<T, 4>>;
 }
 
 /// Twelve inline slots, keys and values, so an insert fails once it needs a
@@ -166,29 +167,29 @@ impl MapConfig for Inline {
 }
 
 #[cfg(feature = "arrayvec")]
-impl GenMapConfig for Inline {
+impl<T> GenMapConfig<T> for Inline {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = arrayvec::ArrayVec<S, 12>;
+    type Storage = arrayvec::ArrayVec<MapSlot<T, Self>, 12>;
 }
 
 #[cfg(feature = "arrayvec")]
-impl SecondaryMapConfig for Inline {
+impl<T> SecondaryMapConfig<T> for Inline {
     type ReplaceStrategy = crate::NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = arrayvec::ArrayVec<S, 12>;
+    type Storage = arrayvec::ArrayVec<SecondaryMapSlot<T, Self>, 12>;
 }
 
 #[cfg(feature = "arrayvec")]
-impl DenseGenMapConfig for Inline {
-    type SlotStorage<S: GenSlotItem> = arrayvec::ArrayVec<S, 12>;
-    type PairStorage<K, V> = SplitPair<arrayvec::ArrayVec<K, 12>, arrayvec::ArrayVec<V, 12>>;
+impl<T> DenseGenMapConfig<T> for Inline {
+    type SlotStorage = arrayvec::ArrayVec<DenseMapSlot<Self>, 12>;
+    type PairStorage = SplitPair<arrayvec::ArrayVec<MapKey<Self>, 12>, arrayvec::ArrayVec<T, 12>>;
 }
 
 #[cfg(feature = "arrayvec")]
-impl DenseSecondaryMapConfig for Inline {
+impl<T> DenseSecondaryMapConfig<T> for Inline {
     type ReplaceStrategy = crate::NewerWins;
-    type SlotStorage<S: GenSlotItem> = arrayvec::ArrayVec<S, 12>;
-    type PairStorage<K, V> = SplitPair<arrayvec::ArrayVec<K, 12>, arrayvec::ArrayVec<V, 12>>;
+    type SlotStorage = arrayvec::ArrayVec<DenseSecondaryMapSlot<Self>, 12>;
+    type PairStorage = SplitPair<arrayvec::ArrayVec<MapKey<Self>, 12>, arrayvec::ArrayVec<T, 12>>;
 }
 
 /// How many seeds to run and how many steps each one takes. Miri gets fewer
@@ -319,8 +320,8 @@ fn keeps(value: u32) -> bool {
 
 fn run_gen<G, D>(seed: u64, steps: usize)
 where
-    G: GenMapConfig<Len = KeepLen>,
-    D: DenseGenMapConfig<KeyConfig = G::KeyConfig>,
+    G: GenMapConfig<u32, Len = KeepLen>,
+    D: DenseGenMapConfig<u32, KeyConfig = G::KeyConfig>,
     GenMap<u32, G>: Default,
     DenseGenMap<u32, D>: Default,
 {
@@ -571,8 +572,8 @@ fn check_gen<G, D>(
     known: &[Key<MapKeyConfig<G>>],
     context: (u64, usize),
 ) where
-    G: GenMapConfig<Len = KeepLen>,
-    D: DenseGenMapConfig<KeyConfig = G::KeyConfig>,
+    G: GenMapConfig<u32, Len = KeepLen>,
+    D: DenseGenMapConfig<u32, KeyConfig = G::KeyConfig>,
 {
     assert_eq!(sparse.len(), dense.len(), "{context:?}");
     assert_eq!(sparse.slots_len(), dense.slots_len(), "{context:?}");
@@ -635,8 +636,8 @@ impl<S> From<Result<Option<u32>, SecondaryInsertError<u32, S>>> for Outcome {
 
 fn run_secondary<S, D>(seed: u64, steps: usize)
 where
-    S: SecondaryMapConfig<KeyConfig = Split<u8, u8>, Len = KeepLen>,
-    D: DenseSecondaryMapConfig<KeyConfig = Split<u8, u8>>,
+    S: SecondaryMapConfig<u32, KeyConfig = Split<u8, u8>, Len = KeepLen>,
+    D: DenseSecondaryMapConfig<u32, KeyConfig = Split<u8, u8>>,
     SecondaryMap<u32, S>: Default,
     DenseSecondaryMap<u32, D>: Default,
 {
@@ -827,8 +828,8 @@ fn check_secondary<S, D>(
     known: &[Key<Split<u8, u8>>],
     context: (u64, usize),
 ) where
-    S: SecondaryMapConfig<KeyConfig = Split<u8, u8>, Len = KeepLen>,
-    D: DenseSecondaryMapConfig<KeyConfig = Split<u8, u8>>,
+    S: SecondaryMapConfig<u32, KeyConfig = Split<u8, u8>, Len = KeepLen>,
+    D: DenseSecondaryMapConfig<u32, KeyConfig = Split<u8, u8>>,
 {
     assert_eq!(sparse.len(), dense.len(), "{context:?}");
     assert_eq!(sparse.slots_len(), dense.slots_len(), "{context:?}");

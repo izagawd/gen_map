@@ -130,13 +130,13 @@ where
 }
 
 /// The storage a config gives the map for its slots.
-type Slots<T, C> = <C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>>;
+type Slots<T, C> = <C as SecondaryMapConfig<T>>::Storage;
 
 /// The strategy a config gives the map.
-type Strategy<C> = <C as SecondaryMapConfig>::ReplaceStrategy;
+type Strategy<T, C> = <C as SecondaryMapConfig<T>>::ReplaceStrategy;
 
-/// The type a map with config `C` keeps its count of values in.
-type LenCount<C> = <<C as SecondaryMapConfig>::Len as Len>::Count<MapIdx<C>>;
+/// The type a `SecondaryMap<T, C>` keeps its count of values in.
+type LenCount<T, C> = <<C as SecondaryMapConfig<T>>::Len as Len>::Count<MapIdx<C>>;
 
 /// The error the storage of a `SecondaryMap<T, C>` gives when it cannot make
 /// room for a slot. It is [`ReserveError`](crate::ReserveError) for a
@@ -220,8 +220,8 @@ pub(crate) unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// ```
 pub struct SecondaryMap<
     T,
-    #[cfg(feature = "alloc")] C: SecondaryMapConfig = DefaultMapConfig,
-    #[cfg(not(feature = "alloc"))] C: SecondaryMapConfig,
+    #[cfg(feature = "alloc")] C: SecondaryMapConfig<T> = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: SecondaryMapConfig<T>,
 > {
     // The position and the generation of every slot that holds a value fit
     // the key config together. The map builds keys from its slots without
@@ -231,7 +231,7 @@ pub struct SecondaryMap<
     // slot has the largest value of the index type as its index, so there are
     // at most as many slots as that largest value, and the count of values
     // always fits in the index type.
-    len: LenCount<C>,
+    len: LenCount<T, C>,
 }
 
 #[cfg(feature = "alloc")]
@@ -264,7 +264,7 @@ impl<T> SecondaryMap<T> {
 }
 
 /// A map has these methods only when its config picks [`KeepLen`].
-impl<T, C: SecondaryMapConfig<Len = KeepLen>> SecondaryMap<T, C> {
+impl<T, C: SecondaryMapConfig<T, Len = KeepLen>> SecondaryMap<T, C> {
     /// Returns the number of values in the map.
     #[inline]
     pub fn len(&self) -> usize {
@@ -294,7 +294,7 @@ impl<T, C: SecondaryMapConfig<Len = KeepLen>> SecondaryMap<T, C> {
 }
 
 /// A map has this method only when its storage implements [`Empty`].
-impl<T, C: SecondaryMapConfig> SecondaryMap<T, C>
+impl<T, C: SecondaryMapConfig<T>> SecondaryMap<T, C>
 where
     Slots<T, C>: Empty,
 {
@@ -309,7 +309,7 @@ where
     }
 }
 
-impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
+impl<T, C: SecondaryMapConfig<T>> SecondaryMap<T, C> {
     /// Creates an empty map with config `C` that keeps its slots in
     /// `storage`. This method lets the caller set up the storage, such as
     /// with a custom allocator.
@@ -321,9 +321,8 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     #[inline]
     #[allow(clippy::type_complexity)]
     pub fn with_storage(
-        storage: <C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>>,
-    ) -> Result<Self, WithStorageError<<C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>>>>
-    {
+        storage: <C as SecondaryMapConfig<T>>::Storage,
+    ) -> Result<Self, WithStorageError<<C as SecondaryMapConfig<T>>::Storage>> {
         if storage.is_empty() {
             Ok(Self {
                 slots: storage,
@@ -357,7 +356,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// [`set_len`](Self::set_len), the slots must follow the rules that
     /// [`SecondaryMapRawParts`] lists.
     #[inline]
-    pub unsafe fn slots(&self) -> &<C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>> {
+    pub unsafe fn slots(&self) -> &<C as SecondaryMapConfig<T>>::Storage {
         &self.slots
     }
 
@@ -371,9 +370,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
     /// [`set_len`](Self::set_len), the slots must follow the rules that
     /// [`SecondaryMapRawParts`] lists.
     #[inline]
-    pub unsafe fn slots_mut(
-        &mut self,
-    ) -> &mut <C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>> {
+    pub unsafe fn slots_mut(&mut self) -> &mut <C as SecondaryMapConfig<T>>::Storage {
         &mut self.slots
     }
 
@@ -825,7 +822,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
                 Ok(None)
             }
             Some(current)
-                if <Strategy<C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
+                if <Strategy<T, C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
                     current, generation,
                 ) =>
             {
@@ -943,7 +940,7 @@ impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
 }
 
 /// A map has this method only when its storage implements [`WithCapacity`].
-impl<T, C: SecondaryMapConfig> SecondaryMap<T, C>
+impl<T, C: SecondaryMapConfig<T>> SecondaryMap<T, C>
 where
     Slots<T, C>: WithCapacity,
 {
@@ -960,7 +957,7 @@ where
 
 /// These methods need a storage that can grow on request, so a map whose
 /// storage has a fixed capacity does not have them.
-impl<T, C: SecondaryMapConfig> SecondaryMap<T, C>
+impl<T, C: SecondaryMapConfig<T>> SecondaryMap<T, C>
 where
     Slots<T, C>: ReserveStorage,
 {
@@ -989,7 +986,7 @@ where
     }
 }
 
-impl<T, C: SecondaryMapConfig> Default for SecondaryMap<T, C>
+impl<T, C: SecondaryMapConfig<T>> Default for SecondaryMap<T, C>
 where
     Slots<T, C>: Empty,
 {
@@ -999,7 +996,7 @@ where
     }
 }
 
-impl<T, C: SecondaryMapConfig> Clone for SecondaryMap<T, C>
+impl<T, C: SecondaryMapConfig<T>> Clone for SecondaryMap<T, C>
 where
     Slots<T, C>: Clone,
 {
@@ -1023,13 +1020,13 @@ where
     }
 }
 
-impl<T: fmt::Debug, C: SecondaryMapConfig> fmt::Debug for SecondaryMap<T, C> {
+impl<T: fmt::Debug, C: SecondaryMapConfig<T>> fmt::Debug for SecondaryMap<T, C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_map().entries(self.iter()).finish()
     }
 }
 
-impl<T, C: SecondaryMapConfig> Index<Key<MapKeyConfig<C>>> for SecondaryMap<T, C> {
+impl<T, C: SecondaryMapConfig<T>> Index<Key<MapKeyConfig<C>>> for SecondaryMap<T, C> {
     type Output = T;
 
     /// Returns a reference to the value stored under `key`.
@@ -1043,7 +1040,7 @@ impl<T, C: SecondaryMapConfig> Index<Key<MapKeyConfig<C>>> for SecondaryMap<T, C
     }
 }
 
-impl<T, C: SecondaryMapConfig> IndexMut<Key<MapKeyConfig<C>>> for SecondaryMap<T, C> {
+impl<T, C: SecondaryMapConfig<T>> IndexMut<Key<MapKeyConfig<C>>> for SecondaryMap<T, C> {
     /// Returns a mutable reference to the value stored under `key`.
     ///
     /// # Panics
@@ -1057,14 +1054,14 @@ impl<T, C: SecondaryMapConfig> IndexMut<Key<MapKeyConfig<C>>> for SecondaryMap<T
 
 /// Iterator over `(key, &value)` pairs, in index order. It is created using
 /// [`SecondaryMap::iter`].
-pub struct SecondaryIter<'a, T, C: SecondaryMapConfig> {
+pub struct SecondaryIter<'a, T, C: SecondaryMapConfig<T>> {
     slots: Enumerate<slice::Iter<'a, SecondaryMapSlot<T, C>>>,
     /// The count of values the iterator has left to yield, or `()` if the
     /// config keeps no count.
-    remaining: LenCount<C>,
+    remaining: LenCount<T, C>,
 }
 
-impl<'a, T, C: SecondaryMapConfig> Iterator for SecondaryIter<'a, T, C> {
+impl<'a, T, C: SecondaryMapConfig<T>> Iterator for SecondaryIter<'a, T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a T);
 
     #[inline]
@@ -1091,7 +1088,7 @@ impl<'a, T, C: SecondaryMapConfig> Iterator for SecondaryIter<'a, T, C> {
     }
 }
 
-impl<T, C: SecondaryMapConfig> DoubleEndedIterator for SecondaryIter<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> DoubleEndedIterator for SecondaryIter<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
@@ -1107,12 +1104,12 @@ impl<T, C: SecondaryMapConfig> DoubleEndedIterator for SecondaryIter<'_, T, C> {
     }
 }
 
-impl<T, C: SecondaryMapConfig<Len = KeepLen>> ExactSizeIterator for SecondaryIter<'_, T, C> {}
-impl<T, C: SecondaryMapConfig> FusedIterator for SecondaryIter<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T, Len = KeepLen>> ExactSizeIterator for SecondaryIter<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T>> FusedIterator for SecondaryIter<'_, T, C> {}
 
 // This impl is written by hand, because a derive would require `T: Clone`
 // and `C: Clone`.
-impl<T, C: SecondaryMapConfig> Clone for SecondaryIter<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> Clone for SecondaryIter<'_, T, C> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -1124,14 +1121,14 @@ impl<T, C: SecondaryMapConfig> Clone for SecondaryIter<'_, T, C> {
 
 /// Iterator over `(key, &mut value)` pairs, in index order. It is created
 /// using [`SecondaryMap::iter_mut`].
-pub struct SecondaryIterMut<'a, T, C: SecondaryMapConfig> {
+pub struct SecondaryIterMut<'a, T, C: SecondaryMapConfig<T>> {
     slots: Enumerate<slice::IterMut<'a, SecondaryMapSlot<T, C>>>,
     /// The count of values the iterator has left to yield, or `()` if the
     /// config keeps no count.
-    remaining: LenCount<C>,
+    remaining: LenCount<T, C>,
 }
 
-impl<'a, T, C: SecondaryMapConfig> Iterator for SecondaryIterMut<'a, T, C> {
+impl<'a, T, C: SecondaryMapConfig<T>> Iterator for SecondaryIterMut<'a, T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a mut T);
 
     #[inline]
@@ -1158,7 +1155,7 @@ impl<'a, T, C: SecondaryMapConfig> Iterator for SecondaryIterMut<'a, T, C> {
     }
 }
 
-impl<T, C: SecondaryMapConfig> DoubleEndedIterator for SecondaryIterMut<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> DoubleEndedIterator for SecondaryIterMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((position, slot)) = self.slots.next_back() {
@@ -1174,16 +1171,16 @@ impl<T, C: SecondaryMapConfig> DoubleEndedIterator for SecondaryIterMut<'_, T, C
     }
 }
 
-impl<T, C: SecondaryMapConfig<Len = KeepLen>> ExactSizeIterator for SecondaryIterMut<'_, T, C> {}
-impl<T, C: SecondaryMapConfig> FusedIterator for SecondaryIterMut<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T, Len = KeepLen>> ExactSizeIterator for SecondaryIterMut<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T>> FusedIterator for SecondaryIterMut<'_, T, C> {}
 
 /// Iterator over keys, in index order. It is created using
 /// [`SecondaryMap::keys`].
-pub struct SecondaryKeys<'a, T, C: SecondaryMapConfig> {
+pub struct SecondaryKeys<'a, T, C: SecondaryMapConfig<T>> {
     inner: SecondaryIter<'a, T, C>,
 }
 
-impl<T, C: SecondaryMapConfig> Iterator for SecondaryKeys<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> Iterator for SecondaryKeys<'_, T, C> {
     type Item = Key<MapKeyConfig<C>>;
 
     #[inline]
@@ -1197,17 +1194,17 @@ impl<T, C: SecondaryMapConfig> Iterator for SecondaryKeys<'_, T, C> {
     }
 }
 
-impl<T, C: SecondaryMapConfig> DoubleEndedIterator for SecondaryKeys<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> DoubleEndedIterator for SecondaryKeys<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(key, _)| key)
     }
 }
 
-impl<T, C: SecondaryMapConfig<Len = KeepLen>> ExactSizeIterator for SecondaryKeys<'_, T, C> {}
-impl<T, C: SecondaryMapConfig> FusedIterator for SecondaryKeys<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T, Len = KeepLen>> ExactSizeIterator for SecondaryKeys<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T>> FusedIterator for SecondaryKeys<'_, T, C> {}
 
-impl<T, C: SecondaryMapConfig> Clone for SecondaryKeys<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> Clone for SecondaryKeys<'_, T, C> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -1218,11 +1215,11 @@ impl<T, C: SecondaryMapConfig> Clone for SecondaryKeys<'_, T, C> {
 
 /// Iterator over references to the values, in index order. It is created
 /// using [`SecondaryMap::values`].
-pub struct SecondaryValues<'a, T, C: SecondaryMapConfig> {
+pub struct SecondaryValues<'a, T, C: SecondaryMapConfig<T>> {
     inner: SecondaryIter<'a, T, C>,
 }
 
-impl<'a, T, C: SecondaryMapConfig> Iterator for SecondaryValues<'a, T, C> {
+impl<'a, T, C: SecondaryMapConfig<T>> Iterator for SecondaryValues<'a, T, C> {
     type Item = &'a T;
 
     #[inline]
@@ -1236,17 +1233,17 @@ impl<'a, T, C: SecondaryMapConfig> Iterator for SecondaryValues<'a, T, C> {
     }
 }
 
-impl<T, C: SecondaryMapConfig> DoubleEndedIterator for SecondaryValues<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> DoubleEndedIterator for SecondaryValues<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(_, value)| value)
     }
 }
 
-impl<T, C: SecondaryMapConfig<Len = KeepLen>> ExactSizeIterator for SecondaryValues<'_, T, C> {}
-impl<T, C: SecondaryMapConfig> FusedIterator for SecondaryValues<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T, Len = KeepLen>> ExactSizeIterator for SecondaryValues<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T>> FusedIterator for SecondaryValues<'_, T, C> {}
 
-impl<T, C: SecondaryMapConfig> Clone for SecondaryValues<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> Clone for SecondaryValues<'_, T, C> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -1257,11 +1254,11 @@ impl<T, C: SecondaryMapConfig> Clone for SecondaryValues<'_, T, C> {
 
 /// Iterator over mutable references to the values, in index order. It is
 /// created using [`SecondaryMap::values_mut`].
-pub struct SecondaryValuesMut<'a, T, C: SecondaryMapConfig> {
+pub struct SecondaryValuesMut<'a, T, C: SecondaryMapConfig<T>> {
     inner: SecondaryIterMut<'a, T, C>,
 }
 
-impl<'a, T, C: SecondaryMapConfig> Iterator for SecondaryValuesMut<'a, T, C> {
+impl<'a, T, C: SecondaryMapConfig<T>> Iterator for SecondaryValuesMut<'a, T, C> {
     type Item = &'a mut T;
 
     #[inline]
@@ -1275,25 +1272,28 @@ impl<'a, T, C: SecondaryMapConfig> Iterator for SecondaryValuesMut<'a, T, C> {
     }
 }
 
-impl<T, C: SecondaryMapConfig> DoubleEndedIterator for SecondaryValuesMut<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> DoubleEndedIterator for SecondaryValuesMut<'_, T, C> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|(_, value)| value)
     }
 }
 
-impl<T, C: SecondaryMapConfig<Len = KeepLen>> ExactSizeIterator for SecondaryValuesMut<'_, T, C> {}
-impl<T, C: SecondaryMapConfig> FusedIterator for SecondaryValuesMut<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T, Len = KeepLen>> ExactSizeIterator
+    for SecondaryValuesMut<'_, T, C>
+{
+}
+impl<T, C: SecondaryMapConfig<T>> FusedIterator for SecondaryValuesMut<'_, T, C> {}
 
 /// Iterator that takes each value out, with its key, in index order. It is
 /// created using [`SecondaryMap::drain`].
-pub struct SecondaryDrain<'a, T, C: SecondaryMapConfig> {
+pub struct SecondaryDrain<'a, T, C: SecondaryMapConfig<T>> {
     map: &'a mut SecondaryMap<T, C>,
     /// The position of the slot the iterator checks next.
     position: usize,
 }
 
-impl<T, C: SecondaryMapConfig> Iterator for SecondaryDrain<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> Iterator for SecondaryDrain<'_, T, C> {
     type Item = (Key<MapKeyConfig<C>>, T);
 
     #[inline]
@@ -1321,10 +1321,10 @@ impl<T, C: SecondaryMapConfig> Iterator for SecondaryDrain<'_, T, C> {
     }
 }
 
-impl<T, C: SecondaryMapConfig<Len = KeepLen>> ExactSizeIterator for SecondaryDrain<'_, T, C> {}
-impl<T, C: SecondaryMapConfig> FusedIterator for SecondaryDrain<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T, Len = KeepLen>> ExactSizeIterator for SecondaryDrain<'_, T, C> {}
+impl<T, C: SecondaryMapConfig<T>> FusedIterator for SecondaryDrain<'_, T, C> {}
 
-impl<T, C: SecondaryMapConfig> Drop for SecondaryDrain<'_, T, C> {
+impl<T, C: SecondaryMapConfig<T>> Drop for SecondaryDrain<'_, T, C> {
     fn drop(&mut self) {
         for _ in self.by_ref() {}
     }
@@ -1335,17 +1335,17 @@ impl<T, C: SecondaryMapConfig> Drop for SecondaryDrain<'_, T, C> {
 /// implements `IntoIterator`. It implements `DoubleEndedIterator` only when
 /// the storage's iterator implements both `DoubleEndedIterator` and
 /// `ExactSizeIterator`.
-pub struct SecondaryIntoIter<T, C: SecondaryMapConfig>
+pub struct SecondaryIntoIter<T, C: SecondaryMapConfig<T>>
 where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,
 {
     slots: Enumerate<<Slots<T, C> as IntoIterator>::IntoIter>,
     /// The count of values the iterator has left to yield, or `()` if the
     /// config keeps no count.
-    remaining: LenCount<C>,
+    remaining: LenCount<T, C>,
 }
 
-impl<T, C: SecondaryMapConfig> Iterator for SecondaryIntoIter<T, C>
+impl<T, C: SecondaryMapConfig<T>> Iterator for SecondaryIntoIter<T, C>
 where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,
 {
@@ -1377,7 +1377,7 @@ where
 
 // `next_back` calls `Enumerate::next_back`, which needs the storage's iterator
 // to implement `ExactSizeIterator` as well as `DoubleEndedIterator`.
-impl<T, C: SecondaryMapConfig> DoubleEndedIterator for SecondaryIntoIter<T, C>
+impl<T, C: SecondaryMapConfig<T>> DoubleEndedIterator for SecondaryIntoIter<T, C>
 where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,
     <Slots<T, C> as IntoIterator>::IntoIter: DoubleEndedIterator + ExactSizeIterator,
@@ -1397,16 +1397,16 @@ where
     }
 }
 
-impl<T, C: SecondaryMapConfig<Len = KeepLen>> ExactSizeIterator for SecondaryIntoIter<T, C> where
+impl<T, C: SecondaryMapConfig<T, Len = KeepLen>> ExactSizeIterator for SecondaryIntoIter<T, C> where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>
 {
 }
-impl<T, C: SecondaryMapConfig> FusedIterator for SecondaryIntoIter<T, C> where
+impl<T, C: SecondaryMapConfig<T>> FusedIterator for SecondaryIntoIter<T, C> where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>
 {
 }
 
-impl<T, C: SecondaryMapConfig> IntoIterator for SecondaryMap<T, C>
+impl<T, C: SecondaryMapConfig<T>> IntoIterator for SecondaryMap<T, C>
 where
     Slots<T, C>: IntoIterator<Item = SecondaryMapSlot<T, C>>,
 {
@@ -1422,7 +1422,7 @@ where
     }
 }
 
-impl<'a, T, C: SecondaryMapConfig> IntoIterator for &'a SecondaryMap<T, C> {
+impl<'a, T, C: SecondaryMapConfig<T>> IntoIterator for &'a SecondaryMap<T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a T);
     type IntoIter = SecondaryIter<'a, T, C>;
 
@@ -1432,7 +1432,7 @@ impl<'a, T, C: SecondaryMapConfig> IntoIterator for &'a SecondaryMap<T, C> {
     }
 }
 
-impl<'a, T, C: SecondaryMapConfig> IntoIterator for &'a mut SecondaryMap<T, C> {
+impl<'a, T, C: SecondaryMapConfig<T>> IntoIterator for &'a mut SecondaryMap<T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a mut T);
     type IntoIter = SecondaryIterMut<'a, T, C>;
 
@@ -1488,8 +1488,8 @@ impl<'a, T, C: SecondaryMapConfig> IntoIterator for &'a mut SecondaryMap<T, C> {
 /// ```
 pub struct SecondaryMapRawParts<
     T,
-    #[cfg(feature = "alloc")] C: SecondaryMapConfig = DefaultMapConfig,
-    #[cfg(not(feature = "alloc"))] C: SecondaryMapConfig,
+    #[cfg(feature = "alloc")] C: SecondaryMapConfig<T> = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: SecondaryMapConfig<T>,
 > {
     // These fields are in the same order as the fields of `SecondaryMap`, so
     // the two structs can be read side by side. `into_raw_parts` and
@@ -1497,13 +1497,13 @@ pub struct SecondaryMapRawParts<
     // field that only one struct has, but not a change in order.
     /// The map keeps its slots in this storage, which the map's config picks.
     /// A slot's index is its position in the storage.
-    pub slots: <C as SecondaryMapConfig>::Storage<SecondaryMapSlot<T, C>>,
+    pub slots: <C as SecondaryMapConfig<T>>::Storage,
     /// `len` is the number of values in the map if the config picks
     /// [`KeepLen`], and `()` if it picks [`NoLen`](crate::NoLen).
-    pub len: <<C as SecondaryMapConfig>::Len as Len>::Count<MapIdx<C>>,
+    pub len: <<C as SecondaryMapConfig<T>>::Len as Len>::Count<MapIdx<C>>,
 }
 
-impl<T, C: SecondaryMapConfig> SecondaryMap<T, C> {
+impl<T, C: SecondaryMapConfig<T>> SecondaryMap<T, C> {
     /// Takes the map apart into its fields.
     /// [`from_raw_parts`](Self::from_raw_parts) builds a map from them again,
     /// and [`SecondaryMapRawParts`] lists the rules they follow.

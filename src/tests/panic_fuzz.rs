@@ -7,10 +7,10 @@
 use super::model::Rng;
 use super::{DropItem, DropTracker};
 use crate::{
-    u1, DefaultMapConfig, DenseGenMap, DenseGenMapConfig, DenseSecondaryMap,
-    DenseSecondaryMapConfig, GenMap, GenMapConfig, GenSlotItem, KeepLen, Key, KeyPiece, MapConfig,
-    MapIdx, MapKeyConfig, NewerWins, Packed, PairVec, SecondaryMap, SecondaryMapConfig,
-    SecondarySlotItem, SplitPair,
+    u1, DefaultMapConfig, DenseGenMap, DenseGenMapConfig, DenseMapSlot, DenseSecondaryMap,
+    DenseSecondaryMapConfig, DenseSecondaryMapSlot, GenMap, GenMapConfig, KeepLen, Key, KeyPiece,
+    MapConfig, MapIdx, MapKey, MapKeyConfig, MapSlot, NewerWins, Packed, PairVec, SecondaryMap,
+    SecondaryMapConfig, SecondaryMapSlot, SplitPair,
 };
 use std::cell::{Cell, RefCell};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -72,28 +72,28 @@ macro_rules! config {
             type KeyConfig = $key;
         }
 
-        impl GenMapConfig for $name {
+        impl<T> GenMapConfig<T> for $name {
             const WRAP_ON_OVERFLOW: bool = $wrap;
             type Len = KeepLen;
-            type Storage<S: GenSlotItem> = $slots<S>;
+            type Storage = $slots<MapSlot<T, Self>>;
         }
 
-        impl SecondaryMapConfig for $name {
+        impl<T> SecondaryMapConfig<T> for $name {
             type ReplaceStrategy = NewerWins;
             type Len = KeepLen;
-            type Storage<S: SecondarySlotItem> = $slots<S>;
+            type Storage = $slots<SecondaryMapSlot<T, Self>>;
         }
 
-        impl DenseGenMapConfig for $name {
+        impl<T> DenseGenMapConfig<T> for $name {
             const WRAP_ON_OVERFLOW: bool = $wrap;
-            type SlotStorage<S: GenSlotItem> = $slots<S>;
-            type PairStorage<K, V> = $pairs<K, V>;
+            type SlotStorage = $slots<DenseMapSlot<Self>>;
+            type PairStorage = $pairs<MapKey<Self>, T>;
         }
 
-        impl DenseSecondaryMapConfig for $name {
+        impl<T> DenseSecondaryMapConfig<T> for $name {
             type ReplaceStrategy = NewerWins;
-            type SlotStorage<S: GenSlotItem> = $slots<S>;
-            type PairStorage<K, V> = $pairs<K, V>;
+            type SlotStorage = $slots<DenseSecondaryMapSlot<Self>>;
+            type PairStorage = $pairs<MapKey<Self>, T>;
         }
     };
 }
@@ -233,10 +233,10 @@ fn finish<I: Iterator>(mut drain: I, taken: usize) {
 
 fn run<C>(seed: u64, steps: usize)
 where
-    C: GenMapConfig<Len = KeepLen>
-        + SecondaryMapConfig<Len = KeepLen>
-        + DenseGenMapConfig
-        + DenseSecondaryMapConfig,
+    C: GenMapConfig<Fragile, Len = KeepLen>
+        + SecondaryMapConfig<Fragile, Len = KeepLen>
+        + DenseGenMapConfig<Fragile>
+        + DenseSecondaryMapConfig<Fragile>,
     GenMap<Fragile, C>: Clone + Default,
     DenseGenMap<Fragile, C>: Clone + Default,
     SecondaryMap<Fragile, C>: Clone + Default,
@@ -407,10 +407,10 @@ fn check<C>(
     secondary: &SecondaryMap<Fragile, C>,
     dense_secondary: &DenseSecondaryMap<Fragile, C>,
 ) where
-    C: GenMapConfig<Len = KeepLen>
-        + SecondaryMapConfig<Len = KeepLen>
-        + DenseGenMapConfig
-        + DenseSecondaryMapConfig,
+    C: GenMapConfig<Fragile, Len = KeepLen>
+        + SecondaryMapConfig<Fragile, Len = KeepLen>
+        + DenseGenMapConfig<Fragile>
+        + DenseSecondaryMapConfig<Fragile>,
 {
     assert_eq!(sparse.iter().count(), sparse.len());
     for (key, value) in sparse {

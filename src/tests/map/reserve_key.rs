@@ -1,5 +1,5 @@
 use crate::tests::{assert_not_detached, Cfg};
-use crate::{FullError, GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Packed};
+use crate::{FullError, GenMap, GenMapConfig, KeepLen, MapConfig, MapSlot, Packed};
 use std::vec::Vec;
 
 /// `u8` keys, so a map holds at most 255 slots, and the largest generation is
@@ -14,15 +14,15 @@ impl MapConfig for Wrap4 {
     type KeyConfig = Packed<u16, 4>;
 }
 
-impl GenMapConfig for Wrap4 {
+impl<T> GenMapConfig<T> for Wrap4 {
     const WRAP_ON_OVERFLOW: bool = true;
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 /// A map with no values, whose next key gets the largest generation its key
 /// config can hold.
-fn before_the_largest_generation<C: GenMapConfig>() -> GenMap<i32, C>
+fn before_the_largest_generation<C: GenMapConfig<i32>>() -> GenMap<i32, C>
 where
     GenMap<i32, C>: Default,
 {

@@ -290,7 +290,7 @@ impl<S> WithCapacity for Vec<S> {
 ///
 /// ```
 /// use arrayvec::ArrayVec;
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
+/// use gen_map::{GenMap, GenMapConfig, KeepLen, MapConfig, MapSlot, Split};
 ///
 /// /// Maps with this config keep up to sixteen slots inline and never
 /// /// allocate.
@@ -300,9 +300,9 @@ impl<S> WithCapacity for Vec<S> {
 ///     type KeyConfig = Split<u8, u8>;
 /// }
 ///
-/// impl GenMapConfig for Inline {
+/// impl<T> GenMapConfig<T> for Inline {
 ///     type Len = KeepLen;
-///     type Storage<S: GenSlotItem> = ArrayVec<S, 16>;
+///     type Storage = ArrayVec<MapSlot<T, Self>, 16>;
 /// }
 ///
 /// let mut map = GenMap::<u32, Inline>::new_with_config();
@@ -384,7 +384,7 @@ impl<S, const CAP: usize> Empty for arrayvec::ArrayVec<S, CAP> {
 /// covered by semver.
 ///
 /// ```
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
+/// use gen_map::{GenMap, GenMapConfig, KeepLen, MapConfig, MapSlot, Split};
 /// use smallvec::SmallVec;
 ///
 /// /// Maps with this config keep up to eight slots inline before they
@@ -395,9 +395,9 @@ impl<S, const CAP: usize> Empty for arrayvec::ArrayVec<S, CAP> {
 ///     type KeyConfig = Split<u32, u32>;
 /// }
 ///
-/// impl GenMapConfig for Small {
+/// impl<T> GenMapConfig<T> for Small {
 ///     type Len = KeepLen;
-///     type Storage<S: GenSlotItem> = SmallVec<S, 8>;
+///     type Storage = SmallVec<MapSlot<T, Self>, 8>;
 /// }
 ///
 /// let mut map = GenMap::<u32, Small>::new_with_config();

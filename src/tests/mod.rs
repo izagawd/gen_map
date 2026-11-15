@@ -2,6 +2,7 @@
 // purpose, so their unsafe code is not documented block by block.
 #![allow(clippy::undocumented_unsafe_blocks)]
 
+mod config;
 mod dense;
 mod key;
 mod len;
@@ -16,9 +17,9 @@ mod with_storage;
 mod zero_sized;
 
 use crate::{
-    DenseGenMapConfig, DenseSecondaryMapConfig, GenMap, GenMapConfig, GenSlotItem, KeepLen, Key,
-    KeyConfig, KeyPiece, Len, MapConfig, NewerWins, NoLen, Odd, PairVec, SecondaryMap,
-    SecondaryMapConfig, SecondarySlotItem, Split,
+    DenseGenMapConfig, DenseMapSlot, DenseSecondaryMapConfig, DenseSecondaryMapSlot, GenMap,
+    GenMapConfig, KeepLen, Key, KeyConfig, KeyPiece, Len, MapConfig, MapKey, MapSlot, NewerWins,
+    NoLen, Odd, PairVec, SecondaryMap, SecondaryMapConfig, SecondaryMapSlot, Split,
 };
 use core::marker::PhantomData;
 use std::cell::RefCell;
@@ -38,37 +39,37 @@ impl<Idx: KeyPiece, Gen: KeyPiece> MapConfig for Cfg<Idx, Gen> {
     type KeyConfig = Split<Idx, Gen>;
 }
 
-impl<Idx: KeyPiece, Gen: KeyPiece> GenMapConfig for Cfg<Idx, Gen> {
+impl<T, Idx: KeyPiece, Gen: KeyPiece> GenMapConfig<T> for Cfg<Idx, Gen> {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
-impl<Idx: KeyPiece, Gen: KeyPiece> SecondaryMapConfig for Cfg<Idx, Gen> {
+impl<T, Idx: KeyPiece, Gen: KeyPiece> SecondaryMapConfig<T> for Cfg<Idx, Gen> {
     type ReplaceStrategy = NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
+    type Storage = Vec<SecondaryMapSlot<T, Self>>;
 }
 
-impl<Idx: KeyPiece, Gen: KeyPiece> DenseGenMapConfig for Cfg<Idx, Gen> {
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
+impl<T, Idx: KeyPiece, Gen: KeyPiece> DenseGenMapConfig<T> for Cfg<Idx, Gen> {
+    type SlotStorage = Vec<DenseMapSlot<Self>>;
+    type PairStorage = PairVec<MapKey<Self>, T>;
 }
 
-impl<Idx: KeyPiece, Gen: KeyPiece> DenseSecondaryMapConfig for Cfg<Idx, Gen> {
+impl<T, Idx: KeyPiece, Gen: KeyPiece> DenseSecondaryMapConfig<T> for Cfg<Idx, Gen> {
     type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
+    type SlotStorage = Vec<DenseSecondaryMapSlot<Self>>;
+    type PairStorage = PairVec<MapKey<Self>, T>;
 }
 
 #[cfg(feature = "std")]
-impl<Idx: KeyPiece, Gen: KeyPiece> crate::SparseSecondaryMapConfig for Cfg<Idx, Gen> {
+impl<T, Idx: KeyPiece, Gen: KeyPiece> crate::SparseSecondaryMapConfig<T> for Cfg<Idx, Gen> {
     type ReplaceStrategy = NewerWins;
 }
 
 /// Checks that `attach` refuses `key` because nothing is detached under
 /// it, hands `value` back, and leaves the map's length and the generation of
 /// the key's slot as they were.
-pub(crate) fn assert_not_detached<C: GenMapConfig<Len = KeepLen>>(
+pub(crate) fn assert_not_detached<C: GenMapConfig<i32, Len = KeepLen>>(
     map: &mut crate::GenMap<i32, C>,
     key: Key<crate::MapKeyConfig<C>>,
     value: i32,
@@ -87,11 +88,11 @@ pub(crate) fn assert_not_detached<C: GenMapConfig<Len = KeepLen>>(
 pub(crate) trait LenCheck: Len + Sized {
     /// Checks that `len` and `is_empty` of `map` agree with `expected`, if
     /// the config keeps a count.
-    fn assert_len<T, C: GenMapConfig<Len = Self>>(map: &GenMap<T, C>, expected: usize);
+    fn assert_len<T, C: GenMapConfig<T, Len = Self>>(map: &GenMap<T, C>, expected: usize);
 
     /// Checks that `len` and `is_empty` of `map` agree with `expected`, if
     /// the config keeps a count.
-    fn assert_secondary_len<T, C: SecondaryMapConfig<Len = Self>>(
+    fn assert_secondary_len<T, C: SecondaryMapConfig<T, Len = Self>>(
         map: &SecondaryMap<T, C>,
         expected: usize,
     );
@@ -102,12 +103,12 @@ pub(crate) trait LenCheck: Len + Sized {
 }
 
 impl LenCheck for KeepLen {
-    fn assert_len<T, C: GenMapConfig<Len = Self>>(map: &GenMap<T, C>, expected: usize) {
+    fn assert_len<T, C: GenMapConfig<T, Len = Self>>(map: &GenMap<T, C>, expected: usize) {
         assert_eq!(map.len(), expected);
         assert_eq!(map.is_empty(), expected == 0);
     }
 
-    fn assert_secondary_len<T, C: SecondaryMapConfig<Len = Self>>(
+    fn assert_secondary_len<T, C: SecondaryMapConfig<T, Len = Self>>(
         map: &SecondaryMap<T, C>,
         expected: usize,
     ) {
@@ -121,9 +122,9 @@ impl LenCheck for KeepLen {
 }
 
 impl LenCheck for NoLen {
-    fn assert_len<T, C: GenMapConfig<Len = Self>>(_map: &GenMap<T, C>, _expected: usize) {}
+    fn assert_len<T, C: GenMapConfig<T, Len = Self>>(_map: &GenMap<T, C>, _expected: usize) {}
 
-    fn assert_secondary_len<T, C: SecondaryMapConfig<Len = Self>>(
+    fn assert_secondary_len<T, C: SecondaryMapConfig<T, Len = Self>>(
         _map: &SecondaryMap<T, C>,
         _expected: usize,
     ) {

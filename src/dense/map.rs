@@ -20,14 +20,14 @@ use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
 
 /// The storage a config gives the map for its slots.
-type Slots<C> = <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>;
+type Slots<T, C> = <C as DenseGenMapConfig<T>>::SlotStorage;
 
-/// The error the slot storage of a map with config `C` gives when it cannot
+/// The error the slot storage of a `DenseGenMap<T, C>` gives when it cannot
 /// make room for another slot.
-type SlotsError<C> = <Slots<C> as SliceStorage>::Error;
+type SlotsError<T, C> = <Slots<T, C> as SliceStorage>::Error;
 
 /// The storage a config gives the map for its keys and values.
-type Pairs<T, C> = <C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>;
+type Pairs<T, C> = <C as DenseGenMapConfig<T>>::PairStorage;
 
 /// `StoredPosition<C>` is the `NonMax` form of the index type of `C`'s keys. A
 /// slot of a dense map with config `C` stores the position of its value as this
@@ -49,8 +49,8 @@ pub type DenseMapSlot<C> = Slot<MapGen<C>, <MapIdx<C> as KeyPiece>::NonMax, MapI
 /// The error a `DenseGenMap<T, C>` gives when one of its storages cannot make
 /// room for another value.
 pub type DenseStorageError<T, C> = DenseError<
-    <<C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>> as SliceStorage>::Error,
-    <<C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> as PairStorage>::Error,
+    <<C as DenseGenMapConfig<T>>::SlotStorage as SliceStorage>::Error,
+    <<C as DenseGenMapConfig<T>>::PairStorage as PairStorage>::Error,
 >;
 
 /// The slot the next key points at, worked out before anything is written.
@@ -133,12 +133,12 @@ fn panic_full<E: fmt::Debug>(full: FullError<E>, slots_len: usize) -> ! {
 /// The slot the next insert would use, handed out by
 /// [`DenseGenMap::vacant_entry`]. No slot is written until
 /// [`insert`](Self::insert) is called, so dropping the entry inserts nothing.
-pub struct DenseVacantEntry<'a, T, C: DenseGenMapConfig> {
+pub struct DenseVacantEntry<'a, T, C: DenseGenMapConfig<T>> {
     map: &'a mut DenseGenMap<T, C>,
     target: Target<C>,
 }
 
-impl<T, C: DenseGenMapConfig> DenseVacantEntry<'_, T, C> {
+impl<T, C: DenseGenMapConfig<T>> DenseVacantEntry<'_, T, C> {
     /// The key the value will get. It matches nothing until
     /// [`insert`](Self::insert) is called.
     #[inline]
@@ -156,7 +156,7 @@ impl<T, C: DenseGenMapConfig> DenseVacantEntry<'_, T, C> {
     }
 }
 
-impl<T, C: DenseGenMapConfig> fmt::Debug for DenseVacantEntry<'_, T, C> {
+impl<T, C: DenseGenMapConfig<T>> fmt::Debug for DenseVacantEntry<'_, T, C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DenseVacantEntry")
             .field("key", &self.key())
@@ -201,14 +201,14 @@ impl<T, C: DenseGenMapConfig> fmt::Debug for DenseVacantEntry<'_, T, C> {
 /// ```
 pub struct DenseGenMap<
     T,
-    #[cfg(feature = "alloc")] C: DenseGenMapConfig = DefaultMapConfig,
-    #[cfg(not(feature = "alloc"))] C: DenseGenMapConfig,
+    #[cfg(feature = "alloc")] C: DenseGenMapConfig<T> = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: DenseGenMapConfig<T>,
 > {
     /// A slot for every index the map has used. A slot that holds a value
     /// stores the position of the value in `pairs`, and every position below
     /// the number of values is stored by exactly one slot. A free slot links to
     /// the next free slot, as a slot of a `GenMap` does.
-    slots: Slots<C>,
+    slots: Slots<T, C>,
     /// The index of the first free slot, or `no_slot` if no slot is free.
     next_free: MapIdx<C>,
     /// The values one after another in the second slice, and the key of each
@@ -241,9 +241,9 @@ impl<T> DenseGenMap<T> {
 
 /// A map has this method only when its slot storage and its pair storage
 /// implement [`WithCapacity`].
-impl<T, C: DenseGenMapConfig> DenseGenMap<T, C>
+impl<T, C: DenseGenMapConfig<T>> DenseGenMap<T, C>
 where
-    <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>: WithCapacity,
+    <C as DenseGenMapConfig<T>>::SlotStorage: WithCapacity,
     Pairs<T, C>: WithCapacity,
 {
     /// Creates an empty map with config `C` and room for `capacity` values,
@@ -252,7 +252,7 @@ where
     #[must_use]
     pub fn with_capacity_and_config(capacity: usize) -> Self {
         Self {
-            slots: <Slots<C> as WithCapacity>::with_capacity(capacity),
+            slots: <Slots<T, C> as WithCapacity>::with_capacity(capacity),
             next_free: no_slot::<C>(),
             pairs: <Pairs<T, C> as WithCapacity>::with_capacity(capacity),
         }
@@ -261,9 +261,9 @@ where
 
 /// These methods need slot and pair storages that can grow on request, so a
 /// map whose storages have a fixed capacity does not have them.
-impl<T, C: DenseGenMapConfig> DenseGenMap<T, C>
+impl<T, C: DenseGenMapConfig<T>> DenseGenMap<T, C>
 where
-    <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>: ReserveStorage,
+    <C as DenseGenMapConfig<T>>::SlotStorage: ReserveStorage,
     Pairs<T, C>: ReservePairStorage,
 {
     /// Reserves room for at least `additional` more values, and for as many
@@ -301,9 +301,9 @@ where
 
 /// A map has this method only when its slot storage and its pair storage
 /// implement [`Empty`].
-impl<T, C: DenseGenMapConfig> DenseGenMap<T, C>
+impl<T, C: DenseGenMapConfig<T>> DenseGenMap<T, C>
 where
-    Slots<C>: Empty,
+    Slots<T, C>: Empty,
     Pairs<T, C>: Empty,
 {
     /// Creates an empty map with config `C`.
@@ -311,14 +311,14 @@ where
     #[must_use]
     pub fn new_with_config() -> Self {
         Self {
-            slots: <Slots<C> as Empty>::empty(),
+            slots: <Slots<T, C> as Empty>::empty(),
             next_free: no_slot::<C>(),
             pairs: <Pairs<T, C> as Empty>::empty(),
         }
     }
 }
 
-impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
+impl<T, C: DenseGenMapConfig<T>> DenseGenMap<T, C> {
     /// Creates an empty map with config `C` that keeps its slots in `slots`
     /// and its keys and values in `pairs`. This method lets the caller set up
     /// the storages, such as with a custom allocator.
@@ -332,7 +332,9 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// # Examples
     ///
     /// ```
-    /// use gen_map::{DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, PairVec, Split};
+    /// use gen_map::{
+    ///     DenseGenMap, DenseGenMapConfig, DenseMapSlot, MapConfig, MapKey, PairVec, Split,
+    /// };
     ///
     /// /// Maps with this config keep their slots in a `Vec` and their keys and
     /// /// values in a `PairVec`.
@@ -342,9 +344,9 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     ///     type KeyConfig = Split<u32, u32>;
     /// }
     ///
-    /// impl DenseGenMapConfig for VecSlots {
-    ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    ///     type PairStorage<K, V> = PairVec<K, V>;
+    /// impl<T> DenseGenMapConfig<T> for VecSlots {
+    ///     type SlotStorage = Vec<DenseMapSlot<Self>>;
+    ///     type PairStorage = PairVec<MapKey<Self>, T>;
     /// }
     ///
     /// let slots = Vec::with_capacity(8);
@@ -357,13 +359,13 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     #[inline]
     #[allow(clippy::type_complexity)]
     pub fn with_storages(
-        slots: <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>,
-        pairs: <C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>,
+        slots: <C as DenseGenMapConfig<T>>::SlotStorage,
+        pairs: <C as DenseGenMapConfig<T>>::PairStorage,
     ) -> Result<
         Self,
         WithStoragesError<
-            <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>,
-            <C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>,
+            <C as DenseGenMapConfig<T>>::SlotStorage,
+            <C as DenseGenMapConfig<T>>::PairStorage,
         >,
     > {
         if !slots.is_empty() {
@@ -1075,7 +1077,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// [`FullError::StorageFull`] if none of them are free and the slot
     /// storage cannot make room for another one.
     #[inline]
-    pub fn try_reserve_key(&mut self) -> Result<Key<MapKeyConfig<C>>, FullError<SlotsError<C>>> {
+    pub fn try_reserve_key(&mut self) -> Result<Key<MapKeyConfig<C>>, FullError<SlotsError<T, C>>> {
         let target = self.next_slot()?;
         let detached = detached_generation::<C>(target.generation);
         // A detached slot stores its own index, which `detached_slot` checks.
@@ -1202,7 +1204,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the slots
     /// must follow the rules that [`DenseGenMapRawParts`] lists.
     #[inline]
-    pub unsafe fn slots(&self) -> &<C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>> {
+    pub unsafe fn slots(&self) -> &<C as DenseGenMapConfig<T>>::SlotStorage {
         &self.slots
     }
 
@@ -1217,9 +1219,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the slots
     /// must follow the rules that [`DenseGenMapRawParts`] lists.
     #[inline]
-    pub unsafe fn slots_mut(
-        &mut self,
-    ) -> &mut <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>> {
+    pub unsafe fn slots_mut(&mut self) -> &mut <C as DenseGenMapConfig<T>>::SlotStorage {
         &mut self.slots
     }
 
@@ -1235,7 +1235,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the pairs
     /// must follow the rules that [`DenseGenMapRawParts`] lists.
     #[inline]
-    pub unsafe fn pairs(&self) -> &<C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> {
+    pub unsafe fn pairs(&self) -> &<C as DenseGenMapConfig<T>>::PairStorage {
         &self.pairs
     }
 
@@ -1251,9 +1251,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the pairs
     /// must follow the rules that [`DenseGenMapRawParts`] lists.
     #[inline]
-    pub unsafe fn pairs_mut(
-        &mut self,
-    ) -> &mut <C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> {
+    pub unsafe fn pairs_mut(&mut self) -> &mut <C as DenseGenMapConfig<T>>::PairStorage {
         &mut self.pairs
     }
 
@@ -1314,7 +1312,7 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     /// When the keys have no index left for a new slot and the slot storage is
     /// also full, the error is `IndexExhausted`.
     #[inline]
-    fn next_slot(&mut self) -> Result<Target<C>, FullError<SlotsError<C>>> {
+    fn next_slot(&mut self) -> Result<Target<C>, FullError<SlotsError<T, C>>> {
         let (idx, generation, from_free_list) = if self.next_free != no_slot::<C>() {
             let idx = self.next_free;
             // SAFETY: `idx` is on the free list, so it is the index of a slot
@@ -1560,9 +1558,9 @@ impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
     }
 }
 
-impl<T, C: DenseGenMapConfig> Default for DenseGenMap<T, C>
+impl<T, C: DenseGenMapConfig<T>> Default for DenseGenMap<T, C>
 where
-    Slots<C>: Empty,
+    Slots<T, C>: Empty,
     Pairs<T, C>: Empty,
 {
     #[inline]
@@ -1571,7 +1569,7 @@ where
     }
 }
 
-impl<T, C: DenseGenMapConfig> Index<Key<MapKeyConfig<C>>> for DenseGenMap<T, C> {
+impl<T, C: DenseGenMapConfig<T>> Index<Key<MapKeyConfig<C>>> for DenseGenMap<T, C> {
     type Output = T;
 
     /// Returns a reference to the value corresponding to `key`.
@@ -1586,7 +1584,7 @@ impl<T, C: DenseGenMapConfig> Index<Key<MapKeyConfig<C>>> for DenseGenMap<T, C> 
     }
 }
 
-impl<T, C: DenseGenMapConfig> IndexMut<Key<MapKeyConfig<C>>> for DenseGenMap<T, C> {
+impl<T, C: DenseGenMapConfig<T>> IndexMut<Key<MapKeyConfig<C>>> for DenseGenMap<T, C> {
     /// Returns a mutable reference to the value corresponding to `key`.
     ///
     /// # Panics
@@ -1599,7 +1597,7 @@ impl<T, C: DenseGenMapConfig> IndexMut<Key<MapKeyConfig<C>>> for DenseGenMap<T, 
     }
 }
 
-impl<T: fmt::Debug, C: DenseGenMapConfig> fmt::Debug for DenseGenMap<T, C> {
+impl<T: fmt::Debug, C: DenseGenMapConfig<T>> fmt::Debug for DenseGenMap<T, C> {
     /// Lists every key with its value, in slot order.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let values = self.pairs.second_slice();
@@ -1627,9 +1625,9 @@ impl<T: fmt::Debug, C: DenseGenMapConfig> fmt::Debug for DenseGenMap<T, C> {
     }
 }
 
-impl<T, C: DenseGenMapConfig> Clone for DenseGenMap<T, C>
+impl<T, C: DenseGenMapConfig<T>> Clone for DenseGenMap<T, C>
 where
-    Slots<C>: Clone,
+    Slots<T, C>: Clone,
     Pairs<T, C>: Clone,
 {
     /// The clone has the same slots, values and keys, so every key of the
@@ -1658,7 +1656,7 @@ where
     }
 }
 
-impl<T, C: DenseGenMapConfig> IntoIterator for DenseGenMap<T, C>
+impl<T, C: DenseGenMapConfig<T>> IntoIterator for DenseGenMap<T, C>
 where
     Pairs<T, C>: IntoIterator<Item = (Key<MapKeyConfig<C>>, T)>,
 {
@@ -1673,7 +1671,7 @@ where
     }
 }
 
-impl<'a, T, C: DenseGenMapConfig> IntoIterator for &'a DenseGenMap<T, C> {
+impl<'a, T, C: DenseGenMapConfig<T>> IntoIterator for &'a DenseGenMap<T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a T);
     type IntoIter = DenseIter<'a, T, MapKeyConfig<C>>;
 
@@ -1683,7 +1681,7 @@ impl<'a, T, C: DenseGenMapConfig> IntoIterator for &'a DenseGenMap<T, C> {
     }
 }
 
-impl<'a, T, C: DenseGenMapConfig> IntoIterator for &'a mut DenseGenMap<T, C> {
+impl<'a, T, C: DenseGenMapConfig<T>> IntoIterator for &'a mut DenseGenMap<T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a mut T);
     type IntoIter = DenseIterMut<'a, T, MapKeyConfig<C>>;
 
@@ -1696,11 +1694,11 @@ impl<'a, T, C: DenseGenMapConfig> IntoIterator for &'a mut DenseGenMap<T, C> {
 /// Draining iterator over `(key, value)` pairs, from the last value to the
 /// first. It is created using [`DenseGenMap::drain`]. Dropping it removes the
 /// values it has not yielded yet.
-pub struct DenseDrain<'a, T, C: DenseGenMapConfig> {
+pub struct DenseDrain<'a, T, C: DenseGenMapConfig<T>> {
     map: &'a mut DenseGenMap<T, C>,
 }
 
-impl<T, C: DenseGenMapConfig> Iterator for DenseDrain<'_, T, C> {
+impl<T, C: DenseGenMapConfig<T>> Iterator for DenseDrain<'_, T, C> {
     type Item = (Key<MapKeyConfig<C>>, T);
 
     #[inline]
@@ -1720,11 +1718,11 @@ impl<T, C: DenseGenMapConfig> Iterator for DenseDrain<'_, T, C> {
     }
 }
 
-impl<T, C: DenseGenMapConfig> ExactSizeIterator for DenseDrain<'_, T, C> {}
+impl<T, C: DenseGenMapConfig<T>> ExactSizeIterator for DenseDrain<'_, T, C> {}
 
-impl<T, C: DenseGenMapConfig> FusedIterator for DenseDrain<'_, T, C> {}
+impl<T, C: DenseGenMapConfig<T>> FusedIterator for DenseDrain<'_, T, C> {}
 
-impl<T, C: DenseGenMapConfig> Drop for DenseDrain<'_, T, C> {
+impl<T, C: DenseGenMapConfig<T>> Drop for DenseDrain<'_, T, C> {
     fn drop(&mut self) {
         for _ in self.by_ref() {}
     }
@@ -1930,8 +1928,8 @@ impl<P: IntoIterator> FusedIterator for DenseIntoIter<P> {}
 /// ```
 pub struct DenseGenMapRawParts<
     T,
-    #[cfg(feature = "alloc")] C: DenseGenMapConfig = DefaultMapConfig,
-    #[cfg(not(feature = "alloc"))] C: DenseGenMapConfig,
+    #[cfg(feature = "alloc")] C: DenseGenMapConfig<T> = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: DenseGenMapConfig<T>,
 > {
     // These fields are in the same order as the fields of `DenseGenMap`, so
     // the two structs can be read side by side. `into_raw_parts` and
@@ -1940,17 +1938,17 @@ pub struct DenseGenMapRawParts<
     /// The map keeps its slots in this storage, which the map's config picks.
     /// A slot's index is its position in the storage, and a slot that holds a
     /// value stores the position of that value in `pairs`.
-    pub slots: <C as DenseGenMapConfig>::SlotStorage<DenseMapSlot<C>>,
+    pub slots: <C as DenseGenMapConfig<T>>::SlotStorage,
     /// `next_free` holds the index of the first slot on the free list, or the
     /// largest value of the index type if no slot is free.
     pub next_free: MapIdx<C>,
     /// The map keeps its values one after another in the second slice of
     /// this storage, and the key of each value at the same position in the
     /// first slice.
-    pub pairs: <C as DenseGenMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>,
+    pub pairs: <C as DenseGenMapConfig<T>>::PairStorage,
 }
 
-impl<T, C: DenseGenMapConfig> DenseGenMap<T, C> {
+impl<T, C: DenseGenMapConfig<T>> DenseGenMap<T, C> {
     /// Takes the map apart into its fields.
     /// [`from_raw_parts`](Self::from_raw_parts) builds a map from them again,
     /// and [`DenseGenMapRawParts`] lists the rules they follow.

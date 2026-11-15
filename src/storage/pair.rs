@@ -200,7 +200,9 @@ impl<P: PairStorage> Drop for ClearPairsOnUnwind<'_, P> {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, Split, SplitPair};
+/// use gen_map::{
+///     DenseGenMap, DenseGenMapConfig, DenseMapSlot, MapConfig, MapKey, Split, SplitPair,
+/// };
 ///
 /// /// Maps with this config keep their keys in one `Vec` and their values in
 /// /// another.
@@ -210,9 +212,9 @@ impl<P: PairStorage> Drop for ClearPairsOnUnwind<'_, P> {
 ///     type KeyConfig = Split<u32, u32>;
 /// }
 ///
-/// impl DenseGenMapConfig for TwoVecs {
-///     type SlotStorage<S: GenSlotItem> = Vec<S>;
-///     type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
+/// impl<T> DenseGenMapConfig<T> for TwoVecs {
+///     type SlotStorage = Vec<DenseMapSlot<Self>>;
+///     type PairStorage = SplitPair<Vec<MapKey<Self>>, Vec<T>>;
 /// }
 ///
 /// let mut map = DenseGenMap::<&str, TwoVecs>::new_with_config();

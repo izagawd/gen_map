@@ -3,10 +3,10 @@
 use crate::tests::model::Rng;
 use crate::tests::{key_from_parts, Bomb, Cfg, CloneBomb, DropItem, DropTracker, LenCheck};
 use crate::{
-    u1, DefaultKeyConfig, Even, ExistingWins, GenMap, GenMapConfig, GenSlotItem,
-    GetDisjointMutAtError, GetDisjointMutError, KeepLen, Key, KeyConfig, KeyPiece, MapConfig,
-    MapKeyConfig, NewerWins, NoLen, Odd, Packed, ReplaceStrategy, SecondaryInsertError,
-    SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Slot, Split,
+    u1, DefaultKeyConfig, Even, ExistingWins, GenMap, GenMapConfig, GetDisjointMutAtError,
+    GetDisjointMutError, KeepLen, Key, KeyConfig, KeyPiece, MapConfig, MapKeyConfig, MapSlot,
+    NewerWins, NoLen, Odd, Packed, ReplaceStrategy, SecondaryInsertError, SecondaryMap,
+    SecondaryMapConfig, SecondaryMapSlot, Slot, Split,
 };
 use core::marker::PhantomData;
 use std::collections::HashMap;
@@ -22,10 +22,10 @@ impl MapConfig for Keep {
     type KeyConfig = DefaultKeyConfig;
 }
 
-impl SecondaryMapConfig for Keep {
+impl<T> SecondaryMapConfig<T> for Keep {
     type ReplaceStrategy = ExistingWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
+    type Storage = Vec<SecondaryMapSlot<T, Self>>;
 }
 
 /// Keys with a 4 bit generation, so the largest generation is 15. The
@@ -36,10 +36,10 @@ impl MapConfig for Wrap4 {
     type KeyConfig = Packed<u16, 4>;
 }
 
-impl GenMapConfig for Wrap4 {
+impl<T> GenMapConfig<T> for Wrap4 {
     const WRAP_ON_OVERFLOW: bool = true;
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 /// [`Wrap4`] keys with the strategy `R`.
@@ -49,10 +49,10 @@ impl<R> MapConfig for With<R> {
     type KeyConfig = MapKeyConfig<Wrap4>;
 }
 
-impl<R: ReplaceStrategy<MapKeyConfig<Wrap4>>> SecondaryMapConfig for With<R> {
+impl<T, R: ReplaceStrategy<MapKeyConfig<Wrap4>>> SecondaryMapConfig<T> for With<R> {
     type ReplaceStrategy = R;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
+    type Storage = Vec<SecondaryMapSlot<T, Self>>;
 }
 
 /// Two keys for the same index. The first is from before the `GenMap`
@@ -528,10 +528,10 @@ impl MapConfig for InSmallVec {
 }
 
 #[cfg(feature = "smallvec")]
-impl SecondaryMapConfig for InSmallVec {
+impl<T> SecondaryMapConfig<T> for InSmallVec {
     type ReplaceStrategy = NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = smallvec::SmallVec<S, 4>;
+    type Storage = smallvec::SmallVec<SecondaryMapSlot<T, Self>, 4>;
 }
 
 /// Default keys and the default strategy, with room for 16 slots in an
@@ -545,10 +545,10 @@ impl MapConfig for InArrayVec {
 }
 
 #[cfg(feature = "arrayvec")]
-impl SecondaryMapConfig for InArrayVec {
+impl<T> SecondaryMapConfig<T> for InArrayVec {
     type ReplaceStrategy = NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = arrayvec::ArrayVec<S, 16>;
+    type Storage = arrayvec::ArrayVec<SecondaryMapSlot<T, Self>, 16>;
 }
 
 /// Picks one of the keys in `live` and `dead` at random.
@@ -578,7 +578,7 @@ struct Coverage {
 /// are too short to be sure of meeting every case.
 fn follow_the_model<C>(capacity: Option<usize>)
 where
-    C: SecondaryMapConfig + MapConfig<KeyConfig = DefaultKeyConfig>,
+    C: SecondaryMapConfig<u32> + MapConfig<KeyConfig = DefaultKeyConfig>,
     C::Len: LenCheck,
     SecondaryMap<u32, C>: Default,
 {
@@ -602,7 +602,7 @@ where
 /// map as it was.
 fn run_model<C>(seed: u64, steps: u32, capacity: Option<usize>, coverage: &mut Coverage)
 where
-    C: SecondaryMapConfig + MapConfig<KeyConfig = DefaultKeyConfig>,
+    C: SecondaryMapConfig<u32> + MapConfig<KeyConfig = DefaultKeyConfig>,
     C::Len: LenCheck,
     SecondaryMap<u32, C>: Default,
 {
@@ -715,10 +715,10 @@ impl MapConfig for Uncounted {
     type KeyConfig = DefaultKeyConfig;
 }
 
-impl SecondaryMapConfig for Uncounted {
+impl<T> SecondaryMapConfig<T> for Uncounted {
     type ReplaceStrategy = NewerWins;
     type Len = NoLen;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
+    type Storage = Vec<SecondaryMapSlot<T, Self>>;
 }
 
 #[test]
@@ -1301,16 +1301,16 @@ impl MapConfig for WrapU1 {
     type KeyConfig = Split<u8, u1>;
 }
 
-impl GenMapConfig for WrapU1 {
+impl<T> GenMapConfig<T> for WrapU1 {
     const WRAP_ON_OVERFLOW: bool = true;
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
-impl SecondaryMapConfig for WrapU1 {
+impl<T> SecondaryMapConfig<T> for WrapU1 {
     type ReplaceStrategy = NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
+    type Storage = Vec<SecondaryMapSlot<T, Self>>;
 }
 
 #[test]

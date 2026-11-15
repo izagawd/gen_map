@@ -4,8 +4,8 @@ mod piece;
 
 use super::{key_from_parts, Cfg};
 use crate::{
-    u1, DefaultKeyConfig, DefaultMapConfig, GenMap, GenMapConfig, GenSlotItem, InsertError,
-    KeepLen, Key, KeyConfig, MapConfig, MapKeyConfig, Split,
+    u1, DefaultKeyConfig, DefaultMapConfig, GenMap, GenMapConfig, InsertError, KeepLen, Key,
+    KeyConfig, MapConfig, MapKeyConfig, MapSlot, Split,
 };
 use core::mem::size_of;
 use std::vec::Vec;
@@ -28,10 +28,10 @@ fn maps_whose_configs_share_a_key_config_share_a_key_type() {
         type KeyConfig = DefaultKeyConfig;
     }
 
-    impl GenMapConfig for Wrapping {
+    impl<T> GenMapConfig<T> for Wrapping {
         const WRAP_ON_OVERFLOW: bool = true;
         type Len = KeepLen;
-        type Storage<S: GenSlotItem> = Vec<S>;
+        type Storage = Vec<MapSlot<T, Self>>;
     }
 
     let mut retiring = GenMap::new();

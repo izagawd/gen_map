@@ -3,9 +3,9 @@
 
 use crate::tests::key_from_parts;
 use crate::{
-    Empty, FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, InsertWithError, KeepLen,
-    MapConfig, NewerWins, SecondaryInsertError, SecondaryMap, SecondaryMapConfig,
-    SecondarySlotItem, SecondaryStorageError, SliceStorage, Split, StorageError,
+    Empty, FullError, GenMap, GenMapConfig, InsertError, InsertWithError, KeepLen, MapConfig,
+    MapSlot, NewerWins, SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondaryMapSlot,
+    SecondaryStorageError, SliceStorage, Split, StorageError,
 };
 use std::vec::Vec;
 
@@ -79,15 +79,15 @@ impl MapConfig for Four {
     type KeyConfig = Split<u8, u8>;
 }
 
-impl GenMapConfig for Four {
+impl<T> GenMapConfig<T> for Four {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Capped<S>;
+    type Storage = Capped<MapSlot<T, Self>>;
 }
 
-impl SecondaryMapConfig for Four {
+impl<T> SecondaryMapConfig<T> for Four {
     type ReplaceStrategy = NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = Capped<S>;
+    type Storage = Capped<SecondaryMapSlot<T, Self>>;
 }
 
 fn full_map() -> GenMap<i32, Four> {
