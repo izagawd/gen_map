@@ -12,7 +12,8 @@ use crate::map::{
     detached_generation, detached_slot, freed_parts, index_of as idx_of_slot, max_slot_idx,
     no_slot, position_of as slot_index_of, slot_key, MapGen, MapIdx, MapKeyConfig,
 };
-use crate::slot::{ParityRef, Slot};
+use crate::parity_union::{ParityRef, ParityUnion};
+use crate::slot::Slot;
 use crate::storage::pair::{ClearPairsOnUnwind, PairStorage, ReservePairStorage};
 use crate::storage::{ClearOnUnwind, Empty, ReserveStorage, SliceStorage, WithCapacity};
 use core::fmt;
@@ -44,6 +45,10 @@ pub(crate) type StoredPosition<C> = <MapIdx<C> as KeyPiece>::NonMax;
 /// detached slot apart from a free or retired one. When the map retires a slot,
 /// it stores the largest value of the index type there, so the slot never
 /// looks detached.
+///
+/// `DenseMapSlot::default()` returns a slot that holds no value. Its
+/// generation is zero and it stores the largest value of the index type, so it
+/// is the same as a retired slot.
 pub type DenseMapSlot<C> = Slot<MapGen<C>, <MapIdx<C> as KeyPiece>::NonMax, MapIdx<C>>;
 
 /// The error a `DenseGenMap<T, C>` gives when one of its storages cannot make
@@ -1095,7 +1100,7 @@ impl<T, C: DenseGenMapConfig<T>> DenseGenMap<T, C> {
             self.next_free = unsafe { *slot.get_even_unchecked() };
             slot.set_even(detached, target.idx);
         } else {
-            let slot = Slot::new_even(detached, target.idx);
+            let slot = Slot(ParityUnion::new_even(detached, target.idx));
             // SAFETY: `next_slot` got `Ok` from `ensure_room(1)` for this slot,
             // and no other `&mut` method of the slot storage has run since, so
             // `SliceStorage` promises room for this push.
@@ -1372,7 +1377,7 @@ impl<T, C: DenseGenMapConfig<T>> DenseGenMap<T, C> {
             self.next_free =
                 unsafe { slot.replace_even_unchecked(target.generation, stored_position) };
         } else {
-            let slot = Slot::new_odd(target.generation, stored_position);
+            let slot = Slot(ParityUnion::new_odd(target.generation, stored_position));
             // SAFETY: `next_slot` got `Ok` from `ensure_room(1)` for this slot,
             // and no other `&mut` method of the slot storage has run since, so
             // `SliceStorage` promises room for this push.

@@ -9,6 +9,7 @@ mod len;
 mod map;
 mod model;
 mod panic_fuzz;
+mod parity_union;
 mod raw_parts;
 mod secondary;
 mod slot;

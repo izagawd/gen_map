@@ -247,6 +247,7 @@ mod error;
 mod key;
 mod len;
 mod map;
+mod parity_union;
 mod secondary;
 mod slot;
 mod storage;
@@ -285,6 +286,7 @@ pub use map::{
     Drain, GenMap, GenMapRawParts, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKey,
     MapKeyConfig, MapSlot, StorageError, VacantEntry, Values, ValuesMut,
 };
+pub use parity_union::{Parity, ParityMut, ParityRef, ParityUnion};
 pub use secondary::replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
@@ -298,7 +300,7 @@ pub use secondary::{
     SecondaryMap, SecondaryMapRawParts, SecondaryMapSlot, SecondaryStorageError, SecondaryValues,
     SecondaryValuesMut,
 };
-pub use slot::{Parity, ParityMut, ParityRef, Slot};
+pub use slot::Slot;
 pub use storage::pair::{
     PairStorage, ReservePairStorage, SplitPair, SplitPairError, SplitPairIntoIter,
 };
