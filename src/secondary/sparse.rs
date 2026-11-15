@@ -32,8 +32,9 @@ type NonMaxIdx<C> = <MapIdx<C> as KeyPiece>::NonMax;
 /// under the indices of their keys.
 type Slots<T, C, S> = HashMap<NonMaxIdx<C>, SparseSlot<MapGen<C>, T>, S>;
 
-/// `Strategy<C>` is the replace strategy that config `C` gives the map.
-type Strategy<C> = <C as SparseSecondaryMapConfig>::ReplaceStrategy;
+/// `Strategy<T, C>` is the replace strategy that config `C` gives a map that
+/// holds values of type `T`.
+type Strategy<T, C> = <C as SparseSecondaryMapConfig<T>>::ReplaceStrategy;
 
 /// [`SparseSecondaryMap::try_insert`] returns this type.
 type InsertResult<T> = Result<Option<T>, SecondaryInsertError<T, TryReserveError>>;
@@ -93,7 +94,8 @@ unsafe fn key_from_parts_unchecked<C: MapConfig>(
 /// assert_eq!(ages.get(bob), None);
 /// ```
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-pub struct SparseSecondaryMap<T, C: SparseSecondaryMapConfig = DefaultMapConfig, S = RandomState> {
+pub struct SparseSecondaryMap<T, C: SparseSecondaryMapConfig<T> = DefaultMapConfig, S = RandomState>
+{
     /// The `HashMap` holds each value under the index of its key, together with
     /// that key's generation, so the map builds keys from them without checks.
     slots: Slots<T, C, S>,
@@ -158,7 +160,7 @@ impl<T, S: BuildHasher> SparseSecondaryMap<T, DefaultMapConfig, S> {
     }
 }
 
-impl<T, C: SparseSecondaryMapConfig, S: BuildHasher + Default> SparseSecondaryMap<T, C, S> {
+impl<T, C: SparseSecondaryMapConfig<T>, S: BuildHasher + Default> SparseSecondaryMap<T, C, S> {
     /// Creates an empty map with config `C`. The map hashes indices with
     /// `S::default()`.
     #[inline]
@@ -176,7 +178,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher + Default> SparseSecondaryMa
     }
 }
 
-impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S> {
+impl<T, C: SparseSecondaryMapConfig<T>, S: BuildHasher> SparseSecondaryMap<T, C, S> {
     /// Creates an empty map with config `C`. The map hashes indices with
     /// `hasher`.
     #[inline]
@@ -552,7 +554,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
             hash_map::Entry::Occupied(mut entry) => {
                 let slot = entry.get_mut();
                 if slot.generation != generation
-                    && !<Strategy<C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
+                    && !<Strategy<T, C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
                         slot.generation,
                         generation,
                     )
@@ -694,7 +696,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> SparseSecondaryMap<T, C, S>
     }
 }
 
-impl<T, C: SparseSecondaryMapConfig, S: BuildHasher + Default> Default
+impl<T, C: SparseSecondaryMapConfig<T>, S: BuildHasher + Default> Default
     for SparseSecondaryMap<T, C, S>
 {
     #[inline]
@@ -703,7 +705,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher + Default> Default
     }
 }
 
-impl<T: Clone, C: SparseSecondaryMapConfig, S: Clone> Clone for SparseSecondaryMap<T, C, S> {
+impl<T: Clone, C: SparseSecondaryMapConfig<T>, S: Clone> Clone for SparseSecondaryMap<T, C, S> {
     /// The clone holds a clone of each value under the same key, so every key
     /// of the original works on it.
     #[inline]
@@ -721,7 +723,7 @@ impl<T: Clone, C: SparseSecondaryMapConfig, S: Clone> Clone for SparseSecondaryM
     }
 }
 
-impl<T: fmt::Debug, C: SparseSecondaryMapConfig, S: BuildHasher> fmt::Debug
+impl<T: fmt::Debug, C: SparseSecondaryMapConfig<T>, S: BuildHasher> fmt::Debug
     for SparseSecondaryMap<T, C, S>
 {
     /// Lists every key with its value, in arbitrary order.
@@ -730,7 +732,7 @@ impl<T: fmt::Debug, C: SparseSecondaryMapConfig, S: BuildHasher> fmt::Debug
     }
 }
 
-impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> Index<Key<MapKeyConfig<C>>>
+impl<T, C: SparseSecondaryMapConfig<T>, S: BuildHasher> Index<Key<MapKeyConfig<C>>>
     for SparseSecondaryMap<T, C, S>
 {
     type Output = T;
@@ -747,7 +749,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> Index<Key<MapKeyConfig<C>>>
     }
 }
 
-impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> IndexMut<Key<MapKeyConfig<C>>>
+impl<T, C: SparseSecondaryMapConfig<T>, S: BuildHasher> IndexMut<Key<MapKeyConfig<C>>>
     for SparseSecondaryMap<T, C, S>
 {
     /// Returns a mutable reference to the value stored under `key`.
@@ -762,7 +764,7 @@ impl<T, C: SparseSecondaryMapConfig, S: BuildHasher> IndexMut<Key<MapKeyConfig<C
     }
 }
 
-impl<T, C: SparseSecondaryMapConfig, S> IntoIterator for SparseSecondaryMap<T, C, S> {
+impl<T, C: SparseSecondaryMapConfig<T>, S> IntoIterator for SparseSecondaryMap<T, C, S> {
     type Item = (Key<MapKeyConfig<C>>, T);
     type IntoIter = SparseSecondaryIntoIter<T, C>;
 
@@ -774,7 +776,7 @@ impl<T, C: SparseSecondaryMapConfig, S> IntoIterator for SparseSecondaryMap<T, C
     }
 }
 
-impl<'a, T, C: SparseSecondaryMapConfig, S: BuildHasher> IntoIterator
+impl<'a, T, C: SparseSecondaryMapConfig<T>, S: BuildHasher> IntoIterator
     for &'a SparseSecondaryMap<T, C, S>
 {
     type Item = (Key<MapKeyConfig<C>>, &'a T);
@@ -786,7 +788,7 @@ impl<'a, T, C: SparseSecondaryMapConfig, S: BuildHasher> IntoIterator
     }
 }
 
-impl<'a, T, C: SparseSecondaryMapConfig, S: BuildHasher> IntoIterator
+impl<'a, T, C: SparseSecondaryMapConfig<T>, S: BuildHasher> IntoIterator
     for &'a mut SparseSecondaryMap<T, C, S>
 {
     type Item = (Key<MapKeyConfig<C>>, &'a mut T);
@@ -1113,7 +1115,7 @@ pub type SparseSecondaryMapSlot<T, C> = SparseSlot<MapGen<C>, T>;
 /// ```
 pub struct SparseSecondaryMapRawParts<
     T,
-    C: SparseSecondaryMapConfig = DefaultMapConfig,
+    C: SparseSecondaryMapConfig<T> = DefaultMapConfig,
     S = RandomState,
 > {
     // These fields are in the same order as the fields of `SparseSecondaryMap`,
@@ -1126,7 +1128,7 @@ pub struct SparseSecondaryMapRawParts<
     pub slots: HashMap<<MapIdx<C> as KeyPiece>::NonMax, SparseSecondaryMapSlot<T, C>, S>,
 }
 
-impl<T, C: SparseSecondaryMapConfig, S> SparseSecondaryMap<T, C, S> {
+impl<T, C: SparseSecondaryMapConfig<T>, S> SparseSecondaryMap<T, C, S> {
     /// Takes the map apart into its fields.
     /// [`from_raw_parts`](Self::from_raw_parts) builds a map from them again,
     /// and [`SparseSecondaryMapRawParts`] lists the rules they follow.

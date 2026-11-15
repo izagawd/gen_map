@@ -4,9 +4,9 @@
 
 use crate::tests::{key_from_parts, Bomb, DropTracker};
 use crate::{
-    DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap,
-    GenMapConfig, GenSlotItem, KeepLen, MapConfig, NewerWins, SecondaryMap, SecondaryMapConfig,
-    SecondarySlotItem, Split, SplitPair,
+    DenseGenMap, DenseGenMapConfig, DenseMapSlot, DenseSecondaryMap, DenseSecondaryMapConfig,
+    DenseSecondaryMapSlot, GenMap, GenMapConfig, KeepLen, MapConfig, MapKey, MapSlot, NewerWins,
+    SecondaryMap, SecondaryMapConfig, SecondaryMapSlot, Split, SplitPair,
 };
 use smallvec::SmallVec;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -19,26 +19,26 @@ impl MapConfig for Four {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl GenMapConfig for Four {
+impl<T> GenMapConfig<T> for Four {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = SmallVec<S, 4>;
+    type Storage = SmallVec<MapSlot<T, Self>, 4>;
 }
 
-impl SecondaryMapConfig for Four {
+impl<T> SecondaryMapConfig<T> for Four {
     type ReplaceStrategy = NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = SmallVec<S, 4>;
+    type Storage = SmallVec<SecondaryMapSlot<T, Self>, 4>;
 }
 
-impl DenseGenMapConfig for Four {
-    type SlotStorage<S: GenSlotItem> = SmallVec<S, 4>;
-    type PairStorage<K, V> = SplitPair<SmallVec<K, 4>, SmallVec<V, 4>>;
+impl<T> DenseGenMapConfig<T> for Four {
+    type SlotStorage = SmallVec<DenseMapSlot<Self>, 4>;
+    type PairStorage = SplitPair<SmallVec<MapKey<Self>, 4>, SmallVec<T, 4>>;
 }
 
-impl DenseSecondaryMapConfig for Four {
+impl<T> DenseSecondaryMapConfig<T> for Four {
     type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = SmallVec<S, 4>;
-    type PairStorage<K, V> = SplitPair<SmallVec<K, 4>, SmallVec<V, 4>>;
+    type SlotStorage = SmallVec<DenseSecondaryMapSlot<Self>, 4>;
+    type PairStorage = SplitPair<SmallVec<MapKey<Self>, 4>, SmallVec<T, 4>>;
 }
 
 #[test]

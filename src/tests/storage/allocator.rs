@@ -7,11 +7,11 @@
 use crate::tests::model::Rng;
 use crate::tests::{Cfg, DropItem, DropTracker};
 use crate::{
-    DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap,
-    GenMapConfig, GenSlotItem, KeepLen, MapConfig, NewerWins, PairStorage, PairVec,
-    PairVecIntoIter, ReserveError, ReserveStorage, SecondaryMap, SecondaryMapConfig,
-    SecondarySlotItem, SingleVec, SingleVecIntoIter, SingleVecRawParts, SliceStorage, Split,
-    SplitPair,
+    DenseGenMap, DenseGenMapConfig, DenseMapSlot, DenseSecondaryMap, DenseSecondaryMapConfig,
+    DenseSecondaryMapSlot, GenMap, GenMapConfig, KeepLen, MapConfig, MapKey, MapSlot, NewerWins,
+    PairStorage, PairVec, PairVecIntoIter, ReserveError, ReserveStorage, SecondaryMap,
+    SecondaryMapConfig, SecondaryMapSlot, SingleVec, SingleVecIntoIter, SingleVecRawParts,
+    SliceStorage, Split, SplitPair,
 };
 use core::cell::{Cell, RefCell};
 use core::fmt::Debug;
@@ -707,26 +707,26 @@ impl MapConfig for InOwnVecs {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl GenMapConfig for InOwnVecs {
+impl<T> GenMapConfig<T> for InOwnVecs {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = SingleVec<S, u32, Tracking>;
+    type Storage = SingleVec<MapSlot<T, Self>, u32, Tracking>;
 }
 
-impl SecondaryMapConfig for InOwnVecs {
+impl<T> SecondaryMapConfig<T> for InOwnVecs {
     type ReplaceStrategy = NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = SingleVec<S, u32, Tracking>;
+    type Storage = SingleVec<SecondaryMapSlot<T, Self>, u32, Tracking>;
 }
 
-impl DenseGenMapConfig for InOwnVecs {
-    type SlotStorage<S: GenSlotItem> = SingleVec<S, u32, Tracking>;
-    type PairStorage<K, V> = PairVec<K, V, u32, Tracking>;
+impl<T> DenseGenMapConfig<T> for InOwnVecs {
+    type SlotStorage = SingleVec<DenseMapSlot<Self>, u32, Tracking>;
+    type PairStorage = PairVec<MapKey<Self>, T, u32, Tracking>;
 }
 
-impl DenseSecondaryMapConfig for InOwnVecs {
+impl<T> DenseSecondaryMapConfig<T> for InOwnVecs {
     type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = SingleVec<S, u32, Tracking>;
-    type PairStorage<K, V> = PairVec<K, V, u32, Tracking>;
+    type SlotStorage = SingleVec<DenseSecondaryMapSlot<Self>, u32, Tracking>;
+    type PairStorage = PairVec<MapKey<Self>, T, u32, Tracking>;
 }
 
 /// Maps with this config keep their slots, keys and values in `Vec`s that
@@ -737,26 +737,26 @@ impl MapConfig for InStdVecs {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl GenMapConfig for InStdVecs {
+impl<T> GenMapConfig<T> for InStdVecs {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S, Tracking>;
+    type Storage = Vec<MapSlot<T, Self>, Tracking>;
 }
 
-impl SecondaryMapConfig for InStdVecs {
+impl<T> SecondaryMapConfig<T> for InStdVecs {
     type ReplaceStrategy = NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = Vec<S, Tracking>;
+    type Storage = Vec<SecondaryMapSlot<T, Self>, Tracking>;
 }
 
-impl DenseGenMapConfig for InStdVecs {
-    type SlotStorage<S: GenSlotItem> = Vec<S, Tracking>;
-    type PairStorage<K, V> = SplitPair<Vec<K, Tracking>, Vec<V, Tracking>>;
+impl<T> DenseGenMapConfig<T> for InStdVecs {
+    type SlotStorage = Vec<DenseMapSlot<Self>, Tracking>;
+    type PairStorage = SplitPair<Vec<MapKey<Self>, Tracking>, Vec<T, Tracking>>;
 }
 
-impl DenseSecondaryMapConfig for InStdVecs {
+impl<T> DenseSecondaryMapConfig<T> for InStdVecs {
     type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = Vec<S, Tracking>;
-    type PairStorage<K, V> = SplitPair<Vec<K, Tracking>, Vec<V, Tracking>>;
+    type SlotStorage = Vec<DenseSecondaryMapSlot<Self>, Tracking>;
+    type PairStorage = SplitPair<Vec<MapKey<Self>, Tracking>, Vec<T, Tracking>>;
 }
 
 /// Inserts fifty values into `map` and removes the first half of them. Then
@@ -764,7 +764,7 @@ impl DenseSecondaryMapConfig for InStdVecs {
 /// half.
 fn check_gen_map<C>(mut map: GenMap<u32, C>)
 where
-    C: GenMapConfig<Len = KeepLen>,
+    C: GenMapConfig<u32, Len = KeepLen>,
     GenMap<u32, C>: Clone,
 {
     let keys: Vec<_> = (0..50).map(|value| map.insert(value)).collect();
@@ -796,7 +796,7 @@ fn a_gen_map_keeps_its_slots_in_a_vec_with_an_allocator() {
 /// clones the map and checks that the map and its clone hold those values.
 fn check_secondary_map<C>(mut map: SecondaryMap<u32, C>)
 where
-    C: SecondaryMapConfig<Len = KeepLen> + MapConfig<KeyConfig = Split<u32, u32>>,
+    C: SecondaryMapConfig<u32, Len = KeepLen> + MapConfig<KeyConfig = Split<u32, u32>>,
     SecondaryMap<u32, C>: Clone,
 {
     let mut key_map = GenMap::<(), Cfg<u32, u32>>::new_with_config();
@@ -830,7 +830,7 @@ fn a_secondary_map_keeps_its_slots_in_a_vec_with_an_allocator() {
 /// half.
 fn check_dense_gen_map<C>(mut map: DenseGenMap<u32, C>)
 where
-    C: DenseGenMapConfig,
+    C: DenseGenMapConfig<u32>,
     DenseGenMap<u32, C>: Clone,
 {
     let keys: Vec<_> = (0..50).map(|value| map.insert(value)).collect();
@@ -873,7 +873,7 @@ fn a_dense_gen_map_keeps_its_storages_in_vecs_with_an_allocator() {
 /// clones the map and checks that the map and its clone hold those values.
 fn check_dense_secondary_map<C>(mut map: DenseSecondaryMap<u32, C>)
 where
-    C: DenseSecondaryMapConfig + MapConfig<KeyConfig = Split<u32, u32>>,
+    C: DenseSecondaryMapConfig<u32> + MapConfig<KeyConfig = Split<u32, u32>>,
     DenseSecondaryMap<u32, C>: Clone,
 {
     let mut key_map = GenMap::<(), Cfg<u32, u32>>::new_with_config();

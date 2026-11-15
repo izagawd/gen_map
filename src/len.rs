@@ -31,7 +31,7 @@ impl Len for KeepLen {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, NoLen, Split};
+/// use gen_map::{GenMap, GenMapConfig, MapConfig, MapSlot, NoLen, Split};
 ///
 /// struct Uncounted;
 ///
@@ -39,9 +39,9 @@ impl Len for KeepLen {
 ///     type KeyConfig = Split<u32, u32>;
 /// }
 ///
-/// impl GenMapConfig for Uncounted {
+/// impl<T> GenMapConfig<T> for Uncounted {
 ///     type Len = NoLen;
-///     type Storage<S: GenSlotItem> = Vec<S>;
+///     type Storage = Vec<MapSlot<T, Self>>;
 /// }
 ///
 /// let mut map = GenMap::<&str, Uncounted>::new_with_config();
@@ -64,56 +64,56 @@ impl Len for NoLen {
 /// must fail to compile.
 ///
 /// ```compile_fail,E0599
-/// # use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, NoLen, Split};
+/// # use gen_map::{GenMap, GenMapConfig, MapConfig, MapSlot, NoLen, Split};
 /// # struct Uncounted;
 /// # impl MapConfig for Uncounted {
 /// #     type KeyConfig = Split<u32, u32>;
 /// # }
-/// # impl GenMapConfig for Uncounted {
+/// # impl<T> GenMapConfig<T> for Uncounted {
 /// #     type Len = NoLen;
-/// #     type Storage<S: GenSlotItem> = Vec<S>;
+/// #     type Storage = Vec<MapSlot<T, Self>>;
 /// # }
 /// let map = GenMap::<u32, Uncounted>::new_with_config();
 /// map.len();
 /// ```
 ///
 /// ```compile_fail,E0599
-/// # use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, NoLen, Split};
+/// # use gen_map::{GenMap, GenMapConfig, MapConfig, MapSlot, NoLen, Split};
 /// # struct Uncounted;
 /// # impl MapConfig for Uncounted {
 /// #     type KeyConfig = Split<u32, u32>;
 /// # }
-/// # impl GenMapConfig for Uncounted {
+/// # impl<T> GenMapConfig<T> for Uncounted {
 /// #     type Len = NoLen;
-/// #     type Storage<S: GenSlotItem> = Vec<S>;
+/// #     type Storage = Vec<MapSlot<T, Self>>;
 /// # }
 /// let map = GenMap::<u32, Uncounted>::new_with_config();
 /// map.is_empty();
 /// ```
 ///
 /// ```compile_fail,E0599
-/// # use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, NoLen, Split};
+/// # use gen_map::{GenMap, GenMapConfig, MapConfig, MapSlot, NoLen, Split};
 /// # struct Uncounted;
 /// # impl MapConfig for Uncounted {
 /// #     type KeyConfig = Split<u32, u32>;
 /// # }
-/// # impl GenMapConfig for Uncounted {
+/// # impl<T> GenMapConfig<T> for Uncounted {
 /// #     type Len = NoLen;
-/// #     type Storage<S: GenSlotItem> = Vec<S>;
+/// #     type Storage = Vec<MapSlot<T, Self>>;
 /// # }
 /// let mut map = GenMap::<u32, Uncounted>::new_with_config();
 /// unsafe { map.set_len(0) };
 /// ```
 ///
 /// ```compile_fail,E0599
-/// # use gen_map::{GenMap, GenMapConfig, GenSlotItem, MapConfig, NoLen, Split};
+/// # use gen_map::{GenMap, GenMapConfig, MapConfig, MapSlot, NoLen, Split};
 /// # struct Uncounted;
 /// # impl MapConfig for Uncounted {
 /// #     type KeyConfig = Split<u32, u32>;
 /// # }
-/// # impl GenMapConfig for Uncounted {
+/// # impl<T> GenMapConfig<T> for Uncounted {
 /// #     type Len = NoLen;
-/// #     type Storage<S: GenSlotItem> = Vec<S>;
+/// #     type Storage = Vec<MapSlot<T, Self>>;
 /// # }
 /// let map = GenMap::<u32, Uncounted>::new_with_config();
 /// map.iter().len();
@@ -121,16 +121,16 @@ impl Len for NoLen {
 ///
 /// ```compile_fail,E0599
 /// # use gen_map::{
-/// #     MapConfig, NewerWins, NoLen, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Split,
+/// #     MapConfig, NewerWins, NoLen, SecondaryMap, SecondaryMapConfig, SecondaryMapSlot, Split,
 /// # };
 /// # struct Uncounted;
 /// # impl MapConfig for Uncounted {
 /// #     type KeyConfig = Split<u32, u32>;
 /// # }
-/// # impl SecondaryMapConfig for Uncounted {
+/// # impl<T> SecondaryMapConfig<T> for Uncounted {
 /// #     type ReplaceStrategy = NewerWins;
 /// #     type Len = NoLen;
-/// #     type Storage<S: SecondarySlotItem> = Vec<S>;
+/// #     type Storage = Vec<SecondaryMapSlot<T, Self>>;
 /// # }
 /// let map = SecondaryMap::<u32, Uncounted>::new_with_config();
 /// map.len();
@@ -138,16 +138,16 @@ impl Len for NoLen {
 ///
 /// ```compile_fail,E0599
 /// # use gen_map::{
-/// #     MapConfig, NewerWins, NoLen, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Split,
+/// #     MapConfig, NewerWins, NoLen, SecondaryMap, SecondaryMapConfig, SecondaryMapSlot, Split,
 /// # };
 /// # struct Uncounted;
 /// # impl MapConfig for Uncounted {
 /// #     type KeyConfig = Split<u32, u32>;
 /// # }
-/// # impl SecondaryMapConfig for Uncounted {
+/// # impl<T> SecondaryMapConfig<T> for Uncounted {
 /// #     type ReplaceStrategy = NewerWins;
 /// #     type Len = NoLen;
-/// #     type Storage<S: SecondarySlotItem> = Vec<S>;
+/// #     type Storage = Vec<SecondaryMapSlot<T, Self>>;
 /// # }
 /// let map = SecondaryMap::<u32, Uncounted>::new_with_config();
 /// map.is_empty();
@@ -155,16 +155,16 @@ impl Len for NoLen {
 ///
 /// ```compile_fail,E0599
 /// # use gen_map::{
-/// #     MapConfig, NewerWins, NoLen, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Split,
+/// #     MapConfig, NewerWins, NoLen, SecondaryMap, SecondaryMapConfig, SecondaryMapSlot, Split,
 /// # };
 /// # struct Uncounted;
 /// # impl MapConfig for Uncounted {
 /// #     type KeyConfig = Split<u32, u32>;
 /// # }
-/// # impl SecondaryMapConfig for Uncounted {
+/// # impl<T> SecondaryMapConfig<T> for Uncounted {
 /// #     type ReplaceStrategy = NewerWins;
 /// #     type Len = NoLen;
-/// #     type Storage<S: SecondarySlotItem> = Vec<S>;
+/// #     type Storage = Vec<SecondaryMapSlot<T, Self>>;
 /// # }
 /// let mut map = SecondaryMap::<u32, Uncounted>::new_with_config();
 /// unsafe { map.set_len(0) };
@@ -172,16 +172,16 @@ impl Len for NoLen {
 ///
 /// ```compile_fail,E0599
 /// # use gen_map::{
-/// #     MapConfig, NewerWins, NoLen, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, Split,
+/// #     MapConfig, NewerWins, NoLen, SecondaryMap, SecondaryMapConfig, SecondaryMapSlot, Split,
 /// # };
 /// # struct Uncounted;
 /// # impl MapConfig for Uncounted {
 /// #     type KeyConfig = Split<u32, u32>;
 /// # }
-/// # impl SecondaryMapConfig for Uncounted {
+/// # impl<T> SecondaryMapConfig<T> for Uncounted {
 /// #     type ReplaceStrategy = NewerWins;
 /// #     type Len = NoLen;
-/// #     type Storage<S: SecondarySlotItem> = Vec<S>;
+/// #     type Storage = Vec<SecondaryMapSlot<T, Self>>;
 /// # }
 /// let map = SecondaryMap::<u32, Uncounted>::new_with_config();
 /// map.iter().len();

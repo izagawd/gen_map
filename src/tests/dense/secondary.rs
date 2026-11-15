@@ -248,7 +248,8 @@ fn reserve_panics_when_a_storage_cannot_make_room() {
 mod capped {
     use super::*;
     use crate::{
-        DenseSecondaryMapConfig, GenSlotItem, MapConfig, NewerWins, SplitPair, SplitPairError,
+        DenseSecondaryMapConfig, DenseSecondaryMapSlot, MapConfig, MapKey, NewerWins, SplitPair,
+        SplitPairError,
     };
     use arrayvec::ArrayVec;
 
@@ -260,10 +261,12 @@ mod capped {
         type KeyConfig = Split<u8, u8>;
     }
 
-    impl<const S: usize, const V: usize, const K: usize> DenseSecondaryMapConfig for Caps<S, V, K> {
+    impl<T, const S: usize, const V: usize, const K: usize> DenseSecondaryMapConfig<T>
+        for Caps<S, V, K>
+    {
         type ReplaceStrategy = NewerWins;
-        type SlotStorage<T: GenSlotItem> = ArrayVec<T, S>;
-        type PairStorage<A, B> = SplitPair<ArrayVec<A, K>, ArrayVec<B, V>>;
+        type SlotStorage = ArrayVec<DenseSecondaryMapSlot<Self>, S>;
+        type PairStorage = SplitPair<ArrayVec<MapKey<Self>, K>, ArrayVec<T, V>>;
     }
 
     /// Stores values under indices 0, 1, 2 and so on until an insert fails,

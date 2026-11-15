@@ -4,8 +4,8 @@
 
 use super::DropTracker;
 use crate::{
-    GenMap, GenMapConfig, GenMapRawParts, GenSlotItem, KeepLen, Len, MapConfig, NewerWins, NoLen,
-    SecondaryMap, SecondaryMapConfig, SecondaryMapRawParts, SecondarySlotItem, Split,
+    GenMap, GenMapConfig, GenMapRawParts, KeepLen, Len, MapConfig, MapSlot, NewerWins, NoLen,
+    SecondaryMap, SecondaryMapConfig, SecondaryMapRawParts, SecondaryMapSlot, Split,
 };
 use core::marker::PhantomData;
 use core::mem::size_of;
@@ -22,15 +22,15 @@ impl<L: Len> MapConfig for Wide<L> {
     type KeyConfig = Split<u64, u64>;
 }
 
-impl<L: Len> GenMapConfig for Wide<L> {
+impl<T, L: Len> GenMapConfig<T> for Wide<L> {
     type Len = L;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
-impl<L: Len> SecondaryMapConfig for Wide<L> {
+impl<T, L: Len> SecondaryMapConfig<T> for Wide<L> {
     type ReplaceStrategy = NewerWins;
     type Len = L;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
+    type Storage = Vec<SecondaryMapSlot<T, Self>>;
 }
 
 /// Maps with this config keep no count of their values.
@@ -231,7 +231,7 @@ fn assert_auto_traits<X: Send + Sync + Unpin + UnwindSafe + RefUnwindSafe>(_valu
 fn check_borrowing_iterators<T, C>(map: &mut GenMap<T, C>, secondary: &mut SecondaryMap<T, C>)
 where
     T: Send + Sync + RefUnwindSafe,
-    C: GenMapConfig + SecondaryMapConfig,
+    C: GenMapConfig<T> + SecondaryMapConfig<T>,
 {
     assert_auto_traits(&map.iter());
     assert_auto_traits(&map.keys());

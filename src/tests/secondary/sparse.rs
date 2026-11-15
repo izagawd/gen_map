@@ -7,7 +7,7 @@ use crate::tests::model::Rng;
 use crate::tests::{key_from_parts, Cfg, DropTracker};
 use crate::{
     ExistingWins, GenMap, GetDisjointMutAtError, GetDisjointMutError, KeepLen, Key, MapConfig,
-    SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondarySlotItem, SparseSecondaryMap,
+    SecondaryInsertError, SecondaryMap, SecondaryMapConfig, SecondaryMapSlot, SparseSecondaryMap,
     SparseSecondaryMapConfig, Split,
 };
 use core::cell::Cell;
@@ -29,13 +29,13 @@ impl MapConfig for Keep {
     type KeyConfig = Split<u8, u8>;
 }
 
-impl SecondaryMapConfig for Keep {
+impl<T> SecondaryMapConfig<T> for Keep {
     type ReplaceStrategy = ExistingWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = Vec<S>;
+    type Storage = Vec<SecondaryMapSlot<T, Self>>;
 }
 
-impl SparseSecondaryMapConfig for Keep {
+impl<T> SparseSecondaryMapConfig<T> for Keep {
     type ReplaceStrategy = ExistingWins;
 }
 
@@ -572,8 +572,8 @@ fn keeps(value: u32) -> bool {
 
 fn run<C, S>(seed: u64, steps: usize)
 where
-    C: SecondaryMapConfig<KeyConfig = Split<u8, u8>, Len = KeepLen>
-        + SparseSecondaryMapConfig<KeyConfig = Split<u8, u8>>,
+    C: SecondaryMapConfig<u32, KeyConfig = Split<u8, u8>, Len = KeepLen>
+        + SparseSecondaryMapConfig<u32, KeyConfig = Split<u8, u8>>,
     S: core::hash::BuildHasher + Default,
     SecondaryMap<u32, C>: Default,
 {
@@ -762,8 +762,8 @@ fn check<C, S>(
     known: &[Key<Split<u8, u8>>],
     context: (u64, usize),
 ) where
-    C: SecondaryMapConfig<KeyConfig = Split<u8, u8>, Len = KeepLen>
-        + SparseSecondaryMapConfig<KeyConfig = Split<u8, u8>>,
+    C: SecondaryMapConfig<u32, KeyConfig = Split<u8, u8>, Len = KeepLen>
+        + SparseSecondaryMapConfig<u32, KeyConfig = Split<u8, u8>>,
     S: core::hash::BuildHasher,
 {
     assert_eq!(secondary.len(), sparse.len(), "{context:?}");

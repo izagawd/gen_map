@@ -3,8 +3,9 @@
 
 use crate::tests::{Bomb, CloneBomb, DropItem, DropTracker};
 use crate::{
-    DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, Empty, GenSlotItem,
-    MapConfig, NewerWins, PairStorage, Split, SplitPair, SplitPairError, WithCapacity,
+    DenseGenMap, DenseGenMapConfig, DenseMapSlot, DenseSecondaryMap, DenseSecondaryMapConfig,
+    DenseSecondaryMapSlot, Empty, MapConfig, MapKey, NewerWins, PairStorage, Split, SplitPair,
+    SplitPairError, WithCapacity,
 };
 use std::format;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -174,15 +175,15 @@ impl MapConfig for TwoVecs {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl DenseGenMapConfig for TwoVecs {
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
+impl<T> DenseGenMapConfig<T> for TwoVecs {
+    type SlotStorage = Vec<DenseMapSlot<Self>>;
+    type PairStorage = SplitPair<Vec<MapKey<Self>>, Vec<T>>;
 }
 
-impl DenseSecondaryMapConfig for TwoVecs {
+impl<T> DenseSecondaryMapConfig<T> for TwoVecs {
     type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
+    type SlotStorage = Vec<DenseSecondaryMapSlot<Self>>;
+    type PairStorage = SplitPair<Vec<MapKey<Self>>, Vec<T>>;
 }
 
 #[test]

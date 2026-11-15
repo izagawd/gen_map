@@ -55,7 +55,7 @@
 //! its slots in.
 //!
 //! ```
-//! use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
+//! use gen_map::{GenMap, GenMapConfig, KeepLen, MapConfig, MapSlot, Split};
 //!
 //! /// Maps with this config hand out keys with a `u8` index and a `u8`
 //! /// generation, so each key is two bytes. A map with this config never gives
@@ -66,9 +66,9 @@
 //!     type KeyConfig = Split<u8, u8>;
 //! }
 //!
-//! impl GenMapConfig for Tiny {
+//! impl<T> GenMapConfig<T> for Tiny {
 //!     type Len = KeepLen;
-//!     type Storage<S: GenSlotItem> = Vec<S>;
+//!     type Storage = Vec<MapSlot<T, Self>>;
 //! }
 //!
 //! let mut map = GenMap::<u64, Tiny>::new_with_config();
@@ -134,8 +134,13 @@
 //!   values. Only a map whose config picks [`KeepLen`] has
 //!   [`len`](GenMap::len) and [`is_empty`](GenMap::is_empty).
 //! - [`Storage`](GenMapConfig::Storage) is the collection the map keeps its
-//!   slots in. It can be a [`SingleVec`], a `Vec`, an `ArrayVec`, a `SmallVec`
-//!   or any other type that implements [`SliceStorage`].
+//!   slots in. The slots of a `GenMap<T, C>` are [`MapSlot<T, C>`](MapSlot).
+//!   The collection can be a [`SingleVec`], a `Vec`, an `ArrayVec`, a
+//!   `SmallVec` or any other type that implements [`SliceStorage`].
+//!
+//! [`GenMapConfig`] takes the type of the map's values as its parameter `T`.
+//! Implement it for every `T` to let a map hold values of any type, or even implement it for only a few specific
+//! `T`s if desired.
 //!
 //! When its `C` parameter is left out, as in `GenMap<T>`, a map uses
 //! [`DefaultMapConfig`]. Maps with that config hand out keys with a `u32` index
@@ -277,8 +282,8 @@ pub use key::piece::{u1, KeyPiece, NonMax, NonMaxU1, NonZeroU1};
 pub use key::Key;
 pub use len::{KeepLen, Len, NoLen};
 pub use map::{
-    Drain, GenMap, GenMapRawParts, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKeyConfig,
-    MapSlot, StorageError, VacantEntry, Values, ValuesMut,
+    Drain, GenMap, GenMapRawParts, IntoIter, Iter, IterMut, Keys, MapGen, MapIdx, MapKey,
+    MapKeyConfig, MapSlot, StorageError, VacantEntry, Values, ValuesMut,
 };
 pub use secondary::replace_strategy::{ExistingWins, NewerWins, ReplaceStrategy};
 #[cfg(feature = "std")]
@@ -293,7 +298,7 @@ pub use secondary::{
     SecondaryMap, SecondaryMapRawParts, SecondaryMapSlot, SecondaryStorageError, SecondaryValues,
     SecondaryValuesMut,
 };
-pub use slot::{GenSlotItem, Parity, ParityMut, ParityRef, SecondarySlotItem, Slot};
+pub use slot::{Parity, ParityMut, ParityRef, Slot};
 pub use storage::pair::{
     PairStorage, ReservePairStorage, SplitPair, SplitPairError, SplitPairIntoIter,
 };

@@ -2,8 +2,9 @@
 //! map only asks for more where a method needs it.
 
 use crate::{
-    DenseGenMap, DenseGenMapConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap,
-    GenMapConfig, GenSlotItem, KeepLen, MapConfig, NewerWins, SliceStorage, Split, SplitPair,
+    DenseGenMap, DenseGenMapConfig, DenseMapSlot, DenseSecondaryMap, DenseSecondaryMapConfig,
+    DenseSecondaryMapSlot, GenMap, GenMapConfig, KeepLen, MapConfig, MapKey, MapSlot, NewerWins,
+    SliceStorage, Split, SplitPair,
 };
 use std::collections::TryReserveError;
 use std::vec::Vec;
@@ -95,9 +96,9 @@ impl MapConfig for NoIter {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl GenMapConfig for NoIter {
+impl<T> GenMapConfig<T> for NoIter {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Bare<S, false>;
+    type Storage = Bare<MapSlot<T, Self>, false>;
 }
 
 /// Its storage's owning iterator is a `Forwards`.
@@ -107,9 +108,9 @@ impl MapConfig for ForwardIter {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl GenMapConfig for ForwardIter {
+impl<T> GenMapConfig<T> for ForwardIter {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Bare<S, true>;
+    type Storage = Bare<MapSlot<T, Self>, true>;
 }
 
 /// Its dense storages have no owning iterator.
@@ -119,15 +120,15 @@ impl MapConfig for DenseNoIter {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl DenseGenMapConfig for DenseNoIter {
-    type SlotStorage<S: GenSlotItem> = Bare<S, false>;
-    type PairStorage<K, V> = SplitPair<Bare<K, false>, Bare<V, false>>;
+impl<T> DenseGenMapConfig<T> for DenseNoIter {
+    type SlotStorage = Bare<DenseMapSlot<Self>, false>;
+    type PairStorage = SplitPair<Bare<MapKey<Self>, false>, Bare<T, false>>;
 }
 
-impl DenseSecondaryMapConfig for DenseNoIter {
+impl<T> DenseSecondaryMapConfig<T> for DenseNoIter {
     type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = Bare<S, false>;
-    type PairStorage<K, V> = SplitPair<Bare<K, false>, Bare<V, false>>;
+    type SlotStorage = Bare<DenseSecondaryMapSlot<Self>, false>;
+    type PairStorage = SplitPair<Bare<MapKey<Self>, false>, Bare<T, false>>;
 }
 
 /// The owning iterators of its dense storages are `Forwards`.
@@ -137,15 +138,15 @@ impl MapConfig for DenseForwardIter {
     type KeyConfig = Split<u32, u32>;
 }
 
-impl DenseGenMapConfig for DenseForwardIter {
-    type SlotStorage<S: GenSlotItem> = Bare<S, true>;
-    type PairStorage<K, V> = SplitPair<Bare<K, true>, Bare<V, true>>;
+impl<T> DenseGenMapConfig<T> for DenseForwardIter {
+    type SlotStorage = Bare<DenseMapSlot<Self>, true>;
+    type PairStorage = SplitPair<Bare<MapKey<Self>, true>, Bare<T, true>>;
 }
 
-impl DenseSecondaryMapConfig for DenseForwardIter {
+impl<T> DenseSecondaryMapConfig<T> for DenseForwardIter {
     type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = Bare<S, true>;
-    type PairStorage<K, V> = SplitPair<Bare<K, true>, Bare<V, true>>;
+    type SlotStorage = Bare<DenseSecondaryMapSlot<Self>, true>;
+    type PairStorage = SplitPair<Bare<MapKey<Self>, true>, Bare<T, true>>;
 }
 
 #[test]

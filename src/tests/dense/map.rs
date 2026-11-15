@@ -5,8 +5,8 @@
 
 use crate::tests::{Bomb, Cfg, CloneBomb, DropTracker};
 use crate::{
-    DenseError, DenseGenMap, DenseGenMapConfig, FullError, GenSlotItem, InsertError,
-    InsertWithError, Key, MapConfig, Packed, PairStorage, PairVec,
+    DenseError, DenseGenMap, DenseGenMapConfig, DenseMapSlot, FullError, InsertError,
+    InsertWithError, Key, MapConfig, MapKey, Packed, PairStorage, PairVec,
 };
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::vec::Vec;
@@ -23,12 +23,12 @@ impl MapConfig for Retiring {
     type KeyConfig = Packed<u16, 4>;
 }
 
-impl DenseGenMapConfig for Retiring {
-    type SlotStorage<S: GenSlotItem> = Vec<S>;
-    type PairStorage<K, V> = PairVec<K, V>;
+impl<T> DenseGenMapConfig<T> for Retiring {
+    type SlotStorage = Vec<DenseMapSlot<Self>>;
+    type PairStorage = PairVec<MapKey<Self>, T>;
 }
 
-fn values<T: Copy, C: DenseGenMapConfig>(map: &DenseGenMap<T, C>) -> Vec<T> {
+fn values<T: Copy, C: DenseGenMapConfig<T>>(map: &DenseGenMap<T, C>) -> Vec<T> {
     map.values().copied().collect()
 }
 
@@ -559,9 +559,9 @@ mod capped {
         type KeyConfig = Split<u8, u8>;
     }
 
-    impl<const S: usize, const V: usize, const K: usize> DenseGenMapConfig for Caps<S, V, K> {
-        type SlotStorage<T: GenSlotItem> = ArrayVec<T, S>;
-        type PairStorage<A, B> = SplitPair<ArrayVec<A, K>, ArrayVec<B, V>>;
+    impl<T, const S: usize, const V: usize, const K: usize> DenseGenMapConfig<T> for Caps<S, V, K> {
+        type SlotStorage = ArrayVec<DenseMapSlot<Self>, S>;
+        type PairStorage = SplitPair<ArrayVec<MapKey<Self>, K>, ArrayVec<T, V>>;
     }
 
     /// Inserts until the map is full, and returns the map with the storage that

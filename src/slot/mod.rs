@@ -378,55 +378,6 @@ impl<G: KeyPiece, T: fmt::Debug, U: fmt::Debug> fmt::Debug for Slot<G, T, U> {
     }
 }
 
-mod sealed {
-    /// Keeps [`GenSlotItem`](super::GenSlotItem) and
-    /// [`SecondarySlotItem`](super::SecondarySlotItem) from being implemented
-    /// outside this crate.
-    pub trait Sealed {}
-}
-
-/// Describes the slot a [`GenMap`](crate::GenMap) keeps each of its values in.
-/// It is the bound on the slot type `S` in
-/// [`GenMapConfig::Storage`](crate::GenMapConfig::Storage), as in
-/// `type Storage<S: GenSlotItem> = Vec<S>;`. It is also the bound on the slot
-/// type in the `SlotStorage` of the dense configs, whose slots store the
-/// position of each value instead of the value.
-///
-/// The slots of a `GenMap<T, C>` are [`MapSlot<T, C>`](crate::MapSlot).
-///
-/// Only [`Slot`] implements `GenSlotItem`. The trait is sealed, so no type
-/// outside this crate can implement it.
-pub trait GenSlotItem: sealed::Sealed {
-    /// The type of the value in the slot. For the slots of a `GenMap<T, C>`,
-    /// it is `T`, and for the slots of a dense map, it is the `NonMax` form of
-    /// the index type of the map's keys.
-    type Value;
-}
-
-impl<G: KeyPiece, T, U> sealed::Sealed for Slot<G, T, U> {}
-
-impl<G: KeyPiece, T, U> GenSlotItem for Slot<G, T, U> {
-    type Value = T;
-}
-
-/// Describes the slot a [`SecondaryMap`](crate::SecondaryMap) keeps each of its
-/// values in. It is the bound on the slot type `S` in
-/// [`SecondaryMapConfig::Storage`](crate::SecondaryMapConfig::Storage), as in
-/// `type Storage<S: SecondarySlotItem> = Vec<S>;`.
-///
-/// Only a [`Slot`] that stores `()` while it holds no value implements
-/// `SecondarySlotItem`. The trait is sealed, so no type outside this crate can
-/// implement it.
-pub trait SecondarySlotItem: sealed::Sealed {
-    /// The type of the value in the slot. For the slots of a
-    /// `SecondaryMap<T, C>`, it is `T`.
-    type Value;
-}
-
-impl<G: KeyPiece, T> SecondarySlotItem for Slot<G, T, ()> {
-    type Value = T;
-}
-
 /// A `ParityRef` holds shared references to the generation and the value of a
 /// [`Slot`], and [`Slot::as_parity`] returns one. Its variant says whether the
 /// generation is odd or even, the same way the variant of a [`Parity`] does.

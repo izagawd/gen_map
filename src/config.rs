@@ -1,3 +1,5 @@
+use crate::dense::map::DenseMapSlot;
+use crate::dense::secondary::DenseSecondaryMapSlot;
 use crate::key::layout::Split;
 use crate::key::parity::Odd;
 use crate::key::piece::KeyPiece;
@@ -6,10 +8,11 @@ use crate::len::KeepLen;
 use crate::len::Len;
 #[cfg(feature = "alloc")]
 use crate::map::MapIdx;
+use crate::map::{MapKey, MapSlot};
 #[cfg(feature = "alloc")]
 use crate::secondary::replace_strategy::NewerWins;
 use crate::secondary::replace_strategy::ReplaceStrategy;
-use crate::slot::{GenSlotItem, SecondarySlotItem};
+use crate::secondary::SecondaryMapSlot;
 use crate::storage::pair::PairStorage;
 #[cfg(feature = "alloc")]
 use crate::storage::pair_vec::PairVec;
@@ -137,7 +140,7 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{GenMap, GenMapConfig, GenSlotItem, KeepLen, MapConfig, Split};
+/// use gen_map::{GenMap, GenMapConfig, KeepLen, MapConfig, MapSlot, Split};
 ///
 /// /// Maps with this config hand out four byte keys, and when a slot's
 /// /// generation runs out, the map wraps it back to zero instead of retiring
@@ -148,11 +151,13 @@ pub unsafe trait KeyConfig: Copy + Eq + Hash + Send + Sync + 'static {
 ///     type KeyConfig = Split<u16, u16>;
 /// }
 ///
-/// impl GenMapConfig for Small {
+/// // `T` is the type of the map's values.
+/// impl<T> GenMapConfig<T> for Small {
 ///     const WRAP_ON_OVERFLOW: bool = true;
 ///     type Len = KeepLen;
-///     // `Storage` is the collection the slots live in. `S` is the slot type.
-///     type Storage<S: GenSlotItem> = Vec<S>;
+///     // `Storage` is the collection the slots live in, and
+///     // `MapSlot<T, Self>` is the type of those slots.
+///     type Storage = Vec<MapSlot<T, Self>>;
 /// }
 ///
 /// let mut map = GenMap::<&str, Small>::new_with_config();
@@ -171,10 +176,38 @@ pub trait MapConfig {
 /// out, whether a [`GenMap`](crate::GenMap) keeps a count of its values, and
 /// the collection its slots live in.
 ///
+/// `T` is the type of the map's values. Implement this trait for every `T` to
+/// let a map hold values of any type, or put bounds on `T` to restrict the
+/// types of the values a map can hold, or even implement it for only a few specific
+/// `T`s if desired.
+///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map hands out. The [`MapConfig`] example shows a config that
 /// implements this trait.
-pub trait GenMapConfig: MapConfig {
+///
+/// # Examples
+///
+/// A map with the config below can only hold values that are `Copy`.
+///
+/// ```
+/// use gen_map::{GenMap, GenMapConfig, KeepLen, MapConfig, MapSlot, Split};
+///
+/// struct CopyOnly;
+///
+/// impl MapConfig for CopyOnly {
+///     type KeyConfig = Split<u32, u32>;
+/// }
+///
+/// impl<T: Copy> GenMapConfig<T> for CopyOnly {
+///     type Len = KeepLen;
+///     type Storage = Vec<MapSlot<T, Self>>;
+/// }
+///
+/// let mut map = GenMap::<u8, CopyOnly>::new_with_config();
+/// let key = map.insert(1);
+/// assert_eq!(map[key], 1);
+/// ```
+pub trait GenMapConfig<T>: MapConfig {
     /// This decides what happens when a slot's generation runs out, which is
     /// when the map removes a value whose key has the largest generation its
     /// key config can hold.
@@ -191,16 +224,20 @@ pub trait GenMapConfig: MapConfig {
     /// choices are [`KeepLen`](crate::KeepLen) and [`NoLen`](crate::NoLen).
     type Len: Len;
 
-    /// The collection the map keeps its slots in. `S` is the slot type, which
-    /// is [`MapSlot<T, C>`](crate::MapSlot) for a `GenMap<T, C>`. The built-in
-    /// storages are [`SingleVec`](crate::SingleVec), `Vec`, `ArrayVec` and
-    /// `SmallVec`.
-    type Storage<S: GenSlotItem>: SliceStorage<Item = S>;
+    /// The collection the map keeps its slots in. The slot type is
+    /// [`MapSlot<T, Self>`](crate::MapSlot). The built-in storages are
+    /// [`SingleVec`](crate::SingleVec), `Vec`, `ArrayVec` and `SmallVec`.
+    type Storage: SliceStorage<Item = MapSlot<T, Self>>;
 }
 
 /// This trait is used to choose the [`ReplaceStrategy`] of a
 /// [`SecondaryMap`](crate::SecondaryMap), whether it keeps a count of its
 /// values, and the collection its slots live in.
+///
+/// `T` is the type of the map's values. Implement this trait for every `T` to
+/// let a map hold values of any type, or put bounds on `T` to restrict the
+/// types of the values a map can hold, or even implement it for only a few specific
+/// `T`s if desired.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map works with.
@@ -213,7 +250,7 @@ pub trait GenMapConfig: MapConfig {
 /// ```
 /// use gen_map::{
 ///     DefaultKeyConfig, ExistingWins, GenMap, KeepLen, MapConfig, SecondaryMap,
-///     SecondaryMapConfig, SecondarySlotItem,
+///     SecondaryMapConfig, SecondaryMapSlot,
 /// };
 ///
 /// struct Keep;
@@ -222,10 +259,10 @@ pub trait GenMapConfig: MapConfig {
 ///     type KeyConfig = DefaultKeyConfig;
 /// }
 ///
-/// impl SecondaryMapConfig for Keep {
+/// impl<T> SecondaryMapConfig<T> for Keep {
 ///     type ReplaceStrategy = ExistingWins;
 ///     type Len = KeepLen;
-///     type Storage<S: SecondarySlotItem> = Vec<S>;
+///     type Storage = Vec<SecondaryMapSlot<T, Self>>;
 /// }
 ///
 /// let mut people = GenMap::new();
@@ -239,7 +276,7 @@ pub trait GenMapConfig: MapConfig {
 /// assert!(ages.try_insert(bob, 25).is_err());
 /// assert_eq!(ages[alice], 30);
 /// ```
-pub trait SecondaryMapConfig: MapConfig {
+pub trait SecondaryMapConfig<T>: MapConfig {
     /// Decides whether a value inserted under a key replaces the value
     /// already in the slot at the key's index, when the value in the slot was
     /// inserted under a different generation. The built-in strategies are
@@ -251,17 +288,22 @@ pub trait SecondaryMapConfig: MapConfig {
     /// choices are [`KeepLen`](crate::KeepLen) and [`NoLen`](crate::NoLen).
     type Len: Len;
 
-    /// The collection the map keeps its slots in. `S` is the slot type, which
-    /// is [`SecondaryMapSlot<T, C>`](crate::SecondaryMapSlot) for a
-    /// `SecondaryMap<T, C>`. The map keeps a slot at every index up to the
-    /// highest index that an insert has used. The built-in storages are
-    /// [`SingleVec`](crate::SingleVec), `Vec`, `ArrayVec` and `SmallVec`.
-    type Storage<S: SecondarySlotItem>: SliceStorage<Item = S>;
+    /// The collection the map keeps its slots in. The slot type is
+    /// [`SecondaryMapSlot<T, Self>`](crate::SecondaryMapSlot). The map keeps a
+    /// slot at every index up to the highest index that an insert has used.
+    /// The built-in storages are [`SingleVec`](crate::SingleVec), `Vec`,
+    /// `ArrayVec` and `SmallVec`.
+    type Storage: SliceStorage<Item = SecondaryMapSlot<T, Self>>;
 }
 
 /// This trait is used to choose what happens when a slot's generation runs
 /// out, and the collections a [`DenseGenMap`](crate::DenseGenMap) keeps its
 /// slots, values and keys in.
+///
+/// `T` is the type of the map's values. Implement this trait for every `T` to
+/// let a map hold values of any type, or put bounds on `T` to restrict the
+/// types of the values a map can hold, or even implement it for only a few specific
+/// `T`s if desired.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map hands out.
@@ -269,7 +311,9 @@ pub trait SecondaryMapConfig: MapConfig {
 /// # Examples
 ///
 /// ```
-/// use gen_map::{DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, PairVec, Split};
+/// use gen_map::{
+///     DenseGenMap, DenseGenMapConfig, DenseMapSlot, MapConfig, MapKey, PairVec, Split,
+/// };
 ///
 /// /// Maps with this config hand out four byte keys.
 /// struct Small;
@@ -278,9 +322,9 @@ pub trait SecondaryMapConfig: MapConfig {
 ///     type KeyConfig = Split<u16, u16>;
 /// }
 ///
-/// impl DenseGenMapConfig for Small {
-///     type SlotStorage<S: GenSlotItem> = Vec<S>;
-///     type PairStorage<K, V> = PairVec<K, V>;
+/// impl<T> DenseGenMapConfig<T> for Small {
+///     type SlotStorage = Vec<DenseMapSlot<Self>>;
+///     type PairStorage = PairVec<MapKey<Self>, T>;
 /// }
 ///
 /// let mut map = DenseGenMap::<&str, Small>::new_with_config();
@@ -290,19 +334,18 @@ pub trait SecondaryMapConfig: MapConfig {
 /// assert_eq!(map[b], "b");
 /// assert_eq!(core::mem::size_of_val(&b), 4);
 /// ```
-pub trait DenseGenMapConfig: MapConfig {
+pub trait DenseGenMapConfig<T>: MapConfig {
     /// What happens when a slot's generation runs out. It works the same way
     /// as [`GenMapConfig::WRAP_ON_OVERFLOW`].
     const WRAP_ON_OVERFLOW: bool = false;
 
-    /// The collection the map keeps its slots in. `S` is the slot type, which
-    /// is [`DenseMapSlot<C>`](crate::DenseMapSlot) for a `DenseGenMap<T, C>`.
-    /// The built-in storages are [`SingleVec`](crate::SingleVec), `Vec`,
-    /// `ArrayVec` and `SmallVec`.
-    type SlotStorage<S: GenSlotItem>: SliceStorage<Item = S>;
+    /// The collection the map keeps its slots in. The slot type is
+    /// [`DenseMapSlot<Self>`](crate::DenseMapSlot). The built-in storages are
+    /// [`SingleVec`](crate::SingleVec), `Vec`, `ArrayVec` and `SmallVec`.
+    type SlotStorage: SliceStorage<Item = DenseMapSlot<Self>>;
 
-    /// The collection the map keeps its keys and values in. The first
-    /// parameter is the key type, and the second is the value type. The
+    /// The collection the map keeps its keys and values in. The key type is
+    /// [`MapKey<Self>`](crate::MapKey), and the value type is `T`. The
     /// built-in pair storages are [`PairVec`](crate::PairVec) and
     /// [`SplitPair`](crate::SplitPair).
     ///
@@ -310,7 +353,8 @@ pub trait DenseGenMapConfig: MapConfig {
     ///
     /// ```
     /// use gen_map::{
-    ///     DenseGenMap, DenseGenMapConfig, GenSlotItem, MapConfig, PairVec, Split, SplitPair,
+    ///     DenseGenMap, DenseGenMapConfig, DenseMapSlot, MapConfig, MapKey, PairVec, Split,
+    ///     SplitPair,
     /// };
     ///
     /// /// Maps with this config keep their keys and values in a `PairVec`.
@@ -320,9 +364,9 @@ pub trait DenseGenMapConfig: MapConfig {
     ///     type KeyConfig = Split<u32, u32>;
     /// }
     ///
-    /// impl DenseGenMapConfig for Paired {
-    ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    ///     type PairStorage<K, V> = PairVec<K, V>;
+    /// impl<T> DenseGenMapConfig<T> for Paired {
+    ///     type SlotStorage = Vec<DenseMapSlot<Self>>;
+    ///     type PairStorage = PairVec<MapKey<Self>, T>;
     /// }
     ///
     /// /// Maps with this config keep their keys in one `Vec` and their
@@ -333,9 +377,9 @@ pub trait DenseGenMapConfig: MapConfig {
     ///     type KeyConfig = Split<u32, u32>;
     /// }
     ///
-    /// impl DenseGenMapConfig for TwoVecs {
-    ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    ///     type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
+    /// impl<T> DenseGenMapConfig<T> for TwoVecs {
+    ///     type SlotStorage = Vec<DenseMapSlot<Self>>;
+    ///     type PairStorage = SplitPair<Vec<MapKey<Self>>, Vec<T>>;
     /// }
     ///
     /// let mut paired = DenseGenMap::<&str, Paired>::new_with_config();
@@ -345,12 +389,17 @@ pub trait DenseGenMapConfig: MapConfig {
     /// assert_eq!(paired[a], "a");
     /// assert_eq!(split[b], "b");
     /// ```
-    type PairStorage<K, V>: PairStorage<First = K, Second = V>;
+    type PairStorage: PairStorage<First = MapKey<Self>, Second = T>;
 }
 
 /// This trait is used to choose the [`ReplaceStrategy`] of a
 /// [`DenseSecondaryMap`](crate::DenseSecondaryMap), and the collections it
 /// keeps its slots, values and keys in.
+///
+/// `T` is the type of the map's values. Implement this trait for every `T` to
+/// let a map hold values of any type, or put bounds on `T` to restrict the
+/// types of the values a map can hold, or even implement it for only a few specific
+/// `T`s if desired.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map works with.
@@ -359,8 +408,8 @@ pub trait DenseGenMapConfig: MapConfig {
 ///
 /// ```
 /// use gen_map::{
-///     DefaultKeyConfig, DenseSecondaryMap, DenseSecondaryMapConfig, ExistingWins, GenMap,
-///     GenSlotItem, MapConfig, PairVec,
+///     DefaultKeyConfig, DenseSecondaryMap, DenseSecondaryMapConfig, DenseSecondaryMapSlot,
+///     ExistingWins, GenMap, MapConfig, MapKey, PairVec,
 /// };
 ///
 /// /// Maps with this config keep each value until it is removed.
@@ -370,10 +419,10 @@ pub trait DenseGenMapConfig: MapConfig {
 ///     type KeyConfig = DefaultKeyConfig;
 /// }
 ///
-/// impl DenseSecondaryMapConfig for Keep {
+/// impl<T> DenseSecondaryMapConfig<T> for Keep {
 ///     type ReplaceStrategy = ExistingWins;
-///     type SlotStorage<S: GenSlotItem> = Vec<S>;
-///     type PairStorage<K, V> = PairVec<K, V>;
+///     type SlotStorage = Vec<DenseSecondaryMapSlot<Self>>;
+///     type PairStorage = PairVec<MapKey<Self>, T>;
 /// }
 ///
 /// let mut people = GenMap::new();
@@ -387,7 +436,7 @@ pub trait DenseGenMapConfig: MapConfig {
 /// assert!(ages.try_insert(bob, 25).is_err());
 /// assert_eq!(ages[alice], 30);
 /// ```
-pub trait DenseSecondaryMapConfig: MapConfig {
+pub trait DenseSecondaryMapConfig<T>: MapConfig {
     /// Decides whether a value inserted under a key replaces the value
     /// already stored at the key's index, when that value was inserted under a
     /// different generation. It works the same way as
@@ -396,15 +445,15 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     /// [`ExistingWins`](crate::ExistingWins).
     type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
 
-    /// The collection the map keeps its slots in. `S` is the slot type, which
-    /// is [`DenseSecondaryMapSlot<C>`](crate::DenseSecondaryMapSlot) for a
-    /// `DenseSecondaryMap<T, C>`. The map keeps a slot at every index up to the
-    /// highest index that an insert has used. The built-in storages are
-    /// [`SingleVec`](crate::SingleVec), `Vec`, `ArrayVec` and `SmallVec`.
-    type SlotStorage<S: GenSlotItem>: SliceStorage<Item = S>;
+    /// The collection the map keeps its slots in. The slot type is
+    /// [`DenseSecondaryMapSlot<Self>`](crate::DenseSecondaryMapSlot). The map
+    /// keeps a slot at every index up to the highest index that an insert has
+    /// used. The built-in storages are [`SingleVec`](crate::SingleVec), `Vec`,
+    /// `ArrayVec` and `SmallVec`.
+    type SlotStorage: SliceStorage<Item = DenseSecondaryMapSlot<Self>>;
 
-    /// The collection the map keeps its keys and values in. The first
-    /// parameter is the key type, and the second is the value type. The
+    /// The collection the map keeps its keys and values in. The key type is
+    /// [`MapKey<Self>`](crate::MapKey), and the value type is `T`. The
     /// built-in pair storages are [`PairVec`](crate::PairVec) and
     /// [`SplitPair`](crate::SplitPair).
     ///
@@ -412,8 +461,8 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     ///
     /// ```
     /// use gen_map::{
-    ///     DefaultKeyConfig, DenseSecondaryMap, DenseSecondaryMapConfig, GenMap, GenSlotItem,
-    ///     MapConfig, NewerWins, PairVec, SplitPair,
+    ///     DefaultKeyConfig, DenseSecondaryMap, DenseSecondaryMapConfig, DenseSecondaryMapSlot,
+    ///     GenMap, MapConfig, MapKey, NewerWins, PairVec, SplitPair,
     /// };
     ///
     /// /// Maps with this config keep their keys and values in a `PairVec`.
@@ -423,10 +472,10 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     ///     type KeyConfig = DefaultKeyConfig;
     /// }
     ///
-    /// impl DenseSecondaryMapConfig for Paired {
+    /// impl<T> DenseSecondaryMapConfig<T> for Paired {
     ///     type ReplaceStrategy = NewerWins;
-    ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    ///     type PairStorage<K, V> = PairVec<K, V>;
+    ///     type SlotStorage = Vec<DenseSecondaryMapSlot<Self>>;
+    ///     type PairStorage = PairVec<MapKey<Self>, T>;
     /// }
     ///
     /// /// Maps with this config keep their keys in one `Vec` and their
@@ -437,10 +486,10 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     ///     type KeyConfig = DefaultKeyConfig;
     /// }
     ///
-    /// impl DenseSecondaryMapConfig for TwoVecs {
+    /// impl<T> DenseSecondaryMapConfig<T> for TwoVecs {
     ///     type ReplaceStrategy = NewerWins;
-    ///     type SlotStorage<S: GenSlotItem> = Vec<S>;
-    ///     type PairStorage<K, V> = SplitPair<Vec<K>, Vec<V>>;
+    ///     type SlotStorage = Vec<DenseSecondaryMapSlot<Self>>;
+    ///     type PairStorage = SplitPair<Vec<MapKey<Self>>, Vec<T>>;
     /// }
     ///
     /// let mut people = GenMap::new();
@@ -452,11 +501,16 @@ pub trait DenseSecondaryMapConfig: MapConfig {
     /// assert_eq!(ages[alice], 30);
     /// assert_eq!(heights[alice], 165);
     /// ```
-    type PairStorage<K, V>: PairStorage<First = K, Second = V>;
+    type PairStorage: PairStorage<First = MapKey<Self>, Second = T>;
 }
 
 /// This trait is used to choose the [`ReplaceStrategy`] of a
 /// [`SparseSecondaryMap`](crate::SparseSecondaryMap).
+///
+/// `T` is the type of the map's values. Implement this trait for every `T` to
+/// let a map hold values of any type, or put bounds on `T` to restrict the
+/// types of the values a map can hold, or even implement it for only a few specific
+/// `T`s if desired.
 ///
 /// [`MapConfig`] is a supertrait, and its key config is the key config of
 /// the keys the map works with. The map keeps its values in a `HashMap`, so
@@ -479,7 +533,7 @@ pub trait DenseSecondaryMapConfig: MapConfig {
 ///     type KeyConfig = DefaultKeyConfig;
 /// }
 ///
-/// impl SparseSecondaryMapConfig for Keep {
+/// impl<T> SparseSecondaryMapConfig<T> for Keep {
 ///     type ReplaceStrategy = ExistingWins;
 /// }
 ///
@@ -496,7 +550,7 @@ pub trait DenseSecondaryMapConfig: MapConfig {
 /// ```
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-pub trait SparseSecondaryMapConfig: MapConfig {
+pub trait SparseSecondaryMapConfig<T>: MapConfig {
     /// Decides whether a value inserted under a key replaces the value
     /// already stored at the key's index, when that value was inserted under a
     /// different generation. It works the same way as
@@ -505,6 +559,24 @@ pub trait SparseSecondaryMapConfig: MapConfig {
     /// [`ExistingWins`](crate::ExistingWins).
     type ReplaceStrategy: ReplaceStrategy<Self::KeyConfig>;
 }
+
+/// A map cannot use a config that does not implement [`GenMapConfig`] for the
+/// type of the map's values. The example below must fail to compile.
+///
+/// ```compile_fail,E0277
+/// # use gen_map::{GenMap, GenMapConfig, KeepLen, MapConfig, MapSlot, Split};
+/// # struct CopyOnly;
+/// # impl MapConfig for CopyOnly {
+/// #     type KeyConfig = Split<u32, u32>;
+/// # }
+/// # impl<T: Copy> GenMapConfig<T> for CopyOnly {
+/// #     type Len = KeepLen;
+/// #     type Storage = Vec<MapSlot<T, Self>>;
+/// # }
+/// let map = GenMap::<String, CopyOnly>::new_with_config();
+/// ```
+#[cfg(doctest)]
+struct BoundedConfigRejectsOtherValues;
 
 /// The key config a [`Key`](crate::Key) uses when its `K` parameter is left
 /// out.
@@ -538,32 +610,32 @@ impl MapConfig for DefaultMapConfig {
 }
 
 #[cfg(feature = "alloc")]
-impl GenMapConfig for DefaultMapConfig {
+impl<T> GenMapConfig<T> for DefaultMapConfig {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = SingleVec<S, MapIdx<Self>>;
+    type Storage = SingleVec<MapSlot<T, Self>, MapIdx<Self>>;
 }
 
 #[cfg(feature = "alloc")]
-impl SecondaryMapConfig for DefaultMapConfig {
+impl<T> SecondaryMapConfig<T> for DefaultMapConfig {
     type ReplaceStrategy = NewerWins;
     type Len = KeepLen;
-    type Storage<S: SecondarySlotItem> = SingleVec<S, MapIdx<Self>>;
+    type Storage = SingleVec<SecondaryMapSlot<T, Self>, MapIdx<Self>>;
 }
 
 #[cfg(feature = "alloc")]
-impl DenseGenMapConfig for DefaultMapConfig {
-    type SlotStorage<S: GenSlotItem> = SingleVec<S, MapIdx<Self>>;
-    type PairStorage<K, V> = PairVec<K, V, MapIdx<Self>>;
+impl<T> DenseGenMapConfig<T> for DefaultMapConfig {
+    type SlotStorage = SingleVec<DenseMapSlot<Self>, MapIdx<Self>>;
+    type PairStorage = PairVec<MapKey<Self>, T, MapIdx<Self>>;
 }
 
 #[cfg(feature = "alloc")]
-impl DenseSecondaryMapConfig for DefaultMapConfig {
+impl<T> DenseSecondaryMapConfig<T> for DefaultMapConfig {
     type ReplaceStrategy = NewerWins;
-    type SlotStorage<S: GenSlotItem> = SingleVec<S, MapIdx<Self>>;
-    type PairStorage<K, V> = PairVec<K, V, MapIdx<Self>>;
+    type SlotStorage = SingleVec<DenseSecondaryMapSlot<Self>, MapIdx<Self>>;
+    type PairStorage = PairVec<MapKey<Self>, T, MapIdx<Self>>;
 }
 
 #[cfg(feature = "std")]
-impl SparseSecondaryMapConfig for DefaultMapConfig {
+impl<T> SparseSecondaryMapConfig<T> for DefaultMapConfig {
     type ReplaceStrategy = NewerWins;
 }

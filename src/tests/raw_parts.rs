@@ -5,7 +5,7 @@
 use super::{key_from_parts, Cfg, DropTracker};
 use crate::{
     DenseGenMap, DenseGenMapRawParts, DenseSecondaryMap, DenseSecondaryMapRawParts, Even, GenMap,
-    GenMapConfig, GenMapRawParts, GenSlotItem, KeepLen, Key, MapConfig, NonMax, Odd, Packed,
+    GenMapConfig, GenMapRawParts, KeepLen, Key, MapConfig, MapSlot, NonMax, Odd, Packed,
     PairStorage, Parity, ParityMut, ParityRef, SecondaryMap, SecondaryMapRawParts, Slot, Split,
 };
 use std::vec;
@@ -24,9 +24,9 @@ impl MapConfig for Gen4 {
     type KeyConfig = Packed<u16, 4>;
 }
 
-impl GenMapConfig for Gen4 {
+impl<T> GenMapConfig<T> for Gen4 {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 /// Returns the key of [`Byte`] with index `idx` and generation `generation`.

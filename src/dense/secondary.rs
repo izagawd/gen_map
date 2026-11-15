@@ -1,6 +1,6 @@
 #[cfg(feature = "alloc")]
 use crate::config::DefaultMapConfig;
-use crate::config::DenseSecondaryMapConfig;
+use crate::config::{DenseSecondaryMapConfig, MapConfig};
 use crate::dense::map::{
     to_position, to_stored, DenseIntoIter, DenseIter, DenseIterMut, DenseKeys, DenseValues,
     DenseValuesMut, StoredPosition,
@@ -23,13 +23,13 @@ use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
 
 /// The storage a config gives the map for its slots.
-type Slots<C> = <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>;
+type Slots<T, C> = <C as DenseSecondaryMapConfig<T>>::SlotStorage;
 
 /// The strategy a config gives the map.
-type Strategy<C> = <C as DenseSecondaryMapConfig>::ReplaceStrategy;
+type Strategy<T, C> = <C as DenseSecondaryMapConfig<T>>::ReplaceStrategy;
 
 /// The storage a config gives the map for its keys and values.
-type Pairs<T, C> = <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>;
+type Pairs<T, C> = <C as DenseSecondaryMapConfig<T>>::PairStorage;
 
 /// A [`DenseSecondaryMap`] keeps one [`Slot`] of this type for each index.
 /// While the slot holds a value, its generation is the generation of the
@@ -42,7 +42,7 @@ pub type DenseSecondaryMapSlot<C> = Slot<MapGen<C>, <MapIdx<C> as KeyPiece>::Non
 /// Returns the generation and the stored position of `slot` if it holds a
 /// value, or `None` if it holds none.
 #[inline]
-fn occupied<C: DenseSecondaryMapConfig>(
+fn occupied<C: MapConfig>(
     slot: &DenseSecondaryMapSlot<C>,
 ) -> Option<(Odd<MapGen<C>>, StoredPosition<C>)> {
     match slot.as_parity() {
@@ -54,8 +54,8 @@ fn occupied<C: DenseSecondaryMapConfig>(
 /// The error a `DenseSecondaryMap<T, C>` gives when one of its storages cannot
 /// make room.
 pub type DenseSecondaryStorageError<T, C> = DenseError<
-    <<C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>> as SliceStorage>::Error,
-    <<C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> as PairStorage>::Error,
+    <<C as DenseSecondaryMapConfig<T>>::SlotStorage as SliceStorage>::Error,
+    <<C as DenseSecondaryMapConfig<T>>::PairStorage as PairStorage>::Error,
 >;
 
 /// What [`DenseSecondaryMap::try_insert`] returns.
@@ -102,14 +102,14 @@ type InsertResult<T, C> =
 /// ```
 pub struct DenseSecondaryMap<
     T,
-    #[cfg(feature = "alloc")] C: DenseSecondaryMapConfig = DefaultMapConfig,
-    #[cfg(not(feature = "alloc"))] C: DenseSecondaryMapConfig,
+    #[cfg(feature = "alloc")] C: DenseSecondaryMapConfig<T> = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: DenseSecondaryMapConfig<T>,
 > {
     /// A slot for every index up to the highest index that an insert has
     /// used. A slot that holds a value stores the generation of the value's
     /// key and the position of the value in `pairs`, and every position below
     /// the number of values is stored by exactly one slot.
-    slots: Slots<C>,
+    slots: Slots<T, C>,
     /// The values one after another in the second slice, and the key of each
     /// value at the same position in the first slice.
     pairs: Pairs<T, C>,
@@ -140,9 +140,9 @@ impl<T> DenseSecondaryMap<T> {
 
 /// A map has this method only when its slot storage and its pair storage
 /// implement [`WithCapacity`].
-impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C>
+impl<T, C: DenseSecondaryMapConfig<T>> DenseSecondaryMap<T, C>
 where
-    <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>: WithCapacity,
+    <C as DenseSecondaryMapConfig<T>>::SlotStorage: WithCapacity,
     Pairs<T, C>: WithCapacity,
 {
     /// Creates an empty map with config `C` and room for `capacity` values,
@@ -151,7 +151,7 @@ where
     #[must_use]
     pub fn with_capacity_and_config(capacity: usize) -> Self {
         Self {
-            slots: <Slots<C> as WithCapacity>::with_capacity(capacity),
+            slots: <Slots<T, C> as WithCapacity>::with_capacity(capacity),
             pairs: <Pairs<T, C> as WithCapacity>::with_capacity(capacity),
         }
     }
@@ -159,9 +159,9 @@ where
 
 /// These methods need slot and pair storages that can grow on request, so a
 /// map whose storages have a fixed capacity does not have them.
-impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C>
+impl<T, C: DenseSecondaryMapConfig<T>> DenseSecondaryMap<T, C>
 where
-    <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>: ReserveStorage,
+    <C as DenseSecondaryMapConfig<T>>::SlotStorage: ReserveStorage,
     Pairs<T, C>: ReservePairStorage,
 {
     /// Reserves room for at least `additional` more values, and for as many
@@ -200,9 +200,9 @@ where
 
 /// A map has this method only when its slot storage and its pair storage
 /// implement [`Empty`].
-impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C>
+impl<T, C: DenseSecondaryMapConfig<T>> DenseSecondaryMap<T, C>
 where
-    Slots<C>: Empty,
+    Slots<T, C>: Empty,
     Pairs<T, C>: Empty,
 {
     /// Creates an empty map with config `C`.
@@ -210,13 +210,13 @@ where
     #[must_use]
     pub fn new_with_config() -> Self {
         Self {
-            slots: <Slots<C> as Empty>::empty(),
+            slots: <Slots<T, C> as Empty>::empty(),
             pairs: <Pairs<T, C> as Empty>::empty(),
         }
     }
 }
 
-impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
+impl<T, C: DenseSecondaryMapConfig<T>> DenseSecondaryMap<T, C> {
     /// Creates an empty map with config `C` that keeps its slots in `slots`
     /// and its keys and values in `pairs`. This method lets the caller set up
     /// the storages, such as with a custom allocator.
@@ -229,13 +229,13 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     #[inline]
     #[allow(clippy::type_complexity)]
     pub fn with_storages(
-        slots: <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>,
-        pairs: <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>,
+        slots: <C as DenseSecondaryMapConfig<T>>::SlotStorage,
+        pairs: <C as DenseSecondaryMapConfig<T>>::PairStorage,
     ) -> Result<
         Self,
         WithStoragesError<
-            <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>,
-            <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>,
+            <C as DenseSecondaryMapConfig<T>>::SlotStorage,
+            <C as DenseSecondaryMapConfig<T>>::PairStorage,
         >,
     > {
         if !slots.is_empty() {
@@ -804,7 +804,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
             slot.as_deref_mut().map(Slot::as_parity_mut)
         {
             if *current != generation
-                && !<Strategy<C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
+                && !<Strategy<T, C> as ReplaceStrategy<MapKeyConfig<C>>>::replaces(
                     *current, generation,
                 )
             {
@@ -955,9 +955,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the slots
     /// must follow the rules that [`DenseSecondaryMapRawParts`] lists.
     #[inline]
-    pub unsafe fn slots(
-        &self,
-    ) -> &<C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>> {
+    pub unsafe fn slots(&self) -> &<C as DenseSecondaryMapConfig<T>>::SlotStorage {
         &self.slots
     }
 
@@ -972,9 +970,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the slots
     /// must follow the rules that [`DenseSecondaryMapRawParts`] lists.
     #[inline]
-    pub unsafe fn slots_mut(
-        &mut self,
-    ) -> &mut <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>> {
+    pub unsafe fn slots_mut(&mut self) -> &mut <C as DenseSecondaryMapConfig<T>>::SlotStorage {
         &mut self.slots
     }
 
@@ -990,9 +986,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the pairs
     /// must follow the rules that [`DenseSecondaryMapRawParts`] lists.
     #[inline]
-    pub unsafe fn pairs(
-        &self,
-    ) -> &<C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> {
+    pub unsafe fn pairs(&self) -> &<C as DenseSecondaryMapConfig<T>>::PairStorage {
         &self.pairs
     }
 
@@ -1008,9 +1002,7 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     /// [`pairs`](Self::pairs) and [`pairs_mut`](Self::pairs_mut), the pairs
     /// must follow the rules that [`DenseSecondaryMapRawParts`] lists.
     #[inline]
-    pub unsafe fn pairs_mut(
-        &mut self,
-    ) -> &mut <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T> {
+    pub unsafe fn pairs_mut(&mut self) -> &mut <C as DenseSecondaryMapConfig<T>>::PairStorage {
         &mut self.pairs
     }
 
@@ -1161,9 +1153,9 @@ impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
     }
 }
 
-impl<T, C: DenseSecondaryMapConfig> Default for DenseSecondaryMap<T, C>
+impl<T, C: DenseSecondaryMapConfig<T>> Default for DenseSecondaryMap<T, C>
 where
-    Slots<C>: Empty,
+    Slots<T, C>: Empty,
     Pairs<T, C>: Empty,
 {
     #[inline]
@@ -1172,9 +1164,9 @@ where
     }
 }
 
-impl<T, C: DenseSecondaryMapConfig> Clone for DenseSecondaryMap<T, C>
+impl<T, C: DenseSecondaryMapConfig<T>> Clone for DenseSecondaryMap<T, C>
 where
-    Slots<C>: Clone,
+    Slots<T, C>: Clone,
     Pairs<T, C>: Clone,
 {
     /// The clone has the same slots, values and keys, so every key of the
@@ -1200,7 +1192,7 @@ where
     }
 }
 
-impl<T: fmt::Debug, C: DenseSecondaryMapConfig> fmt::Debug for DenseSecondaryMap<T, C> {
+impl<T: fmt::Debug, C: DenseSecondaryMapConfig<T>> fmt::Debug for DenseSecondaryMap<T, C> {
     /// Lists every key with its value, in index order.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let values = self.pairs.second_slice();
@@ -1225,7 +1217,7 @@ impl<T: fmt::Debug, C: DenseSecondaryMapConfig> fmt::Debug for DenseSecondaryMap
     }
 }
 
-impl<T, C: DenseSecondaryMapConfig> Index<Key<MapKeyConfig<C>>> for DenseSecondaryMap<T, C> {
+impl<T, C: DenseSecondaryMapConfig<T>> Index<Key<MapKeyConfig<C>>> for DenseSecondaryMap<T, C> {
     type Output = T;
 
     /// Returns a reference to the value stored under `key`.
@@ -1240,7 +1232,7 @@ impl<T, C: DenseSecondaryMapConfig> Index<Key<MapKeyConfig<C>>> for DenseSeconda
     }
 }
 
-impl<T, C: DenseSecondaryMapConfig> IndexMut<Key<MapKeyConfig<C>>> for DenseSecondaryMap<T, C> {
+impl<T, C: DenseSecondaryMapConfig<T>> IndexMut<Key<MapKeyConfig<C>>> for DenseSecondaryMap<T, C> {
     /// Returns a mutable reference to the value stored under `key`.
     ///
     /// # Panics
@@ -1253,7 +1245,7 @@ impl<T, C: DenseSecondaryMapConfig> IndexMut<Key<MapKeyConfig<C>>> for DenseSeco
     }
 }
 
-impl<T, C: DenseSecondaryMapConfig> IntoIterator for DenseSecondaryMap<T, C>
+impl<T, C: DenseSecondaryMapConfig<T>> IntoIterator for DenseSecondaryMap<T, C>
 where
     Pairs<T, C>: IntoIterator<Item = (Key<MapKeyConfig<C>>, T)>,
 {
@@ -1268,7 +1260,7 @@ where
     }
 }
 
-impl<'a, T, C: DenseSecondaryMapConfig> IntoIterator for &'a DenseSecondaryMap<T, C> {
+impl<'a, T, C: DenseSecondaryMapConfig<T>> IntoIterator for &'a DenseSecondaryMap<T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a T);
     type IntoIter = DenseIter<'a, T, MapKeyConfig<C>>;
 
@@ -1278,7 +1270,7 @@ impl<'a, T, C: DenseSecondaryMapConfig> IntoIterator for &'a DenseSecondaryMap<T
     }
 }
 
-impl<'a, T, C: DenseSecondaryMapConfig> IntoIterator for &'a mut DenseSecondaryMap<T, C> {
+impl<'a, T, C: DenseSecondaryMapConfig<T>> IntoIterator for &'a mut DenseSecondaryMap<T, C> {
     type Item = (Key<MapKeyConfig<C>>, &'a mut T);
     type IntoIter = DenseIterMut<'a, T, MapKeyConfig<C>>;
 
@@ -1290,11 +1282,11 @@ impl<'a, T, C: DenseSecondaryMapConfig> IntoIterator for &'a mut DenseSecondaryM
 
 /// Iterator that takes each value out, with its key, from the last value to
 /// the first. It is created using [`DenseSecondaryMap::drain`].
-pub struct DenseSecondaryDrain<'a, T, C: DenseSecondaryMapConfig> {
+pub struct DenseSecondaryDrain<'a, T, C: DenseSecondaryMapConfig<T>> {
     map: &'a mut DenseSecondaryMap<T, C>,
 }
 
-impl<T, C: DenseSecondaryMapConfig> Iterator for DenseSecondaryDrain<'_, T, C> {
+impl<T, C: DenseSecondaryMapConfig<T>> Iterator for DenseSecondaryDrain<'_, T, C> {
     type Item = (Key<MapKeyConfig<C>>, T);
 
     #[inline]
@@ -1318,11 +1310,11 @@ impl<T, C: DenseSecondaryMapConfig> Iterator for DenseSecondaryDrain<'_, T, C> {
     }
 }
 
-impl<T, C: DenseSecondaryMapConfig> ExactSizeIterator for DenseSecondaryDrain<'_, T, C> {}
+impl<T, C: DenseSecondaryMapConfig<T>> ExactSizeIterator for DenseSecondaryDrain<'_, T, C> {}
 
-impl<T, C: DenseSecondaryMapConfig> FusedIterator for DenseSecondaryDrain<'_, T, C> {}
+impl<T, C: DenseSecondaryMapConfig<T>> FusedIterator for DenseSecondaryDrain<'_, T, C> {}
 
-impl<T, C: DenseSecondaryMapConfig> Drop for DenseSecondaryDrain<'_, T, C> {
+impl<T, C: DenseSecondaryMapConfig<T>> Drop for DenseSecondaryDrain<'_, T, C> {
     fn drop(&mut self) {
         for _ in self.by_ref() {}
     }
@@ -1385,8 +1377,8 @@ impl<T, C: DenseSecondaryMapConfig> Drop for DenseSecondaryDrain<'_, T, C> {
 /// ```
 pub struct DenseSecondaryMapRawParts<
     T,
-    #[cfg(feature = "alloc")] C: DenseSecondaryMapConfig = DefaultMapConfig,
-    #[cfg(not(feature = "alloc"))] C: DenseSecondaryMapConfig,
+    #[cfg(feature = "alloc")] C: DenseSecondaryMapConfig<T> = DefaultMapConfig,
+    #[cfg(not(feature = "alloc"))] C: DenseSecondaryMapConfig<T>,
 > {
     // These fields are in the same order as the fields of `DenseSecondaryMap`,
     // so the two structs can be read side by side. `into_raw_parts` and
@@ -1395,14 +1387,14 @@ pub struct DenseSecondaryMapRawParts<
     /// The map keeps its slots in this storage, which the map's config picks.
     /// A slot's index is its position in the storage, and a slot that holds a
     /// value stores the position of that value in `pairs`.
-    pub slots: <C as DenseSecondaryMapConfig>::SlotStorage<DenseSecondaryMapSlot<C>>,
+    pub slots: <C as DenseSecondaryMapConfig<T>>::SlotStorage,
     /// The map keeps its values one after another in the second slice of
     /// this storage, and the key of each value at the same position in the
     /// first slice.
-    pub pairs: <C as DenseSecondaryMapConfig>::PairStorage<Key<MapKeyConfig<C>>, T>,
+    pub pairs: <C as DenseSecondaryMapConfig<T>>::PairStorage,
 }
 
-impl<T, C: DenseSecondaryMapConfig> DenseSecondaryMap<T, C> {
+impl<T, C: DenseSecondaryMapConfig<T>> DenseSecondaryMap<T, C> {
     /// Takes the map apart into its fields.
     /// [`from_raw_parts`](Self::from_raw_parts) builds a map from them again,
     /// and [`DenseSecondaryMapRawParts`] lists the rules they follow.

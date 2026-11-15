@@ -1,7 +1,5 @@
 use crate::tests::{assert_not_detached, Cfg, DropTracker};
-use crate::{
-    GenMap, GenMapConfig, GenSlotItem, KeepLen, Key, MapConfig, MapKeyConfig, Packed, Split,
-};
+use crate::{GenMap, GenMapConfig, KeepLen, Key, MapConfig, MapKeyConfig, MapSlot, Packed, Split};
 use std::vec::Vec;
 
 /// Keys whose generation is 4 bits, so the largest one is 15, well below the
@@ -12,10 +10,10 @@ impl MapConfig for Wrap4 {
     type KeyConfig = Packed<u16, 4>;
 }
 
-impl GenMapConfig for Wrap4 {
+impl<T> GenMapConfig<T> for Wrap4 {
     const WRAP_ON_OVERFLOW: bool = true;
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 /// `u8` keys that use the whole generation type, in a map that wraps
@@ -26,15 +24,15 @@ impl MapConfig for WrapU8 {
     type KeyConfig = Split<u8, u8>;
 }
 
-impl GenMapConfig for WrapU8 {
+impl<T> GenMapConfig<T> for WrapU8 {
     const WRAP_ON_OVERFLOW: bool = true;
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 /// A map whose only slot holds a value under the largest generation its key
 /// can hold, and the key of that value.
-fn at_the_largest_generation<C: GenMapConfig>() -> (GenMap<i32, C>, Key<MapKeyConfig<C>>)
+fn at_the_largest_generation<C: GenMapConfig<i32>>() -> (GenMap<i32, C>, Key<MapKeyConfig<C>>)
 where
     GenMap<i32, C>: Default,
 {

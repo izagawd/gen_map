@@ -1,7 +1,7 @@
 use crate::tests::Cfg;
 use crate::{
-    FullError, GenMap, GenMapConfig, GenSlotItem, InsertError, KeepLen, Key, KeyConfig, KeyPiece,
-    MapConfig, MapKeyConfig, NonMax, Odd, Packed, Split,
+    FullError, GenMap, GenMapConfig, InsertError, KeepLen, Key, KeyConfig, KeyPiece, MapConfig,
+    MapKeyConfig, MapSlot, NonMax, Odd, Packed, Split,
 };
 use core::mem::size_of;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -15,9 +15,9 @@ impl MapConfig for Compact {
     type KeyConfig = Packed<u32, 8>;
 }
 
-impl GenMapConfig for Compact {
+impl<T> GenMapConfig<T> for Compact {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 /// Two byte keys with 12 bits of index and 4 bits of generation, so a slot
@@ -28,9 +28,9 @@ impl MapConfig for Tiny {
     type KeyConfig = Packed<u16, 4>;
 }
 
-impl GenMapConfig for Tiny {
+impl<T> GenMapConfig<T> for Tiny {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 /// The same as [`Tiny`], but a slot wraps instead of retiring.
@@ -40,10 +40,10 @@ impl MapConfig for TinyWrap {
     type KeyConfig = Packed<u16, 4>;
 }
 
-impl GenMapConfig for TinyWrap {
+impl<T> GenMapConfig<T> for TinyWrap {
     const WRAP_ON_OVERFLOW: bool = true;
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 /// One byte keys with 4 bits of index, so the map holds sixteen slots.
@@ -53,9 +53,9 @@ impl MapConfig for Byte {
     type KeyConfig = Packed<u8, 4>;
 }
 
-impl GenMapConfig for Byte {
+impl<T> GenMapConfig<T> for Byte {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 /// Maps with this config hand out sixteen byte keys with a `u128` field and
@@ -66,9 +66,9 @@ impl MapConfig for Huge {
     type KeyConfig = Packed<u128, 64>;
 }
 
-impl GenMapConfig for Huge {
+impl<T> GenMapConfig<T> for Huge {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 fn key<K: KeyConfig>(idx: K::Idx, generation: K::Gen) -> Key<K> {
@@ -216,7 +216,7 @@ fn debug_prints_both_parts_of_a_packed_key() {
 /// the key config holds, and returns the keys handed out along the way.
 fn use_up_one_slot<C>(map: &mut GenMap<u32, C>) -> Vec<Key<MapKeyConfig<C>>>
 where
-    C: GenMapConfig,
+    C: GenMapConfig<u32>,
     MapKeyConfig<C>: KeyConfig<Idx = u16, Gen = u8>,
 {
     let mut keys = Vec::new();
@@ -378,9 +378,9 @@ impl MapConfig for Wide8 {
     type KeyConfig = Packed<u16, 8>;
 }
 
-impl GenMapConfig for Wide8 {
+impl<T> GenMapConfig<T> for Wide8 {
     type Len = KeepLen;
-    type Storage<S: GenSlotItem> = Vec<S>;
+    type Storage = Vec<MapSlot<T, Self>>;
 }
 
 #[test]
